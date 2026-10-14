@@ -22,6 +22,8 @@ import {
 import { createTestRenderer, releaseTestRenderer } from "./gl.ts";
 
 const SIZE = 256;
+/** Review PNGs are opt-in; the pixel assertion is always part of the browser test. */
+const CAPTURE_WET_FILM = import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true";
 
 function coverage(
   values: readonly number[],
@@ -160,10 +162,11 @@ describe("the water/sweat wet-film bridge in SkinMaterial", () => {
     const comparisonCamera = new OrthographicCamera(-1.25, 1.25, 0.75, -0.75, 0.1, 10);
     comparisonCamera.position.set(0, 0, 3);
     renderer.render(comparison, comparisonCamera);
-    await page.screenshot({
-      element: renderer.domElement,
-      path: "../../test-results/fluid-wet-film/dry-wet.png",
-    });
+    if (CAPTURE_WET_FILM)
+      await page.screenshot({
+        element: renderer.domElement,
+        path: "../../test-results/fluid-wet-film/dry-wet.png",
+      });
 
     dryGeometry.dispose();
     clearedGeometry.dispose();

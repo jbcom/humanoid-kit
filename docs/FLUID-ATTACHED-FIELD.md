@@ -48,6 +48,14 @@ source body and preventing figures from sharing dynamic coverage state. Rebindin
 either one releases and disposes the old figure-local texture before creating the
 new binding.
 
+The bridge retains only the last validated triangle/source-ID support key per
+render geometry. A repeated support selection can reuse its selected-by-all UV
+overlap check, while every bind still reads the current indexed source IDs and
+checks finite in-range UVs and selected-triangle degeneracy. Replacing either
+the index or UV attribute, or advancing either attribute's version, rebuilds
+the topology and clears that key. Rebinding or disposing a geometry also drops
+the cache; coverage changes do not grow a history.
+
 The bridge uses the existing documented sweat-film roughness and specular
 choices from `src/surface/regions/states.ts`; the coverage field itself still
 does not choose optical constants. It deliberately does not use

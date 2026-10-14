@@ -110,6 +110,14 @@ export type FacialHairRecipe = readonly string[];
  */
 export type FacialHairLengthRecipe = Readonly<Record<string, number>>;
 
+/**
+ * Optional source-proxy growth for selected beard attachments. Zero hides the
+ * attachment, 0.5 is the exact packed source placement, and one reaches the
+ * morphed base-control mesh's rest-floor bound from each vertex's native
+ * depth below the shared source-height frame.
+ */
+export type FacialHairGrowthRecipe = Readonly<Record<string, number>>;
+
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
@@ -130,6 +138,8 @@ export interface Recipe {
    * Moustache and other non-beard entries do not accept a multiplier.
    */
   facialHairLength?: FacialHairLengthRecipe;
+  /** Source-proxy growth for selected beard attachments, 0..1. */
+  facialHairGrowth?: FacialHairGrowthRecipe;
   /**
    * Body hair: legacy per-region multipliers on the physiological default, or
    * explicit coverage and physical follicle-density controls, plus a beard
@@ -201,6 +211,7 @@ export function createRecipe(
     };
     facialHair?: FacialHairRecipe;
     facialHairLength?: FacialHairLengthRecipe;
+    facialHairGrowth?: FacialHairGrowthRecipe;
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
     outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -232,6 +243,7 @@ export function createRecipe(
     }),
     ...(init.facialHair && { facialHair: [...init.facialHair] }),
     ...(init.facialHairLength && { facialHairLength: { ...init.facialHairLength } }),
+    ...(init.facialHairGrowth && { facialHairGrowth: { ...init.facialHairGrowth } }),
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),

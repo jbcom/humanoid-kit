@@ -60,7 +60,11 @@ import {
   type Bound,
   bindingSkin,
   evaluateBinding,
+  evaluateBindingWithGrowth,
   evaluateBindingWithOffsetScale,
+  type OffsetScaleGrowth,
+  resolveOffsetScaleGrowth,
+  sourceCardRootFrames,
 } from "../mhclo/bound.ts";
 import {
   type Contribution,
@@ -152,6 +156,12 @@ export interface ModelOptions {
    * preserving the source pack's full weights byte-for-byte.
    */
   skinInfluences?: SkinInfluences;
+  /**
+   * Rays per target vertex for a runtime attachment-occlusion bake. Default 32,
+   * preserving the existing runtime bake. This affects only a worn attachment
+   * set the pack did not bake; packed attachment and body occlusion stay exact.
+   */
+  runtimeOcclusionRays?: number;
 }
 
 /** Static render data: sent once, reused for every evaluation. */
@@ -558,6 +568,9 @@ const occlusionFigure = (): Recipe => createRecipe();
 /** How much of a hair vertex's occlusion the ray bake (cards under cards) may take away from its height term. */
 const RAY_SHARE = 0.25;
 
+/** Runtime attachment bakes' historical ray count. Packed occlusion has its own immutable source data. */
+const DEFAULT_RUNTIME_OCCLUSION_RAYS = 32;
+
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
 
@@ -654,6 +667,8 @@ export class HumanoidModel {
   private readonly skin: RuntimeSkinWeights<Uint8Array>;
   /** Runtime influence cap, reapplied after any operation that combines skin rows. */
   private readonly skinInfluences: SkinInfluences;
+  /** Rays used only while baking a worn attachment set whose pack has no corner bake. */
+  private readonly runtimeOcclusionRays: number;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** Shared, immutable source topology for every age's chest calculation. */
@@ -681,6 +696,11 @@ export class HumanoidModel {
   constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
     this.assets = assets;
     this.skinInfluences = options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES;
+    this.runtimeOcclusionRays = options.runtimeOcclusionRays ?? DEFAULT_RUNTIME_OCCLUSION_RAYS;
+    if (!Number.isInteger(this.runtimeOcclusionRays) || this.runtimeOcclusionRays < 1)
+      throw new RangeError(
+        `runtimeOcclusionRays must be a positive integer; got ${options.runtimeOcclusionRays}`,
+      );
     this.skin = projectSkinInfluences(
       { skinIndex: assets.skinIndex, skinWeight: assets.skinWeight },
       this.skinInfluences,
@@ -1192,7 +1212,7 @@ export class HumanoidModel {
       normals: quadVertexNormals(controls[i] as Float32Array, a.asset.faceVerts),
     }));
     const values = bakeOcclusion(occluders, targets, {
-      rays: 32,
+      rays: this.runtimeOcclusionRays,
       ...(baseline && { baseline }),
     });
     return { occluders, targets, values };
@@ -1895,6 +1915,69 @@ export class HumanoidModel {
    * docs/ARCHITECTURE.md, "Skin states") add their state morphs. A state is
    * never part of the recipe; adult-only signals are refused under 18.
    */
+  /**
+   * Carries an extended source beard around the unposed body using one
+   * source-card outward frame. Each card's derived root edge remains at its
+   * original face/jaw binding; lower runtime vertices receive a continuous
+   * horizontal clearance proxy from their authored depth below the source frame.
+   */
+  private drapeFacialGrowth(
+    asset: BoundAsset,
+    control: Float32Array,
+    native: Float32Array,
+    growth: OffsetScaleGrowth,
+    roots: Uint8Array,
+    placed: Float32Array,
+  ): void {
+    if (growth.depthScale <= 1) return;
+    const bodyNormals = quadVertexNormals(control, this.assets.faceVerts);
+    let outwardX = 0;
+    let outwardZ = 0;
+    let sourceBack = Number.POSITIVE_INFINITY;
+    for (let vertex = 0; vertex < asset.entry.vertexCount; vertex++) {
+      const k = vertex * 3;
+      if (roots[vertex])
+        for (let reference = 0; reference < 3; reference++) {
+          const binding = k + reference;
+          const body = (asset.refVerts[binding] as number) * 3;
+          const weight = asset.weights[binding] as number;
+          outwardX += weight * (bodyNormals[body] as number);
+          outwardZ += weight * (bodyNormals[body + 2] as number);
+        }
+    }
+    const outwardLength = Math.hypot(outwardX, outwardZ);
+    if (!(outwardLength > 0)) return;
+    outwardX /= outwardLength;
+    outwardZ /= outwardLength;
+    for (let vertex = 0; vertex < asset.entry.vertexCount; vertex++) {
+      const k = vertex * 3;
+      sourceBack = Math.min(
+        sourceBack,
+        outwardX * (native[k] as number) + outwardZ * (native[k + 2] as number),
+      );
+    }
+    let bodyFront = Number.NEGATIVE_INFINITY;
+    for (let vertex = 0; vertex < control.length / 3; vertex++)
+      bodyFront = Math.max(
+        bodyFront,
+        outwardX * (control[vertex * 3] as number) + outwardZ * (control[vertex * 3 + 2] as number),
+      );
+    const floorOutward = Math.max(0, bodyFront - sourceBack);
+    const extension = (growth.depthScale - 1) / (growth.restFloorDepthScale - 1);
+    const sourceDepth = growth.sourceRootBandY - growth.sourceFloorY;
+    for (let vertex = 0; vertex < asset.entry.vertexCount; vertex++) {
+      const k = vertex * 3;
+      if (roots[vertex]) continue;
+      const depth = Math.max(0, (growth.sourceRootBandY - (native[k + 1] as number)) / sourceDepth);
+      // Every selected card root remains exactly where MakeHuman bound it.
+      // Below those roots, a monotone proxy curve reaches the body-front envelope
+      // early enough to keep the retained cards visible in front of the torso.
+      const drape = Math.sqrt(Math.min(1, depth)) * extension * floorOutward;
+      placed[k] = (placed[k] as number) + outwardX * drape;
+      placed[k + 2] = (placed[k + 2] as number) + outwardZ * drape;
+    }
+  }
+
   evaluate(
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
@@ -1916,6 +1999,7 @@ export class HumanoidModel {
       h: this.hairPart(id, "facial"),
     }));
     const facialHairLength = recipe.facialHairLength ?? {};
+    const facialHairGrowth = recipe.facialHairGrowth ?? {};
     for (const [id, factor] of Object.entries(facialHairLength)) {
       if (!(recipe.facialHair?.includes(id) ?? false))
         throw new RecipeError(`facialHairLength names ${id}, but it is not selected`);
@@ -1925,8 +2009,22 @@ export class HumanoidModel {
       if (!Number.isFinite(factor) || factor < 1)
         throw new RecipeError(`facialHairLength.${id} must be a finite multiplier at least 1`);
     }
+    for (const [id, growth] of Object.entries(facialHairGrowth)) {
+      if (!(recipe.facialHair?.includes(id) ?? false))
+        throw new RecipeError(`facialHairGrowth names ${id}, but it is not selected`);
+      const entry = this.hairEntry(id, "facial");
+      if (!entry.tags.includes("beard"))
+        throw new RecipeError(`facialHairGrowth names ${id}, but it is not a beard style`);
+      if (!Number.isFinite(growth) || growth < 0 || growth > 1)
+        throw new RecipeError(`facialHairGrowth.${id} must be a finite number in [0, 1]`);
+      if (facialHairLength[id] !== undefined)
+        throw new RecipeError(`cannot set both facialHairLength and facialHairGrowth for ${id}`);
+    }
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
+    // Growth ends at this unposed base-body floor. It does not promise drape,
+    // collision avoidance, garment contact, or a floor in a later world pose.
+    const restFloorY = minY;
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
     // else: a minor's evaluation is the base body's, and never builds the other.
     // Detail targets displace that surface alone; the base has nothing to apply them to.
@@ -1992,15 +2090,50 @@ export class HumanoidModel {
     };
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
-    const facialHair = wornFacialHair.map((wornFacial) => {
-      const factor = facialHairLength[wornFacial.id] ?? 1;
-      const placed = evaluateBindingWithOffsetScale(
-        wornFacial.h.asset,
-        control,
-        factor,
-        wornFacial.h.control,
-      );
-      return { id: wornFacial.id, ...this.evaluatePart(wornFacial.h.part, placed) };
+    const facialHair = wornFacialHair.flatMap((wornFacial) => {
+      const growth = facialHairGrowth[wornFacial.id];
+      if (growth === 0) return [];
+      const growthState =
+        growth === undefined
+          ? null
+          : resolveOffsetScaleGrowth(wornFacial.h.asset, control, restFloorY, growth);
+      const native =
+        growthState === null
+          ? null
+          : evaluateBinding(
+              wornFacial.h.asset,
+              control,
+              new Float32Array(wornFacial.h.control.length),
+            );
+      const rootState = native ? sourceCardRootFrames(wornFacial.h.asset, control, native) : null;
+      const placed =
+        growthState === null
+          ? evaluateBindingWithOffsetScale(
+              wornFacial.h.asset,
+              control,
+              facialHairLength[wornFacial.id] ?? 1,
+              wornFacial.h.control,
+            )
+          : evaluateBindingWithGrowth(
+              wornFacial.h.asset,
+              control,
+              growthState,
+              wornFacial.h.control,
+              rootState?.frames,
+            );
+      if (growthState && native && rootState) {
+        const { roots } = rootState;
+        for (let vertex = 0; vertex < wornFacial.h.asset.entry.vertexCount; vertex++) {
+          if (!roots[vertex]) continue;
+          const k = vertex * 3;
+          placed[k] = native[k] as number;
+          placed[k + 1] = native[k + 1] as number;
+          placed[k + 2] = native[k + 2] as number;
+        }
+        if (growthState.depthScale > 1)
+          this.drapeFacialGrowth(wornFacial.h.asset, control, native, growthState, roots, placed);
+      }
+      return [{ id: wornFacial.id, ...this.evaluatePart(wornFacial.h.part, placed) }];
     });
     const curvature = meanCurvature(
       body.positions,

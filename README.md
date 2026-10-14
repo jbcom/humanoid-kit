@@ -63,10 +63,14 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   place.
 - **Body hair, eyebrows, eyelashes and facial hair.** Body hair follows the
   figure's age and recipe, and the hair pack carries eyebrows, eyelashes and
-  authored CC0 beard and moustache assets beside the scalp styles. A recipe
-  selects zero or more facial assets through `recipe.facialHair`; they share
-  the hair colour and can be removed independently. Large-beard drape remains
-  under visual review (issue 14).
+  authored beard and moustache assets beside the scalp styles. A recipe selects
+  zero or more facial assets through `recipe.facialHair`; they share the hair
+  colour and can be removed independently. A selected source beard may opt
+  into `facialHairLength` or `facialHairGrowth`; the latter hides the
+  attachment at zero, reproduces the packed source at its midpoint, and grows
+  from measured source-card roots to an inspectable rest-floor bound. The
+  remaining beard-style, streaking and miniature requirements are tracked in
+  issue 14.
 - **A tap-to-edit creator.** `humanoid-kit/editor` is a React creator over the
   recipe, with undo, randomisation, regional overrides and a wardrobe.
 - **Presence and interactions.** A figure publishes what the scene around it
@@ -243,7 +247,7 @@ Status per milestone. The architecture notes carry the detail
 | Rig, poses and expressions | Done: fitted skeleton, posing, named expressions |
 | Adult anatomy sculpting | In progress: the layers, state plumbing and a refined adult surface ship; the own-sculpt phase is planned |
 | Scalp hair | Done: `humanoid-kit-hair` |
-| Body and facial hair | Body hair, eyebrows and eyelashes ship. Beards are in progress: the recipe has ten styles with length, volume and grey controls, and their rendering is still under visual review (issue 14) |
+| Body and facial hair | Body hair, eyebrows, eyelashes and nine authored facial assets ship. The ten `bodyHair.beard` style controls currently drive the short coat only; selected source beards have opt-in offset length and rest-floor growth. The remaining alpha-style, streaking and miniature work stays open in issue 14. |
 | Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
 | Anthro traits | Planned (issue 97). The shared coat module for body hair and fur is built |
 | Fur, scales and feathers as layers | Planned (issue 99) |

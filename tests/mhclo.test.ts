@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { evaluateBinding, evaluateBindingWithOffsetScale } from "../src/mhclo/bound.ts";
+import {
+  evaluateBinding,
+  evaluateBindingWithGrowth,
+  evaluateBindingWithOffsetScale,
+  resolveOffsetScaleGrowth,
+  sourceCardRootFrames,
+  sourceCardRoots,
+} from "../src/mhclo/bound.ts";
 import { parseMhclo } from "../src/mhclo/parse.ts";
 
 const HEADER =
@@ -91,5 +98,161 @@ describe("evaluateBindingWithOffsetScale", () => {
       /finite Float32 output/,
     );
     expect(Array.from(out)).toEqual([7, 8, 9]);
+  });
+
+  it("derives every source-card root from its boundary edge nearest the MHCLO base surface", () => {
+    const card = {
+      entry: { vertexCount: 6, scale: null },
+      refVerts: Uint32Array.from(Array(18).fill(0)),
+      weights: Float32Array.from(Array.from({ length: 6 }, () => [1, 0, 0]).flat()),
+      offsets: Float32Array.of(
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.2,
+        0,
+        0.2,
+        -0.2,
+        0,
+      ),
+      faceVerts: Uint32Array.of(0, 1, 4, 3, 1, 2, 5, 4),
+    } as never;
+    const control = Float32Array.of(0, 0, 0);
+    const native = evaluateBinding(card, control, new Float32Array(18));
+    expect(Array.from(sourceCardRoots(card, control, native))).toEqual([1, 1, 0, 0, 0, 0]);
+  });
+
+  it("keeps an attachment edge for every boundary loop in a connected source component", () => {
+    const multiCard = {
+      entry: { vertexCount: 8, scale: null },
+      refVerts: Uint32Array.from(Array(24).fill(0)),
+      weights: Float32Array.from(Array.from({ length: 8 }, () => [1, 0, 0]).flat()),
+      offsets: Float32Array.of(
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.1,
+        0,
+      ),
+      faceVerts: Uint32Array.of(0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7),
+    } as never;
+    const control = Float32Array.of(0, 0, 0);
+    const native = evaluateBinding(multiCard, control, new Float32Array(24));
+    expect(Array.from(sourceCardRoots(multiCard, control, native))).toEqual([
+      1, 1, 0, 0, 1, 1, 0, 0,
+    ]);
+  });
+
+  it("shrinks every source card monotonically toward its own attachment frame", () => {
+    const card = {
+      entry: { vertexCount: 4, scale: null },
+      refVerts: Uint32Array.from(Array(12).fill(0)),
+      weights: Float32Array.from(Array.from({ length: 4 }, () => [1, 0, 0]).flat()),
+      offsets: Float32Array.of(0, 0, 0, 0.2, 0, 0, 0.2, -1, 0, 0, -1, 0),
+      faceVerts: Uint32Array.of(0, 1, 2, 3),
+    } as never;
+    const control = Float32Array.of(0, 0, 0);
+    const native = evaluateBinding(card, control, new Float32Array(12));
+    const rootState = sourceCardRootFrames(card, control, native);
+    const at = (fraction: number) => {
+      const placed = evaluateBindingWithGrowth(
+        card,
+        control,
+        resolveOffsetScaleGrowth(card, control, -2, fraction),
+        new Float32Array(12),
+        rootState.frames,
+      );
+      for (let vertex = 0; vertex < 4; vertex++) {
+        if (!rootState.roots[vertex]) continue;
+        placed.set(native.subarray(vertex * 3, vertex * 3 + 3), vertex * 3);
+      }
+      return placed;
+    };
+    const distanceFromFrame = (positions: Float32Array, vertex: number) => {
+      const offset = vertex * 3;
+      let squared = 0;
+      for (let axis = 0; axis < 3; axis++)
+        squared +=
+          ((positions[offset + axis] as number) - (rootState.frames[offset + axis] as number)) ** 2;
+      return Math.sqrt(squared);
+    };
+    const early = at(0.1);
+    const middle = at(0.25);
+    const nearNative = at(0.49);
+    const source = at(0.5);
+    for (const root of [0, 1])
+      expect(Array.from(nearNative.slice(root * 3, root * 3 + 3))).toEqual(
+        Array.from(native.slice(root * 3, root * 3 + 3)),
+      );
+    for (const tip of [2, 3]) {
+      expect(distanceFromFrame(early, tip)).toBeLessThan(distanceFromFrame(middle, tip));
+      expect(distanceFromFrame(middle, tip)).toBeLessThan(distanceFromFrame(nearNative, tip));
+      expect(distanceFromFrame(nearNative, tip)).toBeLessThan(distanceFromFrame(source, tip));
+      expect(source[tip * 3 + 1]).toBeLessThan(native[0 * 3 + 1] as number);
+    }
+  });
+
+  it("contracts to the exact source at the native point, then extends common source depth", () => {
+    const growthAsset = {
+      entry: { vertexCount: 2, scale: null },
+      refVerts: Uint32Array.of(0, 1, 2, 0, 1, 2),
+      weights: Float32Array.of(0.5, 0.25, 0.25, 0.5, 0.25, 0.25),
+      offsets: Float32Array.of(0.1, -0.2, 0.3, 0.1, -0.4, 0.3),
+    } as never;
+    const hidden = resolveOffsetScaleGrowth(growthAsset, control, 0, 0);
+    const smaller = resolveOffsetScaleGrowth(growthAsset, control, 0, 0.25);
+    const native = resolveOffsetScaleGrowth(growthAsset, control, 0, 0.5);
+    const floor = resolveOffsetScaleGrowth(growthAsset, control, 0, 1);
+    expect(hidden.visible).toBe(false);
+    expect(hidden.sourceScale).toBe(0);
+    expect(hidden.restFloorDepthScale).toBeCloseTo(4, 6);
+    expect(smaller.visible).toBe(true);
+    expect(smaller.sourceScale).toBeCloseTo(0.5, 6);
+    const untouched = new Float32Array(6).fill(7);
+    expect(() => evaluateBindingWithGrowth(growthAsset, control, smaller, untouched)).toThrow(
+      "attachment-root frame",
+    );
+    expect(Array.from(untouched)).toEqual([7, 7, 7, 7, 7, 7]);
+    expect(native.nativeFraction).toBe(0.5);
+    expect(
+      Array.from(evaluateBindingWithGrowth(growthAsset, control, native, new Float32Array(6))),
+    ).toEqual(Array.from(evaluateBinding(growthAsset, control, new Float32Array(6))));
+    expect(floor.restFloorDepthScale).toBeCloseTo(4, 6);
+    expect(floor.depthScale).toBeCloseTo(4, 6);
+    expect(floor.sourceScale).toBe(1);
+    expect(
+      Array.from(evaluateBindingWithGrowth(growthAsset, control, floor, new Float32Array(6))).map(
+        (value) => Number(value.toFixed(6)),
+      ),
+    ).toEqual([0.6, 0.8, 0.3, 0.6, 0, 0.3]);
   });
 });
