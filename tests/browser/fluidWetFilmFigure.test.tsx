@@ -125,22 +125,28 @@ function triangleCentre(frame: ReturnType<typeof fluidFrameFromPose>, triangle: 
   return centre.multiplyScalar(1 / 3);
 }
 
-/** A visible front-torso triangle, found from the actual posed source frame. */
-function frontTorsoTriangle(frame: ReturnType<typeof fluidFrameFromPose>): number {
+/** A visible central front source triangle, found from the actual posed source frame. */
+function frontSourceTriangle(frame: ReturnType<typeof fluidFrameFromPose>): number {
+  const centres = Array.from({ length: frame.index.length / 3 }, (_, triangle) =>
+    triangleCentre(frame, triangle),
+  );
+  const minY = Math.min(...centres.map((centre) => centre.y));
+  const maxY = Math.max(...centres.map((centre) => centre.y));
+  const targetY = minY + (maxY - minY) * 0.53;
   let selected = -1;
   let score = -Infinity;
-  for (let triangle = 0; triangle < frame.index.length / 3; triangle++) {
-    const centre = triangleCentre(frame, triangle);
+  for (const [triangle, centre] of centres.entries()) {
     const normal = triangleNormal(frame, triangle);
-    // The camera looks from +z; favour the central upper torso without naming body geometry.
-    const candidate = 5 * normal.z - 2.4 * Math.abs(centre.x) - 5 * Math.abs(centre.y - 1.18);
+    // The camera looks from +z; choose a central, visible source patch from the posed frame.
+    const candidate =
+      5 * normal.z - 2.4 * Math.abs(centre.x) - (5 * Math.abs(centre.y - targetY)) / (maxY - minY);
     if (candidate > score) {
       score = candidate;
       selected = triangle;
     }
   }
   if (selected < 0)
-    throw new Error("fluid wet-film figure proof could not select a source triangle");
+    throw new Error("fluid wet-film figure proof could not select a visible source triangle");
   return selected;
 }
 
@@ -260,6 +266,57 @@ function worldParticles(
   });
 }
 
+function configureCloseupCamera(
+  camera: PerspectiveCamera,
+  anchor: Vector3,
+  particles: readonly DetachedFluidParticle[],
+  aspect: number,
+): void {
+  const points = [anchor, ...particles.map((particle) => new Vector3(...particle.positionM))];
+  const min = points.reduce(
+    (bounds, point) => bounds.min(point),
+    new Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY),
+  );
+  const max = points.reduce(
+    (bounds, point) => bounds.max(point),
+    new Vector3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY),
+  );
+  const centre = min.add(max).multiplyScalar(0.5);
+  const span = Math.max(0.1, max.x - min.x, max.y - min.y);
+  const distance = Math.max(0.32, span / (2 * Math.tan((camera.fov * Math.PI) / 360)));
+  camera.aspect = aspect;
+  camera.position.set(centre.x, centre.y, max.z + distance);
+  camera.lookAt(centre);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
+function renderCloseupPanel(
+  state: RootState,
+  camera: PerspectiveCamera,
+  wetSkin: SkinMaterial,
+  wetBody: SkinnedMesh,
+  source: Proof,
+  particleRenderer: FluidParticleRenderer,
+  snapshot: FluidCoverageSnapshot,
+  particles: readonly DetachedFluidParticle[],
+): void {
+  const renderer = state.gl;
+  const canvas = renderer.domElement;
+  bindFluidWetFilmCoverage(wetSkin, wetBody.geometry, snapshot);
+  particleRenderer.update(particles);
+  configureCloseupCamera(
+    camera,
+    wetBody.localToWorld(new Vector3(...source.focus)),
+    particles,
+    canvas.width / canvas.height,
+  );
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, canvas.width, canvas.height);
+  renderer.clear(true, true, true);
+  renderer.render(state.scene, camera);
+}
+
 async function proof(): Promise<Proof> {
   const assets = await loadHumanoidAssets({ body: bodyPack });
   const model = new HumanoidModel(assets, { subdivision: 1 });
@@ -277,7 +334,7 @@ async function proof(): Promise<Proof> {
   });
   const restFrame = fluidFrameFromPose(state, model, recipe, REST_POSE);
   const flexedFrame = fluidFrameFromPose(state, model, recipe, "flexed");
-  const triangles = triangleNeighbours(flexedFrame.index, frontTorsoTriangle(flexedFrame), 90);
+  const triangles = triangleNeighbours(flexedFrame.index, frontSourceTriangle(flexedFrame), 90);
   const field = new AttachedFluidField(state, restFrame, {
     maxCells: triangles.length,
     mobilityPerSecond: 0,
@@ -482,7 +539,7 @@ describe("posed source-body wet-film coverage", () => {
       const detachedPixels = renderedPixels(state());
       expect(detachedTexels).toBeLessThan(fullTexels);
       expect(changedPixels(fullPixels, detachedPixels)).toBeGreaterThan(0);
-      const particleGeometry = new SphereGeometry(0.012, 8, 6);
+      const particleGeometry = new SphereGeometry(0.003, 8, 6);
       const particleMaterial = new MeshBasicMaterial({ color: 0x9bdcff });
       const particleRenderer = new FluidParticleRenderer({
         capacity: source.movedParticles.length,
@@ -496,22 +553,60 @@ describe("posed source-body wet-film coverage", () => {
       const movedPixels = renderedPixels(state());
       expect(changedPixels(detachedPixels, spawnedPixels)).toBeGreaterThan(0);
       expect(changedPixels(spawnedPixels, movedPixels)).toBeGreaterThan(0);
+      const canvas = state().gl.domElement;
+      state().setFrameloop("never");
+      dryFlexed.visible = false;
+      try {
+        const captures = [
+          {
+            name: "attached-film",
+            snapshot: source.flexed,
+            particles: [] as readonly DetachedFluidParticle[],
+          },
+          {
+            name: "detached-spawn",
+            snapshot: source.detached,
+            particles: worldParticles(wetFlexed, source.spawnedParticles),
+          },
+          {
+            name: "detached-four-steps",
+            snapshot: source.detached,
+            particles: worldParticles(wetFlexed, source.movedParticles),
+          },
+        ];
+        for (const capture of captures) {
+          renderCloseupPanel(
+            state(),
+            camera,
+            wetFlexedSkin,
+            wetFlexed,
+            source,
+            particleRenderer,
+            capture.snapshot,
+            capture.particles,
+          );
+          if (CAPTURE_WET_FILM)
+            await page.screenshot({
+              element: canvas,
+              path: `../../test-results/fluid-wet-film-figure/${capture.name}.png`,
+            });
+        }
+      } finally {
+        dryFlexed.visible = true;
+        state().setFrameloop("always");
+      }
       const receipt = [
-        "POSE: flexed — left dry / right partially detached water support",
-        "shared static LayerAtlas: same texture object",
+        "POSE: flexed — close-up bounds from actual source releases and their four-step positions",
+        "captures: attached localized film / detached at spawn / same 45 drops after four fixed steps",
         `water: ${source.detached.cells.length}/${source.updated.occupiedTriangles} attached triangles after ${source.releasedKg.toFixed(4)} kg detached`,
         `detached particles: ${source.movedParticles.length}, mass ${source.releasedKg.toFixed(4)} kg; caller velocity and gravity advance four fixed steps`,
+        "cyan spheres are opaque QA position markers, not a water-material appearance claim",
         `vertex interpolation reaches ${source.updated.interpolatedFanTriangles} incident triangles (+${source.updated.interpolatedFanTriangles - source.updated.occupiedTriangles} support expansion)`,
         `attached mass: ${source.flexed.attachedKg.toFixed(4)} kg; coverage is support occupancy, not optical alpha or thickness`,
       ].join("\n");
       const receiptNode = screen.container.querySelector("[data-fluid-wet-film-receipt]");
       receiptNode?.replaceChildren(receipt);
       state().gl.render(state().scene, camera);
-      if (CAPTURE_WET_FILM)
-        await page.screenshot({
-          element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
-          path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
-        });
       particleRenderer.dispose();
       particleGeometry.dispose();
       particleMaterial.dispose();
