@@ -185,6 +185,8 @@ async function assertRuntimeCoat(page: Page, input: Input, label: string): Promi
   expect(coat.geometry.instanceCount, `${label}: shell instances`).toBeGreaterThanOrEqual(4);
   expect(coat.program.found, `${label}: material has a live WebGL program`).toBe(true);
   expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkBases");
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkWidthScale");
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkCapsuleEnd");
   expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkSides");
   expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkFar");
   expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain(
@@ -397,5 +399,26 @@ test("04 short whole figure fits", async ({ page }, info) => {
       { label: "short / follicles 1", input: figure(0.5, explicitHair(0.75, 1), { height: 0 }) },
       { label: "short / follicles 2", input: figure(0.5, explicitHair(0.75, 2), { height: 0 }) },
     ],
+  });
+});
+
+test("05 resolved trunk and axillary strands", async ({ page }, info) => {
+  await renderSheet(page, info, {
+    file: "05-resolved-lying-strands",
+    title:
+      "Issue #126: resolved actual coat strands, full coverage / dense follicles; runtime receipt records physical length, lie and width",
+    // Preserve the proven exterior cameras: a smaller span moves `frame=` inside
+    // the body because it also reduces its camera distance. Resolution comes from
+    // this actual high-pixel canvas, not a clipped camera or scaled crop.
+    size: { width: 2048, height: 2048 },
+    views: [
+      { name: "chest close", camera: `frame=spine02&view=0,0.1,1&span=0.6&${STABLE}` },
+      {
+        name: "raised underarm close",
+        camera: `frame=upperarm01.L&view=0.7,-0.3,1&span=0.28&${STABLE}`,
+        pose: { body: "overhead" },
+      },
+    ],
+    columns: [{ label: "cover 1.00 / follicles 2", input: figure(0.5, explicitHair(1, 2)) }],
   });
 });
