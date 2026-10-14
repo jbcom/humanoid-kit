@@ -171,6 +171,17 @@ describe("fluid wet-film rendering bridge", () => {
     const material = new SkinMaterial();
     const body = geometry();
     const wrongOrder = snapshot("water", [1, 1, 1, 0], [0]);
+    // Reuse the valid support, then mutate the same geometry. The cache must
+    // not let an index or UV update bypass support validation.
+    bindFluidWetFilmCoverage(material, body, wrongOrder);
+    bindFluidWetFilmCoverage(material, body, wrongOrder);
+    body.setIndex([1, 0, 2, 1, 3, 2]);
+    expect(() => bindFluidWetFilmCoverage(material, body, wrongOrder)).toThrow("source triangle");
+    body.setIndex([0, 1, 2, 1, 3, 2]);
+    bindFluidWetFilmCoverage(material, body, wrongOrder);
+    body.getAttribute("uv").setXY(2, 1, 0);
+    body.getAttribute("uv").needsUpdate = true;
+    expect(() => bindFluidWetFilmCoverage(material, body, wrongOrder)).toThrow("degenerate UV");
     const wrongCell = wrongOrder.cells[0];
     if (!wrongCell) throw new Error("wet-film fixture needs a source cell");
     const mismatched = {

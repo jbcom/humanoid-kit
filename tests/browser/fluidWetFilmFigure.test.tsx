@@ -23,6 +23,8 @@ import { SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 300_000 };
+/** A source-body review PNG is requested explicitly; isolation assertions always run. */
+const CAPTURE_WET_FILM = import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true";
 const recipe = createRecipe({ macros: { age: 25 } });
 const client = inlineWorkerClient({ subdivision: 1 });
 
@@ -389,10 +391,11 @@ describe("posed source-body wet-film coverage", () => {
       const receiptNode = screen.container.querySelector("[data-fluid-wet-film-receipt]");
       receiptNode?.replaceChildren(receipt);
       state().gl.render(state().scene, camera);
-      await page.screenshot({
-        element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
-        path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
-      });
+      if (CAPTURE_WET_FILM)
+        await page.screenshot({
+          element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
+          path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
+        });
     },
     LOAD.timeout + 30_000,
   );

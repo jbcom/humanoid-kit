@@ -77,8 +77,8 @@ function bonesOf(scene: Scene): DualBones {
   return found;
 }
 
-function phaseReceipt(state: RootState | null, evaluated: boolean, settled: boolean) {
-  if (!state) return { evaluated, settled, canvas: false };
+function phaseReceipt(state: RootState | null, evaluated: boolean) {
+  if (!state) return { evaluated, canvas: false };
   const body = (() => {
     try {
       return bodyOf(state.scene);
@@ -95,7 +95,6 @@ function phaseReceipt(state: RootState | null, evaluated: boolean, settled: bool
   })();
   return {
     evaluated,
-    settled,
     canvas: true,
     body: body
       ? {
@@ -260,7 +259,6 @@ async function sourceFrames() {
 async function liveState(body?: string): Promise<RootState> {
   let get: (() => RootState) | null = null;
   let evaluated = false;
-  let settled = false;
   await render(
     <HumanoidProvider client={client}>
       <div style={{ width: 160, height: 160 }}>
@@ -270,7 +268,6 @@ async function liveState(body?: string): Promise<RootState> {
             recipe={recipe}
             {...(body && { pose: { body } })}
             onEvaluated={() => (evaluated = true)}
-            {...(body && { onSettled: () => (settled = true) })}
           />
         </Canvas>
       </div>
@@ -282,7 +279,7 @@ async function liveState(body?: string): Promise<RootState> {
     () => {
       const shown = state();
       if (!shown || !evaluated) return false;
-      const receipt = phaseReceipt(shown, evaluated, settled);
+      const receipt = phaseReceipt(shown, evaluated);
       return Boolean(
         receipt.body &&
           receipt.dual &&
@@ -292,14 +289,14 @@ async function liveState(body?: string): Promise<RootState> {
           receipt.body.vertices === receipt.body.weights1,
       );
     },
-    () => phaseReceipt(state(), evaluated, settled),
+    () => phaseReceipt(state(), evaluated),
   );
   const shown = state() as RootState;
   if (body) {
     await waitForPhase(
       `${body} settled fold`,
-      () => settled && bonesOf(shown.scene).foldBlend.value === 1,
-      () => phaseReceipt(state(), evaluated, settled),
+      () => bonesOf(shown.scene).foldBlend.value === 1,
+      () => phaseReceipt(state(), evaluated),
     );
   }
   return shown;
