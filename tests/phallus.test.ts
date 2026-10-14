@@ -5,10 +5,10 @@ import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { skinOf } from "../scripts/lib/detail/contact.ts";
 import type { Vec3 } from "../scripts/lib/detail/disc.ts";
 import { sweep } from "../scripts/lib/detail/form.ts";
+import { FLAT_SIZE } from "../scripts/lib/detail/keys.ts";
 import {
   DORSAL,
   dorsalLength,
-  FLAT_SIZE,
   GIRTH_RANGE,
   LENGTH_RANGE,
   PHALLUS_GIRTH,

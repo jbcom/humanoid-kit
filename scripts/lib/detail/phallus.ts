@@ -40,7 +40,7 @@ import {
   solveFactor,
   sweep,
 } from "./form.ts";
-import { type DetailTarget, shapeSum, sizeHat, targetCollector } from "./keys.ts";
+import { type DetailTarget, FLAT_SIZE, shapeSum, sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
 import type { SculptPart } from "./sculpt.ts";
 import { flatShape, projectPart } from "./transfer.ts";
@@ -103,16 +103,6 @@ export interface PhallusKey {
   length: number;
   circumference: number;
 }
-
-/**
- * The size at which the reservoir lies flat on the skin it covers (`flatShape`), the
- * shape the smallest key grows out of. From rest to here the rings spread from their
- * loop vertices across the skin, which shows nothing; from here to the smallest key the
- * organ rises from the middle of the disc and narrows as it rises. Grown out of rest
- * instead, a size under the smallest key was a cylinder as wide as the loop with a flat
- * end (#75).
- */
-export const FLAT_SIZE = 0.01;
 
 /**
  * The keys. The pooled mean (flaccid 9.16 cm long, 9.31 cm round; Veale 2015) is
