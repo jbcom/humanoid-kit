@@ -40,6 +40,7 @@ import {
   FOLD_TEXELS_UNIFORM,
   foldUniform,
   followDualSkinning,
+  SKINNING_PLACE_FUNCTIONS,
   setSkinAttributes,
 } from "../../src/render/dualSkinning.ts";
 import {
@@ -189,6 +190,7 @@ describe("the vertex shader's dual quaternion blend", () => {
             uniform highp sampler2D tWeight1;
             uniform int uMode;
             layout( location = 0 ) out highp vec4 outColor;
+            ${SKINNING_PLACE_FUNCTIONS}
             ${DUAL_SKINNING_FUNCTIONS}
             void main() {
               ivec2 p = ivec2( gl_FragCoord.xy );
@@ -368,6 +370,7 @@ describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
         uniform highp sampler2D tAsked;
         uniform int tPart;
         layout( location = 0 ) out highp vec4 outColor;
+        ${SKINNING_PLACE_FUNCTIONS}
         ${DUAL_SKINNING_FUNCTIONS}
         ${FOLD_FUNCTIONS}
         void main() {
