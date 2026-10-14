@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { FacialHairLengthRecipe } from "../src/index.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { assertValidRecipe, RecipeValidationError } from "../src/recipe/validate.ts";
@@ -13,6 +14,8 @@ const lowestY = (positions: Float32Array) => {
 };
 
 describe("authored facial-beard length", () => {
+  const beardLength: FacialHairLengthRecipe = { "beard-viking": 5 };
+
   it("keeps the source mesh byte-for-byte placed at length one and lengthens only its free offsets", () => {
     const ordinary = createRecipe({ hair: { style: null }, facialHair: ["beard-viking"] });
     const one = createRecipe({
@@ -40,7 +43,7 @@ describe("authored facial-beard length", () => {
   });
 
   it("copies length settings and accepts only finite opt-in multipliers", () => {
-    const lengths = { "beard-viking": 5 };
+    const lengths = { ...beardLength };
     const recipe = createRecipe({
       hair: { style: null },
       facialHair: ["beard-viking"],
@@ -52,6 +55,20 @@ describe("authored facial-beard length", () => {
       const candidate = { ...recipe, facialHairLength: { "beard-viking": bad } };
       expect(() => assertValidRecipe(candidate), String(bad)).toThrow(RecipeValidationError);
     }
+  });
+
+  it("rejects a finite multiplier that overflows Float32 geometry and restores defaults exactly", () => {
+    const ordinary = createRecipe({ hair: { style: null }, facialHair: ["beard-viking"] });
+    const expected = model.evaluate(ordinary).facialHair[0]?.positions.slice();
+    const explosive = createRecipe({
+      hair: { style: null },
+      facialHair: ["beard-viking"],
+      facialHairLength: { "beard-viking": Number.MAX_VALUE },
+    });
+    expect(() => model.evaluate(explosive)).toThrow(/finite Float32 output/);
+    expect(Array.from(model.evaluate(ordinary).facialHair[0]?.positions ?? [])).toEqual(
+      Array.from(expected ?? []),
+    );
   });
 
   it("does not lengthen an unselected style or a moustache", () => {

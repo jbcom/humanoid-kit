@@ -82,6 +82,35 @@ export function evaluateBindingWithOffsetScale(
   const [sx, sy, sz] = bindingScale(asset, control);
   const { refVerts: r, weights: w, offsets: o } = asset;
   const n = asset.entry.vertexCount;
+  // This output often is the cached geometry a renderer currently publishes.
+  // Preflight every coordinate before writing so a rejected multiplier cannot
+  // leave a partly overwritten attachment full of Float32 infinities.
+  for (let v = 0; v < n; v++) {
+    const k = v * 3;
+    const a = (r[k] as number) * 3;
+    const b = (r[k + 1] as number) * 3;
+    const c = (r[k + 2] as number) * 3;
+    const wa = w[k] as number;
+    const wb = w[k + 1] as number;
+    const wc = w[k + 2] as number;
+    const x =
+      wa * (control[a] as number) +
+      wb * (control[b] as number) +
+      wc * (control[c] as number) +
+      (o[k] as number) * sx * offsetScale;
+    const y =
+      wa * (control[a + 1] as number) +
+      wb * (control[b + 1] as number) +
+      wc * (control[c + 1] as number) +
+      (o[k + 1] as number) * sy * offsetScale;
+    const z =
+      wa * (control[a + 2] as number) +
+      wb * (control[b + 2] as number) +
+      wc * (control[c + 2] as number) +
+      (o[k + 2] as number) * sz * offsetScale;
+    if (![x, y, z].every((value) => Number.isFinite(Math.fround(value))))
+      throw new RangeError(`MHCLO offset scale exceeds finite Float32 output at vertex ${v}`);
+  }
   for (let v = 0; v < n; v++) {
     const k = v * 3;
     const a = (r[k] as number) * 3;
