@@ -62,6 +62,53 @@ export function evaluateBinding(
   return out;
 }
 
+/**
+ * Writes an MHCLO attachment with its source-authored free offsets multiplied.
+ *
+ * Every vertex keeps its three weighted base-mesh anchors, its source topology
+ * and its per-axis body-shape scale. The multiplier changes only the original
+ * offset from that anchored surface. A factor of one delegates to
+ * `evaluateBinding`, preserving its exact default result.
+ */
+export function evaluateBindingWithOffsetScale(
+  asset: Bound,
+  control: Float32Array,
+  offsetScale: number,
+  out: Float32Array,
+): Float32Array {
+  if (!Number.isFinite(offsetScale) || offsetScale < 1)
+    throw new RangeError("MHCLO offset scale must be a finite number at least 1");
+  if (offsetScale === 1) return evaluateBinding(asset, control, out);
+  const [sx, sy, sz] = bindingScale(asset, control);
+  const { refVerts: r, weights: w, offsets: o } = asset;
+  const n = asset.entry.vertexCount;
+  for (let v = 0; v < n; v++) {
+    const k = v * 3;
+    const a = (r[k] as number) * 3;
+    const b = (r[k + 1] as number) * 3;
+    const c = (r[k + 2] as number) * 3;
+    const wa = w[k] as number;
+    const wb = w[k + 1] as number;
+    const wc = w[k + 2] as number;
+    out[k] =
+      wa * (control[a] as number) +
+      wb * (control[b] as number) +
+      wc * (control[c] as number) +
+      (o[k] as number) * sx * offsetScale;
+    out[k + 1] =
+      wa * (control[a + 1] as number) +
+      wb * (control[b + 1] as number) +
+      wc * (control[c + 1] as number) +
+      (o[k + 1] as number) * sy * offsetScale;
+    out[k + 2] =
+      wa * (control[a + 2] as number) +
+      wb * (control[b + 2] as number) +
+      wc * (control[c + 2] as number) +
+      (o[k + 2] as number) * sz * offsetScale;
+  }
+  return out;
+}
+
 /** Skin weights for an attachment: each vertex blends the weights of its three base vertices, the heaviest `SKIN_INFLUENCES` kept. */
 export function bindingSkin(
   asset: Bound,

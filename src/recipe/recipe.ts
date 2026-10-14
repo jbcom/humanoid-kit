@@ -104,6 +104,12 @@ export interface HairRecipe {
 /** Authored beard and moustache ids from the hair pack, worn together when selected. */
 export type FacialHairRecipe = readonly string[];
 
+/**
+ * Extra source-authored free-offset length for selected beard attachments.
+ * Each value is a multiplier: one keeps the source asset exactly as packed.
+ */
+export type FacialHairLengthRecipe = Readonly<Record<string, number>>;
+
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
@@ -119,6 +125,11 @@ export interface Recipe {
   hair?: HairRecipe;
   /** Authored facial hair (`humanoid-kit-hair`); absent means none. */
   facialHair?: FacialHairRecipe;
+  /**
+   * Optional source-offset multipliers for selected authored beard assets.
+   * Moustache and other non-beard entries do not accept a multiplier.
+   */
+  facialHairLength?: FacialHairLengthRecipe;
   /**
    * Body hair: legacy per-region multipliers on the physiological default, or
    * explicit coverage and physical follicle-density controls, plus a beard
@@ -189,6 +200,7 @@ export function createRecipe(
       lashes?: string;
     };
     facialHair?: FacialHairRecipe;
+    facialHairLength?: FacialHairLengthRecipe;
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
     outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -219,6 +231,7 @@ export function createRecipe(
       },
     }),
     ...(init.facialHair && { facialHair: [...init.facialHair] }),
+    ...(init.facialHairLength && { facialHairLength: { ...init.facialHairLength } }),
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),

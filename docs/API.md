@@ -159,6 +159,7 @@ createRecipe(init?: {
     lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
   };
   facialHair?: readonly string[]; // authored facial style ids; absent = none
+  facialHairLength?: Readonly<Record<string, number>>; // selected beard id -> source free-offset multiplier (>= 1)
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -182,6 +183,7 @@ interface Recipe {
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
+  facialHairLength?: Readonly<Record<string, number>>; // optional selected beard id -> source free-offset multiplier (>= 1)
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
@@ -561,6 +563,10 @@ and throws `RangeError` for anything else.
   `HairMaterial`, with the recipe's hair colour. A brow is lifted `DECAL_LIFT`
   (2 mm) off the skin along its normal, since the smooth body surface can
   swallow a decal bound to the coarse mesh at the brow ridge.
+  `recipe.facialHairLength` may opt a selected beard into a multiplier at least
+  one. It retains the source mesh, its face/jaw MHCLO anchors and its authored
+  free-offset vectors; one is byte-for-byte the packed placement. It rejects
+  unselected ids and moustaches.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts

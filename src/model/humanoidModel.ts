@@ -56,7 +56,12 @@ import { DEFAULT_MACROS, macroTargetWeights } from "../makehuman/macro.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
-import { type Bound, bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
+import {
+  type Bound,
+  bindingSkin,
+  evaluateBinding,
+  evaluateBindingWithOffsetScale,
+} from "../mhclo/bound.ts";
 import {
   type Contribution,
   evaluateMorph,
@@ -1833,6 +1838,16 @@ export class HumanoidModel {
       id,
       h: this.hairPart(id, "facial"),
     }));
+    const facialHairLength = recipe.facialHairLength ?? {};
+    for (const [id, factor] of Object.entries(facialHairLength)) {
+      if (!(recipe.facialHair?.includes(id) ?? false))
+        throw new RecipeError(`facialHairLength names ${id}, but it is not selected`);
+      const entry = this.hairEntry(id, "facial");
+      if (!entry.tags.includes("beard"))
+        throw new RecipeError(`facialHairLength names ${id}, but it is not a beard style`);
+      if (!Number.isFinite(factor) || factor < 1)
+        throw new RecipeError(`facialHairLength.${id} must be a finite multiplier at least 1`);
+    }
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
@@ -1900,7 +1915,13 @@ export class HumanoidModel {
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
     const facialHair = wornFacialHair.map((wornFacial) => {
-      const placed = evaluateBinding(wornFacial.h.asset, control, wornFacial.h.control);
+      const factor = facialHairLength[wornFacial.id] ?? 1;
+      const placed = evaluateBindingWithOffsetScale(
+        wornFacial.h.asset,
+        control,
+        factor,
+        wornFacial.h.control,
+      );
       return { id: wornFacial.id, ...this.evaluatePart(wornFacial.h.part, placed) };
     });
     const curvature = meanCurvature(
