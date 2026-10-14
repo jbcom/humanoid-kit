@@ -79,7 +79,7 @@ order.
 
 ## Making a change
 
-1. Branch off `main`.
+1. Branch off `integration`, and target pull requests there.
 2. Write the test first. A bug fix should come with a test that fails without it.
 3. Run `pnpm verify`. A change is not ready while any part of that is red.
 4. Commit with [Conventional Commits](https://www.conventionalcommits.org):
@@ -138,6 +138,10 @@ It refuses any garment file that does not prove CC0 from its own header.
 
 ## Releases
 
-Releases are automated. Merging a conventional commit to `main` opens a release
-pull request; merging that publishes to npm with provenance. Do not hand-edit
-versions or the changelog.
+`integration` is the shared development branch. A release milestone promotes it
+to `main` with a normal merge commit only after CI is green, the visual defect
+register has been read and accepted, and the #22 licence audit has passed.
+CI runs on both branches. Pages, Release Please and CD run from `main`; a
+release pull request there publishes the seven public workspaces with npm
+provenance. Issue #69 remains the public-release gate. Do not hand-edit versions
+or the changelog, enable release automation or publish packages manually.

@@ -122,6 +122,13 @@ a gap here with the ref and date you found it at.
 
 ## Commits and releases
 
+- `integration` is the shared development branch: lanes and pull requests target it.
+  A release milestone advances `main` with a normal merge commit from `integration`
+  only after CI, the root-read visual defect register and the #22 licence audit pass.
+  CI runs on both branches. Pages, Release Please and CD run from `main`, which
+  publishes the seven public workspaces with npm provenance; issue #69 remains the
+  public-release gate. Never enable release automation, publish manually or move a
+  release outside that milestone path.
 - `scripts/apply-branch-ruleset.mjs` is the canonical OSS ruleset installer. Run
   it only with explicit authorization.
 - Conventional Commits only. Release Please owns `CHANGELOG.md` and versions;

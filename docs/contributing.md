@@ -20,11 +20,16 @@ and renders the Sourcey site. `pnpm test:e2e` runs the Playwright suite against
 the playground; install the browser once with
 `pnpm exec playwright install chromium`.
 
-Branch from `main`, make a focused Conventional Commit, open a pull request, and
-keep the branch current by merging `main` into it when necessary. The protected
-path uses automated checks rather than a routine human approval; merge commits
-preserve the constituent history. Do not hand-edit versions or `CHANGELOG.md`:
-Release Please owns them.
+Branch from `integration`, target the pull request there, and keep it current by
+merging `integration` when necessary. A release milestone promotes `integration`
+to `main` with a normal merge commit after CI, the visual defect register and
+the #22 licence audit pass. CI runs on both branches; Pages and Release Please
+run from `main`, and a release there publishes the seven public workspaces with
+npm provenance. Issue #69 remains the public-release gate. The protected path
+uses automated checks rather than a routine human approval; merge commits preserve
+the constituent history. Do not hand-edit versions or `CHANGELOG.md`, enable
+release automation or publish packages manually: Release Please owns versions and
+the changelog.
 
 Read the repository [contribution guide](https://github.com/jbcom/humanoid-kit/blob/main/CONTRIBUTING.md)
 and [agent instructions](https://github.com/jbcom/humanoid-kit/blob/main/AGENTS.md)
