@@ -111,6 +111,8 @@ export function recipeProblems(recipe: unknown): string[] {
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
   if ("facialHair" in r && r.facialHair !== undefined) facialHairProblems(r.facialHair, p);
+  if (r.facialHairColour !== undefined)
+    facialHairColourProblems(r.facialHairColour, r.facialHair, p);
   if ("facialHairLength" in r && r.facialHairLength !== undefined)
     facialHairLengthProblems(r.facialHairLength, p);
   if ("facialHairGrowth" in r && r.facialHairGrowth !== undefined)
@@ -153,6 +155,19 @@ function facialHairProblems(facialHair: unknown, p: string[]): void {
     else if (seen.has(id)) p.push(`facialHair names ${id} twice`);
     else seen.add(id);
   });
+}
+
+function facialHairColourProblems(colours: unknown, selected: unknown, p: string[]): void {
+  if (typeof colours !== "object" || colours === null || Array.isArray(colours)) {
+    p.push("facialHairColour must be an object of selected facial ids to colours");
+    return;
+  }
+  for (const [id, colour] of Object.entries(colours)) {
+    if (!Array.isArray(selected) || !selected.includes(id))
+      p.push(`facialHairColour names ${id}, but it is not selected`);
+    if (id === "") p.push("facialHairColour names an empty style id");
+    hairColourProblems(colour, `facialHairColour.${id}`, p);
+  }
 }
 
 function facialHairLengthProblems(lengths: unknown, p: string[]): void {
@@ -226,16 +241,20 @@ function hairProblems(hair: unknown, p: string[]): void {
   for (const k of ["brows", "lashes"] as const)
     if (k in h && !(typeof h[k] === "string" && h[k] !== ""))
       p.push(`hair.${k} must be a non-empty string when given`);
-  if (typeof h.colour !== "object" || h.colour === null) {
-    p.push("hair.colour missing");
+  hairColourProblems(h.colour, "hair.colour", p);
+}
+
+function hairColourProblems(colour: unknown, at: string, p: string[]): void {
+  if (typeof colour !== "object" || colour === null || Array.isArray(colour)) {
+    p.push(`${at} missing`);
     return;
   }
-  const c = h.colour as Record<string, unknown>;
+  const c = colour as Record<string, unknown>;
   for (const k of HAIR_PIGMENT_KEYS)
-    if (!unit(c[k])) p.push(`hair.colour.${k} must be a number in [0, 1]`);
+    if (!unit(c[k])) p.push(`${at}.${k} must be a number in [0, 1]`);
   const o = c.override;
   if (o !== null && !(Array.isArray(o) && o.length === 3 && o.every(unit)))
-    p.push("hair.colour.override must be null or three numbers in [0, 1]");
+    p.push(`${at}.override must be null or three numbers in [0, 1]`);
 }
 
 const BODY_HAIR_KEYS = new Set(["density", "coverage", "follicleDensity", "beard"]);

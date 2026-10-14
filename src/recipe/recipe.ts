@@ -105,6 +105,9 @@ export interface HairRecipe {
 /** Authored beard and moustache ids from the hair pack, worn together when selected. */
 export type FacialHairRecipe = readonly string[];
 
+/** Independent uniform colours for selected authored beard and moustache ids. */
+export type FacialHairColourRecipe = Readonly<Record<string, HairColour>>;
+
 /**
  * Extra source-authored free-offset length for selected beard attachments.
  * Each value is a multiplier: one keeps the source asset exactly as packed.
@@ -134,6 +137,8 @@ export interface Recipe {
   hair?: HairRecipe;
   /** Authored facial hair (`humanoid-kit-hair`); absent means none. */
   facialHair?: FacialHairRecipe;
+  /** Per selected facial id; absent entries wear the scalp colour, including its ageing. */
+  facialHairColour?: FacialHairColourRecipe;
   /**
    * Optional source-offset multipliers for selected authored beard assets.
    * Moustache and other non-beard entries do not accept a multiplier.
@@ -211,6 +216,7 @@ export function createRecipe(
       lashes?: string;
     };
     facialHair?: FacialHairRecipe;
+    facialHairColour?: FacialHairColourRecipe;
     facialHairLength?: FacialHairLengthRecipe;
     facialHairGrowth?: FacialHairGrowthRecipe;
     bodyHair?: BodyHairRecipe;
@@ -243,6 +249,7 @@ export function createRecipe(
       },
     }),
     ...(init.facialHair && { facialHair: [...init.facialHair] }),
+    ...(init.facialHairColour && { facialHairColour: structuredClone(init.facialHairColour) }),
     ...(init.facialHairLength && { facialHairLength: { ...init.facialHairLength } }),
     ...(init.facialHairGrowth && { facialHairGrowth: { ...init.facialHairGrowth } }),
     ...(init.bodyHair && {

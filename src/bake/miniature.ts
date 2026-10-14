@@ -15,9 +15,10 @@ import { type AnimationClip, sampleClip } from "../animation/clip.ts";
 import { BODY_REGIONS, type BodyRegion } from "../makehuman/regions.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { boundProxy } from "../model/proxy.ts";
+import { facialHairColour } from "../recipe/facialHairColour.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { type BoneRotations, IDENTITY_POSE, rigData } from "../rig/pose.ts";
-import { agedHairColour, DEFAULT_HAIR_COLOUR, hairAlbedo, hairTint } from "../surface/hairTone.ts";
+import { hairAlbedo, hairTint } from "../surface/hairTone.ts";
 import { linearToSrgb, skinAlbedo, srgbToLinear } from "../surface/skinTone.ts";
 import { decimate } from "./decimate.ts";
 import { type FigureBody, type FigurePartRest, figureAtRest, poseFigure } from "./figure.ts";
@@ -298,11 +299,6 @@ export function bakeMiniature(
   const F = rotations.length;
   const positions = new Float32Array(F * total * 3);
   const normals = new Float32Array(F * total * 3);
-  const wornColour = agedHairColour(
-    recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
-    recipe.macros.age,
-    "scalp",
-  );
   const facialCards = facialParts.map(({ part, index }) => {
     if (!part.uvs || !part.material)
       throw new MiniatureError(`facial hair ${part.id} has no source UV/material data`);
@@ -319,7 +315,7 @@ export function bakeMiniature(
       texture.data.length !== texture.width * texture.height * 4
     )
       throw new MiniatureError(`facial hair ${part.id} has an invalid decoded RGBA source texture`);
-    const tint = hairTint(wornColour);
+    const tint = hairTint(facialHairColour(recipe, part.id));
     return {
       sourceIndex: index,
       card: {

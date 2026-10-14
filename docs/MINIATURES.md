@@ -189,6 +189,10 @@ draw a different body from the full renderer.
    `facialHair: "alpha-cards"`. The caller supplies each decoded RGBA source
    image through `texture`; the resulting `alphaCards` carry source topology,
    UV seams, posed frames, tint and embedded RGBA pixels without a runtime URL.
+   Each card's tint resolves its selected `recipe.facialHairColour` entry with
+   the existing scalp ageing and pigment model; absent entries retain the scalp
+   colour exactly. This is uniform colour, preserving source alpha and holes.
+   An independent facial colour change requires baking another archetype.
    Decoded rows run top to bottom (`sharp` or Canvas `getImageData`). The
    source map uses the live image convention: flipped Y upload, linear filtering
    and generated mipmaps. `textureBytes` includes every retained mip level.

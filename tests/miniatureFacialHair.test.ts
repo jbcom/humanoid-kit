@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -11,23 +12,33 @@ import {
 import { bakeMiniature, type DecodedTexture, MiniatureError } from "../src/bake/miniature.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { agedHairColour, DEFAULT_HAIR_COLOUR, hairTint } from "../src/surface/hairTone.ts";
+import {
+  agedHairColour,
+  DEFAULT_HAIR_COLOUR,
+  HAIR_COLOURS,
+  type HairColour,
+  hairTint,
+} from "../src/surface/hairTone.ts";
 import { hairDir, loadHairFixtureAssets } from "./hairFixtures.ts";
 
 const ID = "beard-viking";
 const model = new HumanoidModel(loadHairFixtureAssets(), { subdivision: 0 });
 const recipe = createRecipe({ hair: { style: null }, facialHair: [ID] });
 let source: DecodedTexture;
+const sources = new Map<string, DecodedTexture>();
 
 beforeAll(async () => {
-  const decoded = await sharp(path.join(hairDir, `${ID}.webp`))
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  source = { width: decoded.info.width, height: decoded.info.height, data: decoded.data };
+  for (const id of [ID, "moustache-viking"]) {
+    const decoded = await sharp(path.join(hairDir, `${id}.webp`))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    sources.set(id, { width: decoded.info.width, height: decoded.info.height, data: decoded.data });
+  }
+  source = sources.get(ID) as DecodedTexture;
 });
 
-const sourceTexture = () => source;
+const sourceTexture = (part: { id: string }) => sources.get(part.id) ?? null;
 
 describe("facial source cards in miniature bakes", { timeout: 120_000 }, () => {
   it("keeps figure cards opt-in and preserves their source topology and UV seams", () => {
@@ -74,6 +85,65 @@ describe("facial source cards in miniature bakes", { timeout: 120_000 }, () => {
       hairTint(
         agedHairColour(recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR, recipe.macros.age, "scalp"),
       ),
+    );
+  });
+
+  it("changes only the selected facial tint and restores exact legacy miniature bytes", () => {
+    const nativeRecipe = createRecipe({
+      hair: { style: null, colour: HAIR_COLOURS.black as HairColour },
+      facialHair: [ID, "moustache-viking"],
+    });
+    const options = {
+      body: "surface" as const,
+      lods: [400],
+      facialHair: "alpha-cards" as const,
+      texture: sourceTexture,
+    };
+    const native = bakeMiniature(model, nativeRecipe, options);
+    console.info(
+      "default-facial-colour-miniature-sha256",
+      createHash("sha256").update(encodeMiniature(native)).digest("hex"),
+    );
+    const independentRecipe = createRecipe({
+      ...nativeRecipe,
+      facialHairColour: {
+        [ID]: HAIR_COLOURS.white as HairColour,
+        "moustache-viking": HAIR_COLOURS.red as HairColour,
+      },
+    });
+    const independent = bakeMiniature(model, independentRecipe, options);
+    for (const [i, card] of (independent.alphaCards ?? []).entries()) {
+      const nativeCard = native.alphaCards?.[i];
+      expect({ ...card, tint: nativeCard?.tint }).toEqual(nativeCard);
+      expect(card.tint).toEqual(
+        hairTint(
+          agedHairColour(
+            independentRecipe.facialHairColour?.[card.id] as HairColour,
+            nativeRecipe.macros.age,
+            "scalp",
+          ),
+        ),
+      );
+      expect(card.tint).not.toEqual(nativeCard?.tint);
+    }
+    expect({ ...independent, alphaCards: native.alphaCards }).toEqual(native);
+    const changedRecipe = createRecipe({
+      ...independentRecipe,
+      facialHairColour: {
+        ...independentRecipe.facialHairColour,
+        [ID]: HAIR_COLOURS.black as HairColour,
+      },
+    });
+    const changed = bakeMiniature(model, changedRecipe, options);
+    expect(changed.alphaCards?.[1]).toEqual(independent.alphaCards?.[1]);
+    const compatible = bakeMiniature(
+      model,
+      createRecipe({ ...nativeRecipe, facialHairColour: {} }),
+      options,
+    );
+    expect(encodeMiniature(compatible)).toEqual(encodeMiniature(native));
+    expect(decodeMiniature(encodeMiniature(independent)).alphaCards).toEqual(
+      independent.alphaCards,
     );
   });
 

@@ -64,8 +64,10 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 - **Body hair, eyebrows, eyelashes and facial hair.** Body hair follows the
   figure's age and recipe, and the hair pack carries eyebrows, eyelashes and
   authored beard and moustache assets beside the scalp styles. A recipe selects
-  zero or more facial assets through `recipe.facialHair`; they share the hair
-  colour and can be removed independently. A selected source beard may opt
+  zero or more facial assets through `recipe.facialHair`. Optional
+  `recipe.facialHairColour` gives each selected beard or moustache an independent
+  uniform colour; absent entries retain the scalp colour and ageing. The same
+  colours are preserved in an opt-in miniature alpha-card bake. A selected source beard may opt
   into `facialHairLength` or `facialHairGrowth`; the latter hides the
   attachment at zero, reproduces the packed source at its midpoint, and grows
   from measured source-card roots to an inspectable rest-floor bound. The
