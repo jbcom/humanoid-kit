@@ -741,8 +741,10 @@ Pure, with no rendering dependency; they run in Node, a worker or a page
   (per vertex, an index into `BODY_REGIONS` by its dominant bone, so a one-piece
   suit can be told coat from trousers). Every part is lifted so the lowest point
   stands on y = 0 (`groundOffset`). `options.body` is `"surface"` (default) or
-  a proxy id. `figureAtRest` evaluates once and `poseFigure(rest, rotations)`
-  poses that again without evaluating, for many frames.
+  a proxy id. `options.facialHair` is opt-in and adds each selected authored
+  facial attachment as its own source-topology part. `figureAtRest` evaluates
+  once and `poseFigure(rest, rotations)` poses that again without evaluating,
+  for many frames.
 - `bakeMiniature(model, recipe, options?): MiniatureBake`: the dressed figure
   decimated to `options.lods` triangle counts (default `MINIATURE_LODS`, 1,500
   and 400) over one shared vertex set, with its frames: one static casting
@@ -753,11 +755,19 @@ Pure, with no rendering dependency; they run in Node, a worker or a page
   `options.texture`, which returns the decoded image) and each vertex has a
   `TINT_CHANNELS` channel (`skin`, `upper`, `lower`, `accessory`) for
   per-instance tints. It throws `MiniatureError` for a model built with the
-  adult anatomy pack: miniatures never carry it.
+  adult anatomy pack: miniatures never carry it. With
+  `options.facialHair: "alpha-cards"`, every selected facial attachment is an
+  additional lossless `alphaCards` payload: exact source topology, UVs, posed
+  frames, tint and an embedded decoded RGBA texture returned by
+  `options.texture`. The opaque miniature remains unchanged; callers must
+  supply a decoded texture for each selected attachment, and no source texture
+  URL is retained in the bake.
 - `encodeMiniature(bake): Uint8Array` and `decodeMiniature(bytes)`: the bake as
-  one deterministic binary (half-float positions, octahedral normals),
-  `MiniatureFormatError` for bytes that are not one; `miniatureTransferables`
-  lists its buffers for `postMessage`.
+  one deterministic binary (half-float opaque positions, octahedral opaque
+  normals and, when selected, lossless alpha-card sections). Format v2 adds
+  those sections while the decoder continues to read opaque v1 bakes.
+  `MiniatureFormatError` rejects invalid bytes; `miniatureTransferables` lists
+  every opaque and alpha-card buffer for `postMessage`.
 - `decimate({ frames, index, targets, importance?, boundaryWeight? })`: the
   multi-pose half-edge quadric decimation the bake uses, on any mesh: every
   level is a subset of the input's vertices, and each level's `owner` maps

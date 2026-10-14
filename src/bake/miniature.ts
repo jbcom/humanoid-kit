@@ -17,7 +17,7 @@ import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { boundProxy } from "../model/proxy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { type BoneRotations, IDENTITY_POSE, rigData } from "../rig/pose.ts";
-import { hairAlbedo } from "../surface/hairTone.ts";
+import { agedHairColour, DEFAULT_HAIR_COLOUR, hairAlbedo, hairTint } from "../surface/hairTone.ts";
 import { linearToSrgb, skinAlbedo, srgbToLinear } from "../surface/skinTone.ts";
 import { decimate } from "./decimate.ts";
 import { type FigureBody, type FigurePartRest, figureAtRest, poseFigure } from "./figure.ts";
@@ -60,6 +60,15 @@ export interface MiniatureOptions {
    * bake, which is synchronous.
    */
   texture?: (part: Pick<FigurePartRest, "id" | "material" | "textureUrl">) => DecodedTexture | null;
+  /**
+   * Preserve every selected `recipe.facialHair` source card as a separate,
+   * lossless alpha-card payload. The caller must provide the decoded RGBA
+   * source texture for every selected facial part through `texture`.
+   *
+   * Omitted by default: the opaque miniature mesh remains unchanged. This is
+   * not an alpha-to-solid conversion for distant painted miniatures.
+   */
+  facialHair?: "alpha-cards";
 }
 
 /** The issue's budget: about 1,500 triangles near and 400 far. */
@@ -109,6 +118,29 @@ export interface MiniatureBake {
   /** Bounds over every frame. */
   min: [number, number, number];
   max: [number, number, number];
+  /**
+   * Optional selected facial attachments, retained outside the decimated opaque
+   * mesh with their exact source topology, UV seams and RGBA strand map.
+   */
+  alphaCards?: MiniatureAlphaCard[];
+}
+
+/** A selected authored facial source card carried losslessly beside an opaque miniature bake. */
+export interface MiniatureAlphaCard {
+  /** The hair-pack style id. */
+  id: string;
+  vertexCount: number;
+  /** Exact source triangle topology, one index per corner. */
+  index: Uint32Array;
+  /** Exact source UVs: no welding crosses a UV seam. */
+  uvs: Float32Array;
+  /** One skinned, ground-lifted position and normal for every bake frame. */
+  positions: Float32Array;
+  normals: Float32Array;
+  /** The source strand texture embedded in the bake; no runtime URL is needed. */
+  texture: { width: number; height: number; rgba: Uint8Array };
+  /** The selected figure hair colour, as the live strand material's linear tint. */
+  tint: [number, number, number];
 }
 
 /** How much more a region's vertices cost to remove: the face and hands read at small size. */
@@ -130,6 +162,7 @@ const BORDER_WEIGHT: Record<FigurePartRest["role"], number> = {
   body: 0.25,
   garment: 4,
   attachment: 1,
+  facialHair: 1,
 };
 
 /** One part welded: the part vertices kept (shown, one per rest position) and each one's welded index. */
@@ -225,10 +258,21 @@ export function bakeMiniature(
   const rig = rigData(model.assets);
   const { rotations, clips } = bakeFrames(options, rig.bones.length);
   // The eyes fill the body's sockets; teeth and tongue are inside a closed mouth.
-  const rest = figureAtRest(model, recipe, { body, attachments: ["eyes"] });
+  const preserveFacialHair = options.facialHair === "alpha-cards";
+  const rest = figureAtRest(model, recipe, {
+    body,
+    attachments: ["eyes"],
+    facialHair: preserveFacialHair,
+  });
+  const opaqueParts = rest.parts.filter((part) => part.role !== "facialHair");
+  const facialParts = rest.parts
+    .map((part, index) => ({ part, index }))
+    .filter(({ part }) => part.role === "facialHair");
 
-  // Weld each part and lay the parts end to end.
-  const welded = rest.parts.map(weldPart);
+  // Weld each opaque part and lay the parts end to end. Facial source cards
+  // stay separate: their seams and texture coordinates must never be welded
+  // into the opaque miniature surface.
+  const welded = opaqueParts.map(weldPart);
   const offsets: number[] = [];
   let total = 0;
   for (const w of welded) {
@@ -236,7 +280,7 @@ export function bakeMiniature(
     total += w.keep.length;
   }
   const index: number[] = [];
-  rest.parts.forEach((p, i) => {
+  opaqueParts.forEach((p, i) => {
     const { local } = welded[i] as ReturnType<typeof weldPart>;
     const o = offsets[i] as number;
     for (let t = 0; t < p.index.length; t += 3) {
@@ -252,9 +296,52 @@ export function bakeMiniature(
   const F = rotations.length;
   const positions = new Float32Array(F * total * 3);
   const normals = new Float32Array(F * total * 3);
+  const wornColour = agedHairColour(
+    recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
+    recipe.macros.age,
+    "scalp",
+  );
+  const facialCards = facialParts.map(({ part, index }) => {
+    if (!part.uvs || !part.material)
+      throw new MiniatureError(`facial hair ${part.id} has no source UV/material data`);
+    const texture = options.texture?.(part);
+    if (!texture)
+      throw new MiniatureError(
+        `facial hair ${part.id} needs its decoded RGBA source texture for alpha-card preservation`,
+      );
+    if (
+      !Number.isInteger(texture.width) ||
+      !Number.isInteger(texture.height) ||
+      texture.width < 1 ||
+      texture.height < 1 ||
+      texture.data.length !== texture.width * texture.height * 4
+    )
+      throw new MiniatureError(`facial hair ${part.id} has an invalid decoded RGBA source texture`);
+    const tint = hairTint(wornColour);
+    return {
+      sourceIndex: index,
+      card: {
+        id: part.id,
+        vertexCount: part.rest.length / 3,
+        index: Uint32Array.from(part.index),
+        uvs: Float32Array.from(part.uvs),
+        positions: new Float32Array(F * part.rest.length),
+        normals: new Float32Array(F * part.restNormals.length),
+        texture: {
+          width: texture.width,
+          height: texture.height,
+          rgba: Uint8Array.from(texture.data),
+        },
+        tint: [tint[0], tint[1], tint[2]],
+      } satisfies MiniatureAlphaCard,
+    };
+  });
+  const alphaCards = facialCards.map(({ card }) => card);
   rotations.forEach((r, f) => {
     const posed = poseFigure(rest, r);
-    posed.parts.forEach((p, i) => {
+    opaqueParts.forEach((_, i) => {
+      const sourceIndex = rest.parts.indexOf(opaqueParts[i] as FigurePartRest);
+      const p = posed.parts[sourceIndex] as (typeof posed.parts)[number];
       const { keep } = welded[i] as ReturnType<typeof weldPart>;
       const o = ((offsets[i] as number) + f * total) * 3;
       keep.forEach((v, k) => {
@@ -263,6 +350,12 @@ export function bakeMiniature(
           normals[o + k * 3 + c] = p.normals[v * 3 + c] as number;
         }
       });
+    });
+    facialCards.forEach(({ card, sourceIndex }) => {
+      const p = posed.parts[sourceIndex] as (typeof posed.parts)[number];
+      const o = f * card.vertexCount * 3;
+      card.positions.set(p.positions, o);
+      card.normals.set(p.normals, o);
     });
   });
 
@@ -274,7 +367,7 @@ export function bakeMiniature(
   const skin = skinAlbedo(recipe.skin);
   const scalp = scalpDensity(model, recipe);
   const bodyBase = bodyBaseWeights(model, rest.body);
-  rest.parts.forEach((p, i) => {
+  opaqueParts.forEach((p, i) => {
     const { keep } = welded[i] as ReturnType<typeof weldPart>;
     const o = offsets[i] as number;
     const accessory = ACCESSORY_KINDS.has(p.kind);
@@ -367,6 +460,13 @@ export function bakeMiniature(
         max[c] = Math.max(max[c] as number, p);
       }
     }
+  for (const card of alphaCards)
+    for (let i = 0; i < card.positions.length; i += 3)
+      for (let c = 0; c < 3; c++) {
+        const p = card.positions[i + c] as number;
+        min[c] = Math.min(min[c] as number, p);
+        max[c] = Math.max(max[c] as number, p);
+      }
   return {
     body: rest.body,
     vertexCount: N,
@@ -382,6 +482,7 @@ export function bakeMiniature(
     clips,
     min,
     max,
+    ...(alphaCards.length && { alphaCards }),
   };
 }
 
