@@ -142,7 +142,13 @@ export function Interactable({
   if (token.current === null) token.current = {};
   const owner = token.current;
   useEffect(() => {
-    const fail = (error: Error) => onRegistrationError?.(error);
+    const fail = (error: Error) => {
+      if (onRegistrationError) {
+        onRegistrationError(error);
+        return;
+      }
+      throw error;
+    };
     if (registry.getObject(object.id)) {
       fail(new Error(`interactable ${object.id} is already registered`));
       return;

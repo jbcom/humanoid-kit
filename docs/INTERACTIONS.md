@@ -875,8 +875,9 @@ function Events() {
 
 `<Interactable>` registers its `ObjectPresence` plus offers whose `by` is that
 object's id. Its id must be unique in the registry: an existing object is
-rejected rather than replaced and reported through `onRegistrationError`. It
-removes both when it changes or unmounts. `useInteractions()`
+rejected rather than replaced and reported through `onRegistrationError`; without
+a handler, the registration error throws. It removes both when it changes or
+unmounts. `useInteractions()`
 returns the runtime; `useInteraction(id)` is a live `{ current }` accessor for
 frame callbacks and event handlers, not React state; and
 `useInteractionEvents(participant, listener)` receives discrete lifecycle

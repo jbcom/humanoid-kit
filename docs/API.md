@@ -1363,7 +1363,7 @@ publishes its `ObjectPresence` and its own offers while mounted, then removes
 both on replacement or unmount. Its object id must be unique in that registry:
 an existing object is rejected and never replaced. Every supplied offer's `by`
 must equal the object id. `onRegistrationError` observes a duplicate id or a
-failed offer registration.
+failed offer registration; without that handler, registration errors throw.
 
 - `useInteractions()` returns that existing runtime.
 - `useInteraction(id)` returns a live `{ current }` accessor for a running
