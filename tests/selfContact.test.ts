@@ -17,6 +17,7 @@ import { PENETRATION_LIMIT, vertexParts } from "../src/foundation/invariants.ts"
 import { landmarkAnchors, landmarks } from "../src/foundation/landmarks.ts";
 import { surfacePoser } from "../src/foundation/posed.ts";
 import { audienceOf, type InteractionDefinition } from "../src/interaction/definition.ts";
+import { createInteractions } from "../src/interaction/runtime.ts";
 import {
   HAND_SHAPES,
   handShapeRotations,
@@ -27,9 +28,12 @@ import {
 } from "../src/interaction/siteContact.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { skinOfEvaluation } from "../src/model/reservoirSkin.ts";
+import { createPresenceRegistry } from "../src/presence/presence.ts";
+import { AgePolicyError, isAdult } from "../src/recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
 import { bodyPoseRotations, restBones, rigData } from "../src/rig/pose.ts";
 import { adultPackData, bodyPackData } from "./fixtures.ts";
+import { figure } from "./interactionHarness.ts";
 
 const model = new HumanoidModel(parseHumanoidAssets(bodyPackData(), adultPackData()), {
   subdivision: 1,
@@ -53,6 +57,7 @@ const CONTACTS = [
   ["finger-pad-2.R", "ear-lobe.R"],
   ["finger-pad-2.L", "ear-lobe.L"],
   ["finger-pad-2.R", "sternum-notch"],
+  ["finger-pad-2.R", "nipple.L"],
   ["finger-pad-2.R", "navel"],
 ] as const;
 
@@ -76,6 +81,7 @@ function figureOf(recipe: Recipe): SiteContactFigure {
   if (!topology) throw new Error("an adult evaluation without the adult surface");
   const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
   return {
+    adult: isAdult(recipe),
     generation: ev,
     restBones: restBones(model.assets, Float32Array.from(ev.control)),
     rest: Float32Array.from(ev.positions),
@@ -235,6 +241,50 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
   });
 });
 
+describe("what a site contact accepts", () => {
+  /** A weight-0 solve: every check runs, no arm is solved. */
+  const probe = (subject: SiteContactFigure, effector: string, site: string) => () =>
+    solveSiteContact({
+      figure: subject,
+      source: standing,
+      effector,
+      site,
+      weight: 0,
+      out: new Float32Array(BONES * 4),
+    });
+
+  it("touches with a finger pad, the palm or the hand, and nothing else", () => {
+    const woman = figureOf(BODIES["slim woman"] as Recipe);
+    for (const effector of ["finger-pad-1.L", "finger-pad-5.R", "palm.L", "hand.R"])
+      expect(probe(woman, effector, "nose-tip"), effector).not.toThrow();
+    for (const effector of ["nipple.L", "ear-lobe.R", "wrist.L", "finger-pad-6.R", "hand"])
+      expect(probe(woman, effector, "nose-tip"), effector).toThrow(/not a point of one hand/);
+  });
+
+  it("refuses a minor a site the registry does not say is all-ages", () => {
+    const child = figureOf(BODIES.child as Recipe);
+    expect(probe(child, "finger-pad-2.R", "pubic-point")).toThrow(AgePolicyError);
+    // The same site on an adult is solved: the refusal is the age's, not the site's.
+    expect(probe(figureOf(BODIES.elder as Recipe), "finger-pad-2.R", "pubic-point")).not.toThrow();
+  });
+
+  it("lets a minor touch every all-ages site, the nipples among them", () => {
+    const child = figureOf(BODIES.child as Recipe);
+    for (const site of SELF_CONTACT_SITES)
+      expect(probe(child, "finger-pad-2.R", site), site).not.toThrow();
+    // A finger to the lips, and one hand on the other: everyday at any age.
+    for (const site of ["upper-lip", "lower-lip", "palm.L"])
+      expect(probe(child, "finger-pad-2.R", site), site).not.toThrow();
+  });
+
+  it("treats a figure that does not say it is adult as a minor", () => {
+    const { adult: _adult, ...unsaid } = figureOf(BODIES.elder as Recipe);
+    expect(probe(unsaid as SiteContactFigure, "finger-pad-2.R", "pubic-point")).toThrow(
+      AgePolicyError,
+    );
+  });
+});
+
 describe("hand shapes", () => {
   it("moves only the fingers of its own hand", () => {
     for (const shape of Object.keys(HAND_SHAPES) as (keyof typeof HAND_SHAPES)[])
@@ -306,7 +356,60 @@ describe("self-contact and the age policy", () => {
     expect(audienceOf(fidget("introitus"))).toBe("adult");
   });
 
-  it("names no nipple among the all-ages sites", () => {
-    expect(SELF_CONTACT_SITES.some((s) => s.startsWith("nipple"))).toBe(false);
+  it("names the nipples among the all-ages sites", () => {
+    for (const site of ["nipple.L", "nipple.R"])
+      expect(SELF_CONTACT_SITES as readonly string[], site).toContain(site);
+  });
+
+  /** A runtime with a child (`kid`) and an adult (`mum`) published. */
+  const session = () => {
+    const presence = createPresenceRegistry();
+    const runtime = createInteractions(presence, { seed: 1, clipLength: () => 1 });
+    presence.set(figure("kid", false));
+    presence.set(figure("mum", true, 1));
+    return { presence, runtime };
+  };
+
+  it("refuses a child an adult pack site's fidget at proposal", () => {
+    const { runtime } = session();
+    runtime.define([fidget("introitus")]);
+    expect(() => runtime.propose("self.introitus", { self: "kid" })).toThrow(AgePolicyError);
+  });
+
+  it("runs a child's own nipple fidget: the site is not the adult line", () => {
+    const { runtime } = session();
+    runtime.define([fidget("nipple.L")]);
+    expect(audienceOf(fidget("nipple.L"))).toBe("all");
+    expect(runtime.propose("self.nipple.L", { self: "kid" }).audience).toBe("all");
+  });
+
+  it("keeps nursing for all audiences: an infant's mouth at its mother's nipple", () => {
+    const nursing: InteractionDefinition = {
+      id: "nurse",
+      tags: ["care.nurse"],
+      audience: "all",
+      roles: [
+        {
+          name: "mother",
+          takes: "figure",
+          affordances: ["nipple.L", "hand.L"],
+          track: { act: { clip: "idle1", loop: true } },
+        },
+        {
+          name: "infant",
+          takes: "figure",
+          affordances: ["mouth", "hand.R"],
+          track: { act: { clip: "idle1", loop: true } },
+        },
+      ],
+      contacts: [
+        { name: "latch", a: "infant:mouth", b: "mother:nipple.L", during: ["act"] },
+        { name: "hold", a: "infant:hand.R", b: "mother:nipple.L", during: ["act"] },
+      ],
+    };
+    expect(audienceOf(nursing)).toBe("all");
+    const { runtime } = session();
+    runtime.define([nursing]);
+    expect(runtime.propose("nurse", { mother: "mum", infant: "kid" }).audience).toBe("all");
   });
 });

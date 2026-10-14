@@ -17,7 +17,7 @@ import { maleParts } from "../scripts/lib/detail/sculpt.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 import { readSac } from "./sacShape.ts";
 
 /**
@@ -265,9 +265,11 @@ describe("the testes on the adult surface", { timeout: 300_000 }, () => {
   });
 
   it("does not answer the arousal signal: its change is unmeasured, so the sac holds still", () => {
+    // The genitals alone: the pack's lip and nipple morphs (#118) answer arousal by design.
+    const organOnly = new HumanoidModel(loadOrganOnlyAssets(), { subdivision: 1 });
     const sac = figure({ [TESTES_SIZE]: 0.6 });
-    expect(Array.from(model.evaluate(sac, { arousal: 1 }).positions)).toEqual(
-      Array.from(model.evaluate(sac).positions),
+    expect(Array.from(organOnly.evaluate(sac, { arousal: 1 }).positions)).toEqual(
+      Array.from(organOnly.evaluate(sac).positions),
     );
   });
 

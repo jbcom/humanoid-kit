@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deltaE2000, labFromLinear } from "../e2e/lib/colour.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { VAGINA_TARGET } from "../scripts/lib/detail/canal.ts";
-import { VULVA_SIZE, VULVA_TARGET, vulvaSkinMask } from "../scripts/lib/detail/vulva.ts";
+import {
+  VULVA_ENGORGED,
+  VULVA_SIZE,
+  VULVA_TARGET,
+  vulvaSkinMask,
+} from "../scripts/lib/detail/vulva.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -47,7 +52,8 @@ const sunk = (v: number) => {
 
 describe("the vulva in the pack", () => {
   it("is a target of the skin, driven by its own size, with nothing of an organ's", () => {
-    expect(anatomy?.detail?.skin).toEqual([VULVA_TARGET]);
+    // With its engorgement under arousal, also the skin's (vulvaEngorgement.test.ts).
+    expect(anatomy?.detail?.skin).toEqual([VULVA_TARGET, VULVA_ENGORGED]);
     expect(anatomy?.detail?.drives?.[VULVA_TARGET]).toEqual([`mod:${VULVA_SIZE}`]);
     expect(anatomy?.features.find((f) => f.id === "vulva")?.modifiers).toEqual([VULVA_SIZE]);
     const m = adultManifest.modifiers.find((x) => x.id === VULVA_SIZE);

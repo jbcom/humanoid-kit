@@ -32,10 +32,28 @@ what it proves.
     this far and keep the contact.
 - **R4.** The site is measured again after each round, for up to 4 rounds,
   until it moves less than 0.5 mm. In the slice's contacts it settles in one.
+- **Effectors (R2).** Slice 1 accepts a finger pad (`finger-pad-1.X` to
+  `finger-pad-5.X`), a palm (`palm.X`) or a hand's grip (`hand.X`). Any other
+  id, a nipple or an ear lobe among them, is refused as "not a point of one
+  hand".
+- **Age gate (R10).** `SiteContactFigure.adult` is set from `isAdult(recipe)`.
+  When it is anything but `true`, a site that `defaultAffordanceAdult` calls
+  adult throws `AgePolicyError` before anything is solved. That is the rule
+  `audienceOf` applies: a site the registry does not say is all-ages is adult.
+  The lips and the palms are registered all-ages contact sites (a finger to
+  the lips, one hand on the other). A minor is refused `pubic-point` and the
+  joint landmarks as sites, until one is registered.
+- **The knee is not built yet.** `knee.X` is a joint landmark, the joint's
+  centre about 5 cm inside the leg, so a pad cannot touch it. The knee needs a
+  `kneecap.X` surface landmark: the skin in front of the joint, facing forward.
+  Its picker and tests are written but wait for the landmark lane, which is
+  busy with #25. It is proven seated only. Standing, the index pad hangs
+  10-15 cm above the patella, and R7 forbids bending the spine down to it.
 
 A figure that can only pose is a mannequin. People touch themselves all the
 time: they scratch, rub an eye, tug an ear, pick their nose, rest a chin on a
-hand, hug their knees. Adults also touch their own nipples, genitals and anus.
+hand, hug their knees, touch their own chest. Adults also touch their own
+genitals and anus.
 These are the contacts developers queue most (several at once for an idle
 state). They are also the foundation for touching anyone else. Reaching a point on
 another figure's body is the same constraint with the target on another
@@ -74,7 +92,9 @@ presence, so getting self-contact right is most of partner contact
   never by presence anchors, which are coarse and refresh every 3 frames.
   Core sites are landmarks: the existing ones (`nose-tip`, `chin`,
   `ear-lobe.X`, `nipple.X`, `navel`, `crown`, `lower-lip`, …) plus added ones
-  (`brow.X`, `cheek.X`, `eye.X`, `knee.X`, `toe-tip.X`, `scalp`). Adult sites
+  (`brow.X`, `cheek.X`, `eye.X`, `kneecap.X`, `toe-tip.X`, `scalp`). The
+  knee's site is `kneecap.X`, the skin over the patella. `knee.X` is already
+  the joint landmark at the joint's centre, inside the leg. Adult sites
   (clitoris, introitus, perineum, anus, glans, scrotum) are declared by the
   adult pack on its detail lattice, the way its piercing sites are, so the
   core names none.
@@ -110,19 +130,28 @@ presence, so getting self-contact right is most of partner contact
   rotations before the skeleton, occlusion keys, dual quaternions and presence.
   This is the seam the documented hand contact also needs and which is not
   built yet (#112).
-- **R10, age policy.**
+- **R10, age policy.** Non-sexual contact is valid at every age. The adult
+  line is drawn by content, not by body site.
   - Every site is an affordance with an `adult` flag. Core sites are
-    registered as non-adult `contact` affordances: a landmark id unknown to
-    the registry counts as adult (`audienceOf`), so without the registration a
-    child's nose-pick would be refused. Pack sites are adult by default.
-  - Nipple contact is adult content. The core's `nipple.X` affordance is
-    non-adult for body art, but no all-ages self-contact definition, child
-    fixture or child sheet names it. All-ages chest contacts use
-    `sternum-notch` or `chest.X`. Nipple self-contact lives in the adult
-    package with an explicit `audience: "adult"` and a refusal test for a minor.
-  - A self-contact definition naming an adult site is adult (`audienceOf`) and
-    is refused for a figure under 18 at proposal and on every tick.
-  - Signal writes go through `assertSignalPolicy`.
+    registered as non-adult affordances: a landmark id unknown to the registry
+    counts as adult (`audienceOf`), so without the registration a child's
+    nose-pick would be refused. Pack sites are adult by default.
+  - A nipple is an all-ages site. Nursing is ordinary contact between an
+    infant and its mother: the infant's mouth at her nipple, its hand on her
+    breast. A child touching its own chest is ordinary too. So `nipple.X` is in
+    `SELF_CONTACT_SITES`, and a contact naming it stays "all".
+  - What is adult-only is sexual content: a definition that drives an
+    adult-only signal (`ADULT_ONLY_SIGNALS`: `arousal`, `genitalMoisture`), or
+    that names an adult package site (clitoris, introitus, perineum, anus,
+    glans, scrotum). It is adult (`audienceOf`) and is refused for a figure
+    under 18 at proposal and on every tick.
+  - `solveSiteContact` applies the same rule itself, so a caller that skips
+    the runtime cannot reach past it. It is told the figure's age
+    (`SiteContactFigure.adult`), and a minor is refused any site the registry
+    does not call all-ages.
+  - Signal writes go through `assertSignalPolicy`. A beat's signal effect
+    (`{ signal: role, change }`) goes through the host's `applySignals` to the
+    figure's evaluation.
   - Adult definitions and clips live in the age-gated adult package (#105),
     never in the core source.
 - **R11, regional responses stay region-owned.** The constraint emits a
@@ -158,7 +187,7 @@ two arms carry two contacts. Option 3 is still how *posture* is supplied (R7).
 
 | Slice | Delivers | Proof (red first) |
 | --- | --- | --- |
-| 1 | Core sites registered as non-adult contact affordances (plus new landmarks); effector parameter; the `point` hand shape and an approach orientation (finger axis along the reverse of the site normal); `solveSiteContact` (alternating site/arm solve), headless | `tests/selfContact.test.ts`: index pad to nose, chin, ear lobe, crown, sternum notch, navel, knee. Gap ≤ 5 mm and no hand vertex inside the body, on a child, a slim woman, a heavy man and an elder, standing and seated. The penetration check is shown to fail with the goal pushed 1 cm into the nose. Unreachable sites are reported. Weight 0 is identity. Audience: a child fidget is "all" and runs on a child; a definition naming a pack site is "adult" and is refused for the child. |
+| 1 | Core sites registered as non-adult contact affordances (plus new landmarks); effector parameter; the `point` hand shape and an approach orientation (finger axis along the reverse of the site normal); `solveSiteContact` (alternating site/arm solve), headless | `tests/selfContact.test.ts`: index pad to nose, chin, ear lobe, crown, sternum notch, nipple, navel, standing and seated, and to the kneecap seated (pending the `kneecap.X` landmark). Gap ≤ 5 mm and no hand vertex inside the body, on a child, a slim woman, a heavy man and an elder. The penetration check is shown to fail with the goal pushed 1 cm into the nose. Unreachable sites are reported. Weight 0 is identity. Only a finger pad, palm or hand is an effector. Audience: a child fidget, its own nipple's among them, is "all" and runs on a child, and nursing is "all". A definition naming a pack site, or a beat driving `arousal`, is "adult" and is refused for the child. The solver refuses a minor an unregistered site. |
 | 2 | The other hand shapes; pole per target region | Shape tests (finger bones only). Each shape's contact passes R3 at its sites. |
 | 3 | `<Humanoid siteContact>` and the `handContact` seam (closes the React half of #25 too), neck pre-pass, playground self-contact lab, sheets | Browser test: the rendered pad and site agree with the CPU reference. Sheets read on four bodies per fidget. |
 | 4 | `RegionalContact` emission; response profiles; the core oral profile (lips part, jaw opens to fit a finger) | Profile lifecycle tests. A minor's adult signals stay 0, and an adult definition is refused (`interactionAgeGate`). |

@@ -626,10 +626,15 @@ later slices.
   `geometrically-unreachable`, `tolerance-not-reached` or `partial-weight`.
 - **Blending.** `weight` slerps the arm and the shaped fingers from the source.
   At weight 0 `out` is the source byte for byte.
-- **Age policy.** The all-ages sites (`SELF_CONTACT_SITES`) are core `contact`
-  affordances with `adult: false`, so a child's fidget naming one stays "all"
-  (`audienceOf`). Any site the core does not know, such as a pack's
-  `introitus`, makes the definition adult.
+- **Age policy.** The all-ages sites (`SELF_CONTACT_SITES`, the nipples among
+  them) are core affordances with `adult: false`, so a child's fidget naming
+  one stays "all" (`audienceOf`). Any site the core does not know, such as a
+  pack's `introitus`, makes the definition adult. The solver applies the same
+  rule itself: a `SiteContactFigure` whose `adult` is not `true` is refused,
+  with `AgePolicyError`, any site that `defaultAffordanceAdult` calls adult
+  (today `pubic-point` and the joint landmarks, until one is registered; the
+  lips and the palms are all-ages contact sites). The effector is a finger pad, a palm or a hand's grip
+  (`finger-pad-N.X`, `palm.X`, `hand.X`), and nothing else.
 
 ### Stimuli and reactions
 
@@ -697,7 +702,11 @@ policy requires, and none clamps.
    adult ids: its answer is joined with that default, never replacing it, so a
    predicate that answers `false` by default cannot open an adult act to a
    minor. A contact or coupling point that is not `role:name`, or names no role,
-   is adult.
+   is adult. A beat effect that drives an adult-only signal
+   (`ADULT_ONLY_SIGNALS`: `arousal`, `genitalMoisture`) is adult; one that
+   drives `blush` or `exertion` is not. The line is the content, not the body
+   site: a core nipple is an all-ages site (nursing, a child's own chest), and
+   only a sexual signal or an adult package site makes the act adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure
@@ -709,7 +718,9 @@ policy requires, and none clamps.
 6. **Structurally, the parts are not there.** A figure under 18 has no adult
    affordances (`affordances(recipe)`), so a coupling naming one cannot even
    resolve.
-7. **Signals.** Routes to `arousal` pass through `assertSignalPolicy`.
+7. **Signals.** Routes to `arousal` pass through `assertSignalPolicy`. A beat's
+   signal effect reaches the figure only through the host's `applySignals`,
+   whose values go to the figure's evaluation and so through the same check.
 8. **Packages.** Adult definitions, their clips and their routes are data of
    `humanoid-kit-adult-animations`; the core's source names none (the same
    source scan as `tests/adultStack.test.ts`), and `pnpm check:pages` refuses a
@@ -813,6 +824,8 @@ interface Beat {
 type Effect =
   | { set: `${RoleName}:${string}`; change: AffordanceChange }   // the mouth's occupancy
   | { object: RoleName; state: Record<string, number | string | boolean | { add: number }> }
+  // A figure role's skin signals, handed to the host's `applySignals` (built).
+  | { signal: RoleName; change: Record<string, number | { add: number }> }   // { blush: { add: 0.2 } }
   | { transfer: RoleName; from: `${RoleName}:${string}`; to: `${RoleName}:${string}` };
 
 interface SignalRoute {
