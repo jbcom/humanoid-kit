@@ -20,9 +20,9 @@ import { createRecipe } from "../../src/recipe/recipe.ts";
 import { SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1 } from "../../src/render/dualSkinning.ts";
 import { gpuWorldVertices } from "./fluidGpuReadback.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
+import { waitForPhase } from "./waitForPhase.ts";
 
 const LOAD = { timeout: 300_000 };
-const DIAGNOSTIC_TIMEOUT_MS = 30_000;
 /** Float-target readback and the live shader agree within this measured float32 budget. */
 const EXACT = 2e-6;
 const client = inlineWorkerClient({ subdivision: 1 });
@@ -89,19 +89,6 @@ function phaseReceipt(state: RootState | null, evaluated: boolean) {
       : null,
     dual: dual ? { foldBlend: dual.foldBlend.value } : null,
   };
-}
-
-async function waitForPhase(
-  name: string,
-  ready: () => boolean,
-  receipt: () => unknown,
-): Promise<void> {
-  const end = performance.now() + DIAGNOSTIC_TIMEOUT_MS;
-  while (performance.now() < end) {
-    if (ready()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`posed-fluid probe ${name} timed out: ${JSON.stringify(receipt())}`);
 }
 
 async function sourceFrames() {
