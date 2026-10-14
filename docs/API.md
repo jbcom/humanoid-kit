@@ -1797,6 +1797,9 @@ const hands = useHumanoidAffordances();
 - `frame(id, space?, out?)`, `landmark(id, space?, out?)` and `vertex(v,
   space?, out?)`: frames on the figure as the GPU draws it, in `"figure"` or
   `"world"` space; null until it is drawn.
+  Surface landmark ids include `kneecap.L` and `kneecap.R`, the forward-facing
+  patella skin; `knee.L` and `knee.R` remain joint-centre landmarks rather than
+  contact surfaces.
 - `channel(id)`: an aperture's channel in the figure's space, a curved path of
   `CHANNEL_SECTIONS` sections (`Channel.sections`: centre, plane normal, axes,
   half-sizes, depth along the path). `place(id, worldPoint)`: how far along it

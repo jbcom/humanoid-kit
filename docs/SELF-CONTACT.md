@@ -43,12 +43,12 @@ what it proves.
   The lips and the palms are registered all-ages contact sites (a finger to
   the lips, one hand on the other). A minor is refused `pubic-point` and the
   joint landmarks as sites, until one is registered.
-- **The knee is not built yet.** `knee.X` is a joint landmark, the joint's
-  centre about 5 cm inside the leg, so a pad cannot touch it. The knee needs a
-  `kneecap.X` surface landmark: the skin in front of the joint, facing forward.
-  Its picker and tests are written but wait for the landmark lane, which is
-  busy with #25. It is proven seated only. Standing, the index pad hangs
-  10-15 cm above the patella, and R7 forbids bending the spine down to it.
+- **The knee is `kneecap.X`.** `knee.X` is a joint landmark, the joint's
+  centre about 5 cm inside the leg, so a pad cannot touch it. `kneecap.X` is a
+  surface landmark on the forward-facing skin in front of the joint, nearest
+  the line straight forward from it. It is proven seated only. Standing, the
+  index pad hangs 10-15 cm above the patella, and R7 forbids bending the spine
+  down to it.
 
 A figure that can only pose is a mannequin. People touch themselves all the
 time: they scratch, rub an eye, tug an ear, pick their nose, rest a chin on a
@@ -187,7 +187,7 @@ two arms carry two contacts. Option 3 is still how *posture* is supplied (R7).
 
 | Slice | Delivers | Proof (red first) |
 | --- | --- | --- |
-| 1 | Core sites registered as non-adult contact affordances (plus new landmarks); effector parameter; the `point` hand shape and an approach orientation (finger axis along the reverse of the site normal); `solveSiteContact` (alternating site/arm solve), headless | `tests/selfContact.test.ts`: index pad to nose, chin, ear lobe, crown, sternum notch, nipple, navel, standing and seated, and to the kneecap seated (pending the `kneecap.X` landmark). Gap ≤ 5 mm and no hand vertex inside the body, on a child, a slim woman, a heavy man and an elder. The penetration check is shown to fail with the goal pushed 1 cm into the nose. Unreachable sites are reported. Weight 0 is identity. Only a finger pad, palm or hand is an effector. Audience: a child fidget, its own nipple's among them, is "all" and runs on a child, and nursing is "all". A definition naming a pack site, or a beat driving `arousal`, is "adult" and is refused for the child. The solver refuses a minor an unregistered site. |
+| 1 | Core sites registered as non-adult contact affordances (plus new landmarks); effector parameter; the `point` hand shape and an approach orientation (finger axis along the reverse of the site normal); `solveSiteContact` (alternating site/arm solve), headless | `tests/selfContact.test.ts`: index pad to nose, chin, ear lobe, crown, sternum notch, nipple, navel, standing and seated, and to the kneecap seated. Gap ≤ 5 mm and no hand vertex inside the body, on a child, a slim woman, a heavy man and an elder. The penetration check is shown to fail with the goal pushed 1 cm into the nose. Unreachable sites are reported. Weight 0 is identity. Only a finger pad, palm or hand is an effector. Audience: a child fidget, its own nipple's among them, is "all" and runs on a child, and nursing is "all". A definition naming a pack site, or a beat driving `arousal`, is "adult" and is refused for the child. The solver refuses a minor an unregistered site. |
 | 2 | The other hand shapes; pole per target region | Shape tests (finger bones only). Each shape's contact passes R3 at its sites. |
 | 3 | `<Humanoid siteContact>` and the `handContact` seam (closes the React half of #25 too), neck pre-pass, playground self-contact lab, sheets | Browser test: the rendered pad and site agree with the CPU reference. Sheets read on four bodies per fidget. |
 | 4 | `RegionalContact` emission; response profiles; the core oral profile (lips part, jaw opens to fit a finger) | Profile lifecycle tests. A minor's adult signals stay 0, and an adult definition is refused (`interactionAgeGate`). |
