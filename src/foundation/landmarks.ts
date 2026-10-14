@@ -74,6 +74,9 @@ export const SURFACE_LANDMARKS = [
   "finger-pad-5.R",
   "sole.L",
   "sole.R",
+  // The skin over each patella, in front of the knee's joint (`knee.X` is the joint's centre).
+  "kneecap.L",
+  "kneecap.R",
 ] as const;
 
 /** The joint landmarks: joint centres, each a bone's head. */
@@ -389,6 +392,34 @@ function soleCentre(assets: HumanoidAssets, used: Uint8Array, ankle: Vec3, toe: 
   return best;
 }
 
+/** CHOICE: how nearly a vertex must face forward at rest to be on the front of the knee. */
+const KNEECAP_FACING = 0.7;
+
+/**
+ * The skin over the patella on one side: of the drawn vertices in front of the
+ * knee joint whose skin faces forward (`KNEECAP_FACING`), the one nearest the
+ * line straight forward from the joint, seen from the front. The furthest
+ * forward of them would not do: on a muscular build the bulge beside the
+ * patella stands further out than the patella itself.
+ */
+function kneecap(assets: HumanoidAssets, used: Uint8Array, knee: Vec3): number {
+  const P = assets.positions;
+  const N = skinZones(assets).normals;
+  let best = -1;
+  let dist = Number.POSITIVE_INFINITY;
+  for (let v = 0; v < assets.manifest.vertexCount; v++) {
+    if (!used[v] || (P[v * 3 + 2] as number) <= knee[2]) continue;
+    if ((N[v * 3 + 2] as number) < KNEECAP_FACING) continue;
+    const d = Math.hypot((P[v * 3] as number) - knee[0], (P[v * 3 + 1] as number) - knee[1]);
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
+  if (best < 0) throw new RangeError("no vertex in front of the knee");
+  return best;
+}
+
 /** The deepest of the midline vertices a target moves: the bottom of the hole it shapes. */
 function deepestMoved(assets: HumanoidAssets, name: string): number {
   const P = assets.positions;
@@ -474,6 +505,8 @@ export function landmarkVertices(
     "finger-pad-5.R": fingerPad(assets, used, 1, 5),
     "sole.L": soleCentre(assets, used, head("foot.L"), head("toe1-1.L")),
     "sole.R": soleCentre(assets, used, head("foot.R"), head("toe1-1.R")),
+    "kneecap.L": kneecap(assets, used, head("lowerleg01.L")),
+    "kneecap.R": kneecap(assets, used, head("lowerleg01.R")),
   };
   vertexCache.set(assets, out);
   return out;
