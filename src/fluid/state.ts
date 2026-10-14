@@ -6,7 +6,7 @@ import type { HumanoidAssets } from "../format/assetFormat.ts";
 import { AgePolicyError, assertAgePolicy, isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
-const SNAPSHOT_VERSION = 1 as const;
+const SNAPSHOT_VERSION = 2 as const;
 /** Maximum ledger drift, in kilograms, accepted from floating-point addition. */
 export const FLUID_MASS_EPSILON_KG = 1e-12;
 
@@ -51,6 +51,10 @@ export interface FluidSourceRegistration {
 export interface FluidMassLedger {
   /** Cumulative mass explicitly injected into this figure, in kilograms. */
   injectedTotalKg: number;
+  /** Cumulative mass received from another figure, never counted as new emission. */
+  receivedTotalKg: number;
+  /** Cumulative mass transferred to another figure, no longer owned here. */
+  transferredTotalKg: number;
   /** Mass currently attached to the figure, in kilograms. */
   attachedKg: number;
   /** Detached but still tracked mass, in kilograms. It is not escaped mass. */
@@ -88,8 +92,16 @@ export interface FluidStateSnapshot {
   ledger: FluidMassLedger;
 }
 
+/** Exact phase-one checkpoint schema; restore explicitly migrates these counters to zero. */
+export type FluidLegacyStateSnapshot = Omit<FluidStateSnapshot, "version" | "ledger"> & {
+  version: 1;
+  ledger: Omit<FluidMassLedger, "receivedTotalKg" | "transferredTotalKg">;
+};
+
 const LEDGER_KEYS = [
   "injectedTotalKg",
+  "receivedTotalKg",
+  "transferredTotalKg",
   "attachedKg",
   "detachedKg",
   "depositedKg",
@@ -106,6 +118,8 @@ const TERMINAL_DESTINATIONS = new Set<FluidTerminalDestination>([
 
 const emptyLedger = (): FluidMassLedger => ({
   injectedTotalKg: 0,
+  receivedTotalKg: 0,
+  transferredTotalKg: 0,
   attachedKg: 0,
   detachedKg: 0,
   depositedKg: 0,
@@ -153,10 +167,13 @@ export function assertFluidLedger(ledger: FluidMassLedger): void {
     ledger.depositedKg +
     ledger.evaporatedKg +
     ledger.absorbedKg +
-    ledger.escapedKg;
+    ledger.escapedKg +
+    ledger.transferredTotalKg;
+  const available = ledger.injectedTotalKg + ledger.receivedTotalKg;
   if (
     !Number.isFinite(represented) ||
-    Math.abs(ledger.injectedTotalKg - represented) > FLUID_MASS_EPSILON_KG
+    !Number.isFinite(available) ||
+    Math.abs(available - represented) > FLUID_MASS_EPSILON_KG
   )
     throw new FluidStateError("fluid mass is not conserved");
 }
@@ -257,6 +274,27 @@ export class FluidState {
     this.transfer("detachedKg", this.destinationKey(destination), kilograms);
   }
 
+  /** Stages both ledgers before a synchronous, callback-free paired commit. */
+  transferAttachedToDepositedKg(receiver: FluidState, kilograms: number): void {
+    if (receiver === this || receiver.figureId === this.figureId)
+      throw new FluidStateError("fluid transfer requires two distinct figure states");
+    assertPositive(kilograms, "kilograms");
+    assertFluidLedger(this.ledger);
+    assertFluidLedger(receiver.ledger);
+    if (kilograms > this.ledger.attachedKg)
+      throw new FluidStateError("cannot transfer more mass than attachedKg contains");
+    const donorLedger = structuredClone(this.ledger);
+    const receiverLedger = structuredClone(receiver.ledger);
+    donorLedger.attachedKg -= kilograms;
+    donorLedger.transferredTotalKg += kilograms;
+    receiverLedger.receivedTotalKg += kilograms;
+    receiverLedger.depositedKg += kilograms;
+    assertFluidLedger(donorLedger);
+    assertFluidLedger(receiverLedger);
+    this.ledger = donorLedger;
+    receiver.ledger = receiverLedger;
+  }
+
   advanceFixedSteps(steps: number): void {
     assertSafeInteger(steps, "steps");
     if (this.fixedSteps + steps > Number.MAX_SAFE_INTEGER)
@@ -279,7 +317,25 @@ export class FluidState {
     };
   }
 
-  static restore(options: FluidStateOptions, snapshot: FluidStateSnapshot): FluidState {
+  static restore(
+    options: FluidStateOptions,
+    input: FluidStateSnapshot | FluidLegacyStateSnapshot,
+  ): FluidState {
+    let snapshot: FluidStateSnapshot;
+    if (input.version === 1) {
+      assertExactKeys(
+        input.ledger,
+        LEDGER_KEYS.filter((key) => key !== "receivedTotalKg" && key !== "transferredTotalKg"),
+        "legacy ledger",
+      );
+      snapshot = {
+        ...structuredClone(input),
+        version: SNAPSHOT_VERSION,
+        ledger: { ...structuredClone(input.ledger), receivedTotalKg: 0, transferredTotalKg: 0 },
+      };
+    } else {
+      snapshot = input;
+    }
     assertSnapshotSchema(snapshot);
     if (snapshot.version !== SNAPSHOT_VERSION)
       throw new FluidStateError("unsupported fluid snapshot version");

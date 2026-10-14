@@ -7,8 +7,10 @@ injection, and transport only moves existing attached mass between adjacent
 triangles.
 
 The bounded field rejects a new triangle/material identity at capacity rather
-than coalescing or discarding it. It has no renderer, droplets, contact
-transfer, residue, adult aperture adapter, or mesh changes.
+than coalescing or discarding it. It has no mesh changes or adult aperture
+adapter. [Explicit paired contact deposition](FLUID-CONTACT-TRANSFER.md) adds
+terminal, retained receiver anchors; it does not add automatic collision,
+receiver flow, drying or material behavior.
 
 ## Explicit detachment
 

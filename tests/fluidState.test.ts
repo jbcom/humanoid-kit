@@ -76,6 +76,8 @@ describe("FluidState", () => {
     expect(a.snapshot().ledger.attachedKg).toBe(0.25);
     expect(b.snapshot().ledger).toEqual({
       injectedTotalKg: 0,
+      receivedTotalKg: 0,
+      transferredTotalKg: 0,
       attachedKg: 0,
       detachedKg: 0,
       depositedKg: 0,
@@ -83,6 +85,52 @@ describe("FluidState", () => {
       absorbedKg: 0,
       escapedKg: 0,
     });
+  });
+
+  it("explicitly migrates the exact v1 schema and preserves original emissions after paired transfer", () => {
+    const populated = populatedState().snapshot();
+    const {
+      receivedTotalKg: _received,
+      transferredTotalKg: _transferred,
+      ...ledger
+    } = populated.ledger;
+    const legacy = { ...populated, version: 1 as const, ledger };
+    expect(FluidState.restore(options(), legacy).snapshot()).toEqual(populated);
+    expect(() =>
+      FluidState.restore(options(), {
+        ...legacy,
+        ledger: { ...legacy.ledger, receivedTotalKg: 0 },
+      } as never),
+    ).toThrow("legacy ledger has an invalid schema");
+    const donor = populatedState();
+    const receiver = new FluidState(options("figure-b"));
+    donor.transferAttachedToDepositedKg(receiver, 0.1);
+    expect(donor.snapshot().ledger.injectedTotalKg).toBe(1);
+    expect(receiver.snapshot().ledger.injectedTotalKg).toBe(0);
+    expect(FluidState.restore(options(), donor.snapshot()).snapshot()).toEqual(donor.snapshot());
+    expect(FluidState.restore(options("figure-b"), receiver.snapshot()).snapshot()).toEqual(
+      receiver.snapshot(),
+    );
+  });
+
+  it("stages both paired ledgers before overdraw, overflow or same-identity rejection", () => {
+    const donor = populatedState();
+    const receiver = new FluidState(options("receiver"));
+    const before = [donor.snapshot(), receiver.snapshot()];
+    expect(() => donor.transferAttachedToDepositedKg(receiver, 1)).toThrow("more mass");
+    expect([donor.snapshot(), receiver.snapshot()]).toEqual(before);
+    expect(() => donor.transferAttachedToDepositedKg(donor, 0.1)).toThrow("distinct figure states");
+    expect([donor.snapshot(), receiver.snapshot()]).toEqual(before);
+    receiver.registerSource(surface());
+    receiver.injectKg("skin", Number.MAX_VALUE);
+    const enormous = new FluidState(options("enormous"));
+    enormous.registerSource(surface());
+    enormous.injectKg("skin", Number.MAX_VALUE);
+    const beforeOverflow = [enormous.snapshot(), receiver.snapshot()];
+    expect(() => enormous.transferAttachedToDepositedKg(receiver, Number.MAX_VALUE)).toThrow(
+      FluidStateError,
+    );
+    expect([enormous.snapshot(), receiver.snapshot()]).toEqual(beforeOverflow);
   });
 
   it("rejects an invalid topology binding, surface anchor, and invalid physical values", () => {

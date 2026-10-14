@@ -6,20 +6,7 @@
 import { Canvas, type RootState, useThree } from "@react-three/fiber";
 import { bodyPack } from "humanoid-kit-body";
 import { useEffect } from "react";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  FloatType,
-  GLSL3,
-  type Material,
-  OrthographicCamera,
-  Points,
-  Scene,
-  ShaderMaterial,
-  type SkinnedMesh,
-  Vector3,
-  WebGLRenderTarget,
-} from "three";
+import { type Scene, type SkinnedMesh, Vector3 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import bodyManifest from "../../packs/body/data/manifest.json";
@@ -30,13 +17,8 @@ import { REST_POSE } from "../../src/foundation/permutations.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { type DualBones, Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
-import {
-  applyDualSkinning,
-  FOLD_SLOTS_ATTRIBUTE,
-  SKIN_INDEX_ATTRIBUTE_1,
-  SKIN_WEIGHT_ATTRIBUTE_1,
-} from "../../src/render/dualSkinning.ts";
-import { FOLD_JOINTS } from "../../src/rig/folds.ts";
+import { SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1 } from "../../src/render/dualSkinning.ts";
+import { gpuWorldVertices } from "./fluidGpuReadback.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 300_000 };
@@ -120,92 +102,6 @@ async function waitForPhase(
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`posed-fluid probe ${name} timed out: ${JSON.stringify(receipt())}`);
-}
-
-/**
- * Reads the live body's exact all-eight-influence, dual-quaternion and fold
- * shader result for `vertices`, in its current world space. This is deliberately
- * a tiny point draw rather than an independent skinning implementation.
- */
-function gpuWorldVertices(state: RootState, vertices: readonly number[]): Float32Array {
-  const mesh = bodyOf(state.scene);
-  const bones = bonesOf(state.scene);
-  state.scene.updateMatrixWorld(true);
-  mesh.skeleton.update();
-  const source = mesh.geometry;
-  const count = vertices.length;
-  const pick = (name: string, size: number) => {
-    const from = source.getAttribute(name);
-    if (!from) throw new Error(`posed-fluid probe: body lacks ${name}`);
-    const values = new Float32Array(count * size);
-    vertices.forEach((vertex, at) => {
-      for (let component = 0; component < size; component++)
-        values[at * size + component] = from.getComponent(vertex, component);
-    });
-    return new BufferAttribute(values, size);
-  };
-  const points = new BufferGeometry();
-  points.setAttribute("position", pick("position", 3));
-  for (const name of ["skinIndex", "skinWeight", SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1])
-    points.setAttribute(name, pick(name, 4));
-  points.setAttribute(FOLD_SLOTS_ATTRIBUTE, pick(FOLD_SLOTS_ATTRIBUTE, FOLD_JOINTS.length));
-  points.setAttribute(
-    "aPixel",
-    new BufferAttribute(
-      Float32Array.from({ length: count }, (_, index) => index),
-      1,
-    ),
-  );
-  const material: Material = new ShaderMaterial({
-    glslVersion: GLSL3,
-    defines: { USE_SKINNING: "" },
-    depthTest: false,
-    depthWrite: false,
-    uniforms: {
-      bindMatrix: { value: mesh.bindMatrix },
-      bindMatrixInverse: { value: mesh.bindMatrixInverse },
-      boneTexture: { value: mesh.skeleton.boneTexture },
-      uWorld: { value: mesh.matrixWorld },
-      uCount: { value: count },
-    },
-    vertexShader: /* glsl */ `
-      #include <common>
-      #include <skinning_pars_vertex>
-      in float aPixel;
-      uniform mat4 uWorld;
-      uniform float uCount;
-      out vec3 vWorld;
-      void main() {
-        #include <begin_vertex>
-        #include <skinbase_vertex>
-        #include <skinning_vertex>
-        vWorld = ( uWorld * vec4( transformed, 1.0 ) ).xyz;
-        gl_PointSize = 1.0;
-        gl_Position = vec4( ( aPixel + 0.5 ) / uCount * 2.0 - 1.0, 0.0, 0.0, 1.0 );
-      }`,
-    fragmentShader: /* glsl */ `
-      in vec3 vWorld;
-      layout( location = 0 ) out highp vec4 outColor;
-      void main() { outColor = vec4( vWorld, 1.0 ); }`,
-  });
-  applyDualSkinning(material, bones, true);
-  const drawn = new Points(points, material);
-  drawn.frustumCulled = false;
-  const stage = new Scene();
-  stage.add(drawn);
-  const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
-  state.gl.setRenderTarget(target);
-  state.gl.render(stage, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
-  const pixels = new Float32Array(count * 4);
-  state.gl.readRenderTargetPixels(target, 0, 0, count, 1, pixels);
-  state.gl.setRenderTarget(null);
-  target.dispose();
-  material.dispose();
-  points.dispose();
-  const world = new Float32Array(count * 3);
-  for (let index = 0; index < count; index++)
-    world.set(pixels.subarray(index * 4, index * 4 + 3), index * 3);
-  return world;
 }
 
 async function sourceFrames() {
@@ -308,7 +204,7 @@ function gpuAnchorWorld(state: RootState, anchor: FluidSurfaceAnchor): [number, 
   if (!triangle) throw new Error("posed-fluid probe: body has no index");
   const first = anchor.triangle * 3;
   const vertices = [triangle.getX(first), triangle.getX(first + 1), triangle.getX(first + 2)];
-  const gpu = gpuWorldVertices(state, vertices);
+  const gpu = gpuWorldVertices(state, mesh, vertices);
   return [0, 1, 2].map((axis) =>
     anchor.barycentric.reduce(
       (sum, weight, corner) => sum + weight * (gpu[corner * 3 + axis] as number),
