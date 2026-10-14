@@ -9,9 +9,10 @@
  * `eyebrows/<name>/`, `eyelashes/<name>/`), every file
  * of which opens with "This asset was explicitly released as CC0 in september
  * 2020". `compileAsset` proves that from the `.mhclo`, the `.obj` and the
- * `.mhmat` themselves and refuses anything else, so a hair from a community
- * pack, whose licence is the uploader's claim and is sometimes contradicted by
- * a sibling file, cannot be packed by listing it here.
+ * `.mhmat` themselves and refuses anything else. The facial attachments below
+ * are the exception: they are admitted only after this pack's explicit asset
+ * licence profile has selected a verified redistributable record, while its
+ * generated notice keeps every conflicting source header and source archive.
  *
  * It reads the committed body pack (not MakeHuman's data directory), which it
  * binds to and bakes occlusion against, so it can run alone
@@ -30,6 +31,14 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import { evaluateBinding } from "../../src/mhclo/bound.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
+import {
+  type AssetLicenceProfile,
+  type AssetLicenceRecord,
+  type AssetProfileSelection,
+  DEFAULT_ASSET_LICENCE_PROFILE,
+  renderAssetAttribution,
+  selectAssetForProfile,
+} from "./assetLicenceProfile.ts";
 import { readBodyPack } from "./bodyPack.ts";
 import { extractDirectory, openCommunityPack, pin } from "./communityPacks.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
@@ -124,49 +133,198 @@ export const FACIAL_HAIR_PACK = pin(
   "262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd",
 );
 
+/** Additional MakeHuman Community facial-hair attachments, whose source records are CC-BY. */
+export const COMMERCIAL_FACIAL_HAIR_PACK = pin(
+  "bodyparts06",
+  "09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770",
+  { archive: "bodyparts06_cc-by.zip" },
+);
+
 /** A community facial hair asset: its folder in the pack, the id it ships as and what it is. */
 export interface FacialHairSpec {
+  /** The pinned MakeHuman Community archive this asset belongs to. */
+  pack: typeof FACIAL_HAIR_PACK;
   /** The asset's directory under the pack's `clothes/`. */
   dir: string;
   id: string;
   label: string;
   /** `beard` or `moustache` first: the slot it is worn in. */
   tags: [string, ...string[]];
+  /** Licence and credit proof used by the selected asset-licence profile. */
+  licence: AssetLicenceRecord;
 }
 
-/** Every Facialhair asset of the pack, each CC0 by its pack record and its page (licence clause B). */
+const CC0_FACIAL_LICENCE = (id: string, author: string, source: string): AssetLicenceRecord => ({
+  id,
+  author,
+  source,
+  licence: {
+    selected: "CC0-1.0",
+    permitsCommercialUse: true,
+    permitsRedistribution: true,
+    attribution: "none",
+    shareAlike: "none",
+  },
+  modifications:
+    "Converted the MakeHuman MHCLO/OBJ attachment and its diffuse texture into the hair-pack binary and luminance strand map; source mesh topology and hm08 binding are retained.",
+});
+
+const CC_BY_FACIAL_LICENCE = (id: string, author: string, source: string): AssetLicenceRecord => ({
+  id,
+  author,
+  source,
+  licence: {
+    selected: "CC-BY (official bodyparts06 record and source file headers)",
+    permitsCommercialUse: true,
+    permitsRedistribution: true,
+    attribution: "required",
+    shareAlike: "none",
+  },
+  attribution: `${author} — ${id}, MakeHuman Community bodyparts06, CC-BY. Modified by jbcom for humanoid-kit; see the pack attribution for the source and modification details.`,
+  modifications:
+    "Converted the MakeHuman MHCLO/OBJ attachment and its diffuse texture into the hair-pack binary and luminance strand map; source mesh topology and hm08 binding are retained.",
+});
+
+const CONFLICTING_FACIAL_LICENCE = (
+  id: string,
+  author: string,
+  source: string,
+  sourceHeader: string,
+): AssetLicenceRecord => ({
+  id,
+  author,
+  source,
+  licence: {
+    selected: `CC-BY (official bodyparts06 record); AGPL3 ${sourceHeader} source header`,
+    permitsCommercialUse: true,
+    permitsRedistribution: true,
+    attribution: "required",
+    shareAlike: "required",
+  },
+  attribution: `${author} — ${id}, MakeHuman Community bodyparts06. The official pack record says CC-BY while ${sourceHeader} source files say AGPL3; this pack preserves the conflict and the source-header copyleft notice. Modified by jbcom for humanoid-kit.`,
+  modifications:
+    "Converted the MakeHuman MHCLO/OBJ attachment and its diffuse texture into the hair-pack binary and luminance strand map; source mesh topology and hm08 binding are retained.",
+});
+
+/** Every reviewed MakeHuman Community facial-hair asset, selected by the build profile. */
 export const FACIAL_HAIR: readonly FacialHairSpec[] = [
   {
+    pack: FACIAL_HAIR_PACK,
     dir: "culturalibre_faun_beard",
     id: "beard-faun",
     label: "Faun beard",
     tags: ["beard", "long"],
+    licence: CC0_FACIAL_LICENCE(
+      "beard-faun",
+      "culturalibre",
+      "http://www.makehumancommunity.org/node/2356",
+    ),
   },
   {
+    pack: FACIAL_HAIR_PACK,
     dir: "grinsegold_beard_sigmund_wip",
     id: "beard-sigmund",
     label: "Sigmund beard",
     tags: ["beard", "short", "full"],
+    licence: CC0_FACIAL_LICENCE(
+      "beard-sigmund",
+      "grinsegold",
+      "http://www.makehumancommunity.org/node/877",
+    ),
   },
   {
+    pack: FACIAL_HAIR_PACK,
     dir: "rehmanpolanski_beard_viking",
     id: "beard-viking",
     label: "Viking beard",
     tags: ["beard", "long", "full"],
+    licence: CC0_FACIAL_LICENCE(
+      "beard-viking",
+      "rehmanpolanski",
+      "http://www.makehumancommunity.org/node/2614",
+    ),
   },
   {
+    pack: FACIAL_HAIR_PACK,
     dir: "rehmanpolanski_moustache_viking",
     id: "moustache-viking",
     label: "Viking moustache",
     tags: ["moustache", "long"],
+    licence: CC0_FACIAL_LICENCE(
+      "moustache-viking",
+      "rehmanpolanski",
+      "http://www.makehumancommunity.org/node/2615",
+    ),
   },
   {
+    pack: FACIAL_HAIR_PACK,
     dir: "wdg_scruffy_beard",
     id: "beard-scruffy",
     label: "Scruffy beard",
     tags: ["beard", "short"],
+    licence: CC0_FACIAL_LICENCE(
+      "beard-scruffy",
+      "wdg",
+      "http://www.makehumancommunity.org/node/1769",
+    ),
+  },
+  {
+    pack: COMMERCIAL_FACIAL_HAIR_PACK,
+    dir: "culturalibre_dal_moustache",
+    id: "moustache-dal",
+    label: "Dal moustache",
+    tags: ["moustache", "short"],
+    licence: CONFLICTING_FACIAL_LICENCE(
+      "moustache-dal",
+      "culturalibre",
+      "http://www.makehumancommunity.org/node/2872",
+      "OBJ",
+    ),
+  },
+  {
+    pack: COMMERCIAL_FACIAL_HAIR_PACK,
+    dir: "elvs_scruffy_beard1",
+    id: "beard-long-scruffy",
+    label: "Long scruffy beard",
+    tags: ["beard", "long", "scruffy"],
+    licence: CC_BY_FACIAL_LICENCE(
+      "beard-long-scruffy",
+      "Elvaerwyn",
+      "http://www.makehumancommunity.org/node/2611",
+    ),
+  },
+  {
+    pack: COMMERCIAL_FACIAL_HAIR_PACK,
+    dir: "grinsegold_full_beard",
+    id: "beard-black-full",
+    label: "Black full beard",
+    tags: ["beard", "short", "full"],
+    licence: CONFLICTING_FACIAL_LICENCE(
+      "beard-black-full",
+      "grinsegold",
+      "http://www.makehumancommunity.org/node/188",
+      "MHCLO and OBJ",
+    ),
+  },
+  {
+    pack: COMMERCIAL_FACIAL_HAIR_PACK,
+    dir: "grinsegold_moustache",
+    id: "moustache-thin-black",
+    label: "Thin black moustache",
+    tags: ["moustache", "thin"],
+    licence: CONFLICTING_FACIAL_LICENCE(
+      "moustache-thin-black",
+      "grinsegold",
+      "http://www.makehumancommunity.org/node/187",
+      "MHCLO and OBJ",
+    ),
   },
 ];
+
+/** The profile decision for every known facial asset; exported for focused intake tests. */
+export function selectFacialHair(profile: AssetLicenceProfile): readonly AssetProfileSelection[] {
+  return FACIAL_HAIR.map((spec) => selectAssetForProfile(profile, spec.licence));
+}
 
 /** The folder of the system assets each kind of entry lives in. */
 const SOURCE_DIR: Record<AssetHairKind, string> = {
@@ -196,6 +354,8 @@ export interface PackHairOptions {
   outDir: string;
   /** The community archives (`<id>/<id>_cc0.zip`): the facial hair's pack, pinned (`FACIAL_HAIR_PACK`). */
   communityDir: string;
+  /** Which verified third-party facial assets this build may ship. */
+  assetLicenceProfile?: AssetLicenceProfile;
 }
 
 /** Writes a style's strand map, at most `edge` texels a side, and measures its strand direction. */
@@ -294,6 +454,8 @@ function writeProvenance(
   outputs: [string, string][],
   textures: readonly TextureRecord[],
   facialEvidence: readonly string[],
+  profile: AssetLicenceProfile,
+  facialSelections: ReadonlyMap<string, AssetProfileSelection>,
 ): void {
   const byKind = new Map<string, string[]>();
   for (const [file, ev] of Object.entries(evidence))
@@ -340,12 +502,18 @@ function writeProvenance(
     "Each style's binary also carries what the packer measured of its cards against the body at rest: growth,",
     "hairline fade, fin and scalp (`src/surface/hairFields.ts`).",
     "",
-    `The facial hair (kind \`facial\`) is the community pack \`${FACIAL_HAIR_PACK.id}\` (<${FACIAL_HAIR_PACK.url}>, sha256`,
-    `\`${FACIAL_HAIR_PACK.sha256}\`), whose record and asset pages state CC0 (the asset page is the licence, clause B of`,
-    "the licence rule). Each is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a",
-    "strand map (luminance normalised, alpha unchanged), so the figure's hair colour is the only colour it takes.",
+    `The facial hair (kind \`facial\`) is selected with the \`${profile}\` asset-licence profile. Each selected asset`,
+    "is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a strand map (luminance",
+    "normalised, alpha unchanged), so the figure's hair colour is the only colour it takes. `ASSET-ATTRIBUTION.md`",
+    "carries the required credit and copyleft notices for attribution-licensed entries.",
     "",
-    ...FACIAL_HAIR.map((f) => `- \`${f.id}\` from \`${f.dir}\``),
+    ...FACIAL_HAIR.map((spec) => {
+      const selection = facialSelections.get(spec.id);
+      if (!selection) throw new Error(`${spec.id}: no asset-licence selection for provenance`);
+      return selection.included
+        ? `- \`${spec.id}\` from \`${spec.dir}\` in \`${spec.pack.archive}\` (<${spec.pack.url}>, sha256 \`${spec.pack.sha256}\`), selected as \`${spec.licence.licence.selected}\``
+        : `- \`${spec.id}\` unavailable under \`${profile}\`: \`${selection.unavailable.reason}\` (${selection.unavailable.licence}; <${selection.unavailable.source}>)`;
+    }),
     "",
     ...facialEvidence.map((line) => `- ${line}`),
     "",
@@ -360,9 +528,56 @@ function writeProvenance(
   fs.writeFileSync(path.join(dir, "PROVENANCE.md"), lines.join("\n"));
 }
 
+/**
+ * Makes the complete, pinned upstream source for the non-CC0 attachments
+ * discoverable without copying it into this generated runtime pack. The archive
+ * carries the original OBJ, MHCLO, MHMAT and textures; the emitted binary and
+ * WebP are the only transformed files.
+ */
+export function writeAssetSources(
+  dir: string,
+  profile: AssetLicenceProfile,
+  facialSelections: ReadonlyMap<string, AssetProfileSelection>,
+): void {
+  const selected = FACIAL_HAIR.filter((spec) => {
+    const selection = facialSelections.get(spec.id);
+    return selection?.included && spec.pack.id === COMMERCIAL_FACIAL_HAIR_PACK.id;
+  });
+  const lines = [
+    "# Source availability for attributed facial attachments",
+    "",
+    "Generated by the packer; do not edit.",
+    "",
+    `This \`${profile}\` build includes the selected Bodyparts06 attachments from the pinned source archive`,
+    `<${COMMERCIAL_FACIAL_HAIR_PACK.url}> (SHA-256 \`${COMMERCIAL_FACIAL_HAIR_PACK.sha256}\`).`,
+    "The source archive contains each original MHCLO binding, OBJ mesh, MHMAT and texture under the paths below.",
+    "For attachments with AGPL3 source headers, this package also distributes the exact unmodified source subset in `../source/bodyparts06/` and the named licence text in `../source/AGPL-3.0.txt`.",
+    "No MakeHuman program code is included. To reproduce these data files, obtain that archive, verify its hash, then run",
+    "`pnpm pack:hair --asset-license-profile commercial <system-assets-dir> <archive-root>` against this source revision.",
+    "",
+    "## Source paths and transformations",
+    "",
+    ...selected.map(
+      (spec) =>
+        `- \`${spec.id}\`: ` +
+        `\`clothes/${spec.dir}/**\` (original MHCLO, OBJ, MHMAT and textures); ` +
+        `the packer reads the MHCLO-selected OBJ, MHMAT and diffuse texture, retains the hm08 binding and mesh topology, ` +
+        `writes \`${spec.id}.bin.gz\`, and converts its diffuse texture to the luminance-only strand map \`${spec.id}.webp\`.`,
+    ),
+    "",
+  ];
+  fs.writeFileSync(path.join(dir, "ASSET-SOURCES.md"), lines.join("\n"));
+}
+
 /** Packs every style of `HAIR_STYLES` and returns the manifest it wrote. */
 export async function packHair(options: PackHairOptions): Promise<HairManifest> {
-  const { systemDir, bodyDir, outDir, communityDir } = options;
+  const {
+    systemDir,
+    bodyDir,
+    outDir,
+    communityDir,
+    assetLicenceProfile: profile = DEFAULT_ASSET_LICENCE_PROFILE,
+  } = options;
   const { manifest: body, assets } = readBodyPack(bodyDir);
   fs.mkdirSync(outDir, { recursive: true });
   for (const f of fs.readdirSync(outDir))
@@ -527,16 +742,35 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       sha256(new Uint8Array(fs.readFileSync(path.join(outDir, textureFile)))),
     ]);
   }
-  // Facial hair: authored CC0 meshes of a community pack, packed like scalp hair (a strand
-  // map, so the figure's hair colour tints them) and bound to the base mesh by their own .mhclo.
-  const community = openCommunityPack(communityDir, FACIAL_HAIR_PACK);
+  // Facial hair is kept as the source's own MHCLO/OBJ attachment. The profile selects
+  // attribution-licensed entries before any archive is unpacked; it never substitutes an
+  // omitted asset with generated geometry.
+  const facialSelections = new Map(
+    FACIAL_HAIR.map((spec) => [spec.id, selectAssetForProfile(profile, spec.licence)]),
+  );
+  const communities = new Map<string, ReturnType<typeof openCommunityPack>>();
+  const communityFor = (spec: FacialHairSpec) => {
+    let community = communities.get(spec.pack.id);
+    if (!community) {
+      community = openCommunityPack(communityDir, spec.pack);
+      communities.set(spec.pack.id, community);
+    }
+    return community;
+  };
   const facialEvidence: string[] = [];
   for (const spec of FACIAL_HAIR) {
+    const selection = facialSelections.get(spec.id);
+    if (!selection) throw new Error(`${spec.id}: no asset-licence selection`);
+    if (!selection.included) continue;
+    const community = communityFor(spec);
     const record = community.records[spec.dir];
-    if (!record) throw new Error(`${FACIAL_HAIR_PACK.id} has no record of ${spec.dir}`);
-    if (record.license !== "CC0")
-      throw new Error(`${spec.dir}: the pack's record says ${record.license}, not CC0`);
-    const folder = path.join(scratch, FACIAL_HAIR_PACK.id, spec.dir);
+    if (!record) throw new Error(`${spec.pack.id} has no record of ${spec.dir}`);
+    const expectedRecordLicence = spec.pack.id === "bodyparts05" ? "CC0" : "CC-BY";
+    if (record.license !== expectedRecordLicence)
+      throw new Error(
+        `${spec.dir}: the ${spec.pack.id} record says ${record.license}, not ${expectedRecordLicence}`,
+      );
+    const folder = path.join(scratch, spec.pack.id, spec.dir);
     extractDirectory(community.zip, `clothes/${spec.dir}`, folder);
     const mhclo = fs.readdirSync(folder).find((f) => f.endsWith(".mhclo"));
     if (!mhclo) throw new Error(`${spec.dir}: no .mhclo`);
@@ -545,9 +779,16 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         url: record.source,
         submitter: record.author,
         submitted: record.created,
-        licence: "CC0 - Creative Commons Zero",
+        licence: spec.licence.licence.selected,
         retrieved: "2026-10-13",
       },
+      ...(spec.pack.id === COMMERCIAL_FACIAL_HAIR_PACK.id
+        ? {
+            externalLicenceEvidence:
+              `${spec.licence.licence.selected}; official record <${record.source}>; ` +
+              `pinned archive <${spec.pack.url}> sha256 ${spec.pack.sha256}`,
+          }
+        : {}),
     });
     const [source] = [...compiled.textures.keys()];
     if (!source || compiled.textures.size !== 1)
@@ -590,13 +831,11 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       sha256(new Uint8Array(fs.readFileSync(path.join(outDir, textureFile)))),
     ]);
     for (const [f, ev] of Object.entries(compiled.evidence))
-      facialEvidence.push(
-        `${FACIAL_HAIR_PACK.id}_cc0.zip: clothes/${spec.dir}/${path.basename(f)} — ${ev}`,
-      );
+      facialEvidence.push(`${spec.pack.archive}: clothes/${spec.dir}/${path.basename(f)} — ${ev}`);
   }
   fs.rmSync(scratch, { recursive: true, force: true });
 
-  const manifest: HairManifest = {
+  const manifest = {
     format: 1,
     kind: "hair",
     topology: body.topology,
@@ -608,9 +847,29 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       note: "Asset data only; no MakeHuman code. Textures are luminance strand maps.",
     },
     styles,
+    assetLicenceProfile: {
+      profile,
+      attributionFile: "ASSET-ATTRIBUTION.md",
+      sourceAvailabilityFile: "ASSET-SOURCES.md",
+      selections: FACIAL_HAIR.map((spec) => facialSelections.get(spec.id)),
+    },
   };
   fs.writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest)}\n`);
-  writeProvenance(outDir, evidence, outputs, textures, facialEvidence);
+  const included = [...facialSelections.values()].filter((selection) => selection?.included);
+  fs.writeFileSync(
+    path.join(outDir, "ASSET-ATTRIBUTION.md"),
+    `<!-- markdownlint-disable MD034 -->\n${renderAssetAttribution(included)}`,
+  );
+  outputs.push([
+    "ASSET-ATTRIBUTION.md",
+    sha256(new Uint8Array(fs.readFileSync(path.join(outDir, "ASSET-ATTRIBUTION.md")))),
+  ]);
+  writeAssetSources(outDir, profile, facialSelections);
+  outputs.push([
+    "ASSET-SOURCES.md",
+    sha256(new Uint8Array(fs.readFileSync(path.join(outDir, "ASSET-SOURCES.md")))),
+  ]);
+  writeProvenance(outDir, evidence, outputs, textures, facialEvidence, profile, facialSelections);
   writePackEntry(
     path.dirname(outDir),
     "hairPack",
@@ -626,5 +885,5 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         )
         .join(", "),
   );
-  return manifest;
+  return manifest as HairManifest;
 }

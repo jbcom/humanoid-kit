@@ -6,8 +6,9 @@
  * materials (`packEyes.ts`) and the community garments (`pack-clothing.ts`)
  * both read them this way.
  *
- * The archives are fetched by hand into `<archives>/<id>/<id>_cc0.zip`; nothing
- * here touches the network.
+ * The archives are fetched by hand into `<archives>/<id>/<archive>`; each pin
+ * records the actual archive basename (for example `_cc0.zip` or `_cc-by.zip`).
+ * Nothing here touches the network.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -18,6 +19,8 @@ import { readZip, type ZipEntries } from "./zip.ts";
 export interface CommunityPackPin {
   id: string;
   sha256: string;
+  /** Archive basename under the pack's download directory (defaults to `<id>_cc0.zip`). */
+  archive?: string;
   url: string;
   /** The pack's page on static.makehumancommunity.org. */
   page: string;
@@ -34,24 +37,29 @@ export interface PackRecord {
 }
 
 /** The download URL of a community pack, by the site's convention. */
-export const communityPackUrl = (id: string): string =>
-  `https://files.makehumancommunity.org/asset_packs/${id}/${id}_cc0.zip`;
+export const communityPackUrl = (id: string, archive = `${id}_cc0.zip`): string =>
+  `https://files.makehumancommunity.org/asset_packs/${id}/${archive}`;
 
 /** The page of a community pack, by the site's convention. */
 export const communityPackPage = (id: string): string =>
   `https://static.makehumancommunity.org/assets/assetpacks/${id}.html`;
 
 /** A community pack pinned by its archive's SHA-256, its URL and page by the site's convention. */
-export const pin = (id: string, sha256: string): CommunityPackPin => ({
+export const pin = (
+  id: string,
+  sha256: string,
+  { archive = `${id}_cc0.zip` }: { archive?: string } = {},
+): CommunityPackPin => ({
   id,
   sha256,
-  url: communityPackUrl(id),
+  archive,
+  url: communityPackUrl(id, archive),
   page: communityPackPage(id),
 });
 
 /** Where a pinned pack's archive lies under `archives`. */
-export const communityPackFile = (archives: string, id: string): string =>
-  path.join(archives, id, `${id}_cc0.zip`);
+export const communityPackFile = (archives: string, pin: CommunityPackPin): string =>
+  path.join(archives, pin.id, pin.archive ?? `${pin.id}_cc0.zip`);
 
 /**
  * A pinned pack's archive and its records. Throws if the archive is not the
@@ -62,7 +70,7 @@ export function openCommunityPack(
   archives: string,
   pin: CommunityPackPin,
 ): { zip: ZipEntries; records: Record<string, PackRecord> } {
-  const file = fs.readFileSync(communityPackFile(archives, pin.id));
+  const file = fs.readFileSync(communityPackFile(archives, pin));
   const hash = createHash("sha256").update(file).digest("hex");
   if (hash !== pin.sha256) throw new Error(`${pin.id} is ${hash}, not the pinned ${pin.sha256}`);
   const zip = readZip(file);
