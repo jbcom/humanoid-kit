@@ -266,8 +266,8 @@ function scene(
         <Boundary>
           <Canvas
             shadows
-            camera={{ fov: 28, position: [0, 1.2, 5.5] }}
-            style={{ width: 400, height: 520 }}
+            camera={{ fov: 28, position: [0, 1.2, 4.4] }}
+            style={{ width: 400, height: 480 }}
           >
             <Probe onReady={onReady} />
             <StudioStage background="#1b2530" intensity={1.8} contactShadowOpacity={0} />
@@ -375,7 +375,7 @@ describe("posed source-body wet-film coverage", () => {
       const camera = state().camera as PerspectiveCamera;
       const focus = new Vector3(...source.focus);
       const pairCentreX = (dryX + wetX) / 2;
-      camera.position.set(pairCentreX, focus.y + 0.04, focus.z + 5.5);
+      camera.position.set(pairCentreX, focus.y + 0.04, focus.z + 4.4);
       camera.lookAt(pairCentreX, focus.y, focus.z);
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
