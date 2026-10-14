@@ -6,6 +6,25 @@ shape and the all-ages sites, headless (`src/interaction/siteContact.ts`;
 Nothing here is implemented until its slice's tests are green; each slice says
 what it proves.
 
+The hand-form catalogue contains `pinch`, `flat`, `cup`, `claw` and `fist`,
+with rendered-shape tests. A caller selects the form explicitly. `pinch` closes
+the thumb pad for an ear. `flat` and `cup` use an explicit
+`volar-palm-support` contact domain: source-derived, primary-metacarpal
+skin near `palm.X`, filtered to the volar face. It excludes fingertips and the
+forearm. `palm.X` remains the stable centre landmark; it is never relabelled as
+the broad contact. The report identifies the posed support vertex and frame,
+and gives the centre-to-support offset so callers can distinguish them.
+
+The broad support is closed to the site, but a contact is reached only if the
+entire final skinned hand stays out of the indexed posed body. A finger or
+other palm area through the body reports `body-collision`, even when the
+support itself has zero gap. That result is a source-pose clearance problem,
+not permission to move the centre, use a digit, or relax the collision guard.
+An open `flat` hand presents its primary-metacarpal support on the skin while
+lifting its straight fingers 15° from the local tangent plane; the lift keeps
+the source fingers out of a curved surface without moving the contact centre or
+changing the measured gap.
+
 ## Slice 1 as built
 
 - **Approach orientation.** The finger is not posed along the reverse of the
