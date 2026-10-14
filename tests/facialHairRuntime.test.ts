@@ -25,11 +25,19 @@ describe("the authored facial-hair runtime", () => {
       expect(worn.positions.length).toBe(model.hairTopology(worn.id).vertexCount * 3);
   });
 
-  it("keeps all five authored assets separate from the body across adult age and macro variation", () => {
+  it("keeps every authored facial asset separate from the body across adult age and macro variation", () => {
     const ids = hairManifest.styles
       .filter((style) => style.kind === "facial")
       .map((style) => style.id);
-    expect(ids).toHaveLength(5);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "beard-faun",
+        "beard-sigmund",
+        "beard-viking",
+        "moustache-viking",
+        "beard-scruffy",
+      ]),
+    );
     for (const macros of [
       { age: 18, gender: 0, height: 0.15 },
       { age: 45, gender: 1, height: -0.2 },

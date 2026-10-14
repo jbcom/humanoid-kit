@@ -32,12 +32,14 @@ describe("the shipped data-pack exports", () => {
       }
   });
 
-  it("exports exactly the hair files declared by the current manifest", () => {
+  it("exports exactly the declared hair assets and their attribution and source receipts", () => {
     const manifest = JSON.parse(fs.readFileSync(new URL(hairPack.manifest), "utf8")) as {
       styles: { file: string; material: { texture: string } }[];
     };
     const declared = manifest.styles.flatMap((style) => [style.file, style.material.texture]);
-    expect(Object.keys(hairPack.files).sort()).toEqual(declared.slice().sort());
+    expect(Object.keys(hairPack.files).sort()).toEqual(
+      [...declared, "ASSET-ATTRIBUTION.md", "ASSET-SOURCES.md"].sort(),
+    );
   });
 
   it("ships the age-surface map in both the body manifest and its exported URLs", () => {
