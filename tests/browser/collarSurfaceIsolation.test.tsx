@@ -120,7 +120,13 @@ function frameCollar(camera: PerspectiveCamera, scene: Object3D): void {
 }
 
 type SurfaceState = "baseline" | "pores-off" | "layers-off" | "both-off" | "clavicle-off";
-type Capture = { pixels: Uint8Array; camera: number[]; bones: number[]; screenshot: string };
+type Capture = {
+  pixels: Uint8Array;
+  camera: number[];
+  bones: number[];
+  screenshot: string;
+  glError: number;
+};
 
 type OriginalSurface = {
   normalMap: SkinMaterial["normalMap"];
@@ -146,6 +152,58 @@ type AtlasSeamReceipt = {
   owner: number;
   ownerId: number;
 };
+
+function samplerBudgetReceipt(state: RootState, material: SkinMaterial) {
+  const gl = state.gl.getContext();
+  const skinKey = material.customProgramCacheKey();
+  const programs = (
+    state.gl.info as unknown as {
+      programs?: {
+        cacheKey?: string;
+        program?: WebGLProgram;
+        vertexShader?: WebGLShader;
+        fragmentShader?: WebGLShader;
+      }[];
+    }
+  ).programs;
+  const program = programs?.find((candidate) => candidate.cacheKey?.endsWith(skinKey));
+  if (!program?.program || !program.vertexShader || !program.fragmentShader)
+    throw new Error("collar diagnostic could not find the live skin program");
+  const gl2 = gl as WebGL2RenderingContext;
+  const samplerTypes = new Set<number>([
+    gl.SAMPLER_2D,
+    gl.SAMPLER_CUBE,
+    gl2.SAMPLER_2D_SHADOW,
+    gl2.SAMPLER_2D_ARRAY,
+    gl2.SAMPLER_2D_ARRAY_SHADOW,
+  ]);
+  const vertexSource = gl.getShaderSource(program.vertexShader) ?? "";
+  const fragmentSource = gl.getShaderSource(program.fragmentShader) ?? "";
+  const samplers: { name: string; size: number; type: number; stages: string[] }[] = [];
+  const active = gl.getProgramParameter(program.program, gl.ACTIVE_UNIFORMS) as number;
+  for (let index = 0; index < active; index++) {
+    const uniform = gl.getActiveUniform(program.program, index);
+    if (uniform && samplerTypes.has(uniform.type)) {
+      const name = uniform.name.replace(/\[0\]$/, "");
+      samplers.push({
+        name: uniform.name,
+        size: uniform.size,
+        type: uniform.type,
+        stages: [
+          ...(vertexSource.includes(name) ? ["vertex"] : []),
+          ...(fragmentSource.includes(name) ? ["fragment"] : []),
+        ],
+      });
+    }
+  }
+  return {
+    maxVertexTextureUnits: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) as number,
+    maxFragmentTextureUnits: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number,
+    maxCombinedTextureUnits: gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) as number,
+    activeSamplerUnits: samplers.reduce((sum, sampler) => sum + sampler.size, 0),
+    samplers,
+  };
+}
 
 function expectOnlyRowChanged(
   before: ArrayLike<number>,
@@ -389,6 +447,7 @@ async function capture(
   state.gl.render(state.scene, state.camera);
   const pixels = new Uint8Array(SIDE * SIDE * 4);
   state.gl.readRenderTargetPixels(target, 0, 0, SIDE, SIDE, pixels);
+  const glError = state.gl.getContext().getError();
   state.gl.setRenderTarget(null);
   target.dispose();
   // The saved frame is the same Canvas main camera used for the readback, not
@@ -400,7 +459,7 @@ async function capture(
   });
   const camera = [...state.camera.matrixWorld.elements];
   const bones = Array.from(dualOf(state.scene).texture.image.data ?? []);
-  return { pixels, camera, bones, screenshot };
+  return { pixels, camera, bones, screenshot, glError };
 }
 
 function changedPixels(a: Uint8Array, b: Uint8Array, radius = SIDE / 4): number {
@@ -479,9 +538,11 @@ describe("the product collar surface in the twisted pose", () => {
         "clavicle-off",
       ];
       const captures = new Map<SurfaceState, Capture>();
+      let samplerBudget: ReturnType<typeof samplerBudgetReceipt> | null = null;
       try {
         for (const mode of modes)
           captures.set(mode, await capture(state, material, mode, original, clavicleDisabled));
+        samplerBudget = samplerBudgetReceipt(state, material);
       } finally {
         material.normalMap = original.normalMap;
         material.normalScale.copy(original.normalScale);
@@ -493,11 +554,15 @@ describe("the product collar surface in the twisted pose", () => {
       }
 
       const baseline = captures.get("baseline") as Capture;
+      expect(samplerBudget, "live skin sampler budget").not.toBeNull();
       // The four frames remain the same figure, camera and dual-bone deformation.
       for (const mode of modes) {
         const current = captures.get(mode) as Capture;
         expect(current.camera, `${mode} camera`).toEqual(baseline.camera);
         expect(current.bones, `${mode} dual bones`).toEqual(baseline.bones);
+        expect(current.glError, `${mode} render/readback GL error`).toBe(
+          state.gl.getContext().NO_ERROR,
+        );
       }
       const deltas = {
         pores: changedPixels(baseline.pixels, captures.get("pores-off")?.pixels as Uint8Array),
@@ -525,6 +590,7 @@ describe("the product collar surface in the twisted pose", () => {
           unchanged: "all remaining field and stop-table values asserted byte-identical",
         },
         deltas,
+        samplerBudget,
         screenshots: Object.fromEntries(
           modes.map((mode) => [mode, (captures.get(mode) as Capture).screenshot]),
         ),
