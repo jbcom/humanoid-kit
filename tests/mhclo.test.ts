@@ -237,6 +237,11 @@ describe("evaluateBindingWithOffsetScale", () => {
     expect(hidden.restFloorDepthScale).toBeCloseTo(4, 6);
     expect(smaller.visible).toBe(true);
     expect(smaller.sourceScale).toBeCloseTo(0.5, 6);
+    const untouched = new Float32Array(6).fill(7);
+    expect(() => evaluateBindingWithGrowth(growthAsset, control, smaller, untouched)).toThrow(
+      "attachment-root frame",
+    );
+    expect(Array.from(untouched)).toEqual([7, 7, 7, 7, 7, 7]);
     expect(native.nativeFraction).toBe(0.5);
     expect(
       Array.from(evaluateBindingWithGrowth(growthAsset, control, native, new Float32Array(6))),

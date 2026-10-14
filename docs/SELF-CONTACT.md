@@ -1,10 +1,14 @@
 # Self-contact: a figure touching its own body
 
-Status: **slice 1 implemented** (#117): `solveSiteContact`, the `point` hand
-shape and the all-ages sites, headless (`src/interaction/siteContact.ts`;
-`docs/INTERACTIONS.md`, "Site contact"). Later slices are specified, not built.
-Nothing here is implemented until its slice's tests are green; each slice says
-what it proves.
+Status: **slices 1–2 plus the cache half of slice 3 implemented** (#117):
+headless `solveSiteContact`, the all-ages sites and hand-form catalogue, and
+`createSiteContactConstraint` / `useSiteContactConstraint` for generation-keyed
+frame-writer use. It is a static-source cache, not a changing-clip adapter:
+a fresh source generation invokes the solve synchronously, so it cannot be fed a
+new clip sample every frame. The cache has no `<Humanoid siteContact>` composition,
+browser render proof, neck pre-pass or playground lab yet; those slice-3 parts
+remain specified work. Nothing here is implemented until its tests are green; each slice
+says what it proves.
 
 The hand-form catalogue contains `pinch`, `flat`, `cup`, `claw` and `fist`,
 with rendered-shape tests. A caller selects the form explicitly. `pinch` closes

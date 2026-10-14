@@ -57,6 +57,12 @@ export const COAT_ROOT_SHADE = 0.45;
 export const COAT_FOLLICLE_CELL_METRES = 0.01;
 /** The strand-radius normalization used by the shader's occupancy and antialiasing math. */
 export const COAT_NORMALIZED_RADIUS = { factor: 1.5, min: 0.08, max: 0.35 } as const;
+/**
+ * The resolved centre of a lying capsule is a continuous line, rather than an
+ * end-on disc. Keep its filter narrow enough that adjacent follicles remain
+ * separate; the capsule's round ends retain the ordinary pixel filter.
+ */
+const RESOLVED_CAPSULE_FILTER = 0.1;
 
 /**
  * The alpha section after Three has applied this material's shader patch. It is
@@ -85,6 +91,8 @@ varying vec3 vCoatColour;
 varying vec3 vCoatComb;
 varying float vCoatHeight;
 varying float vCoatCosLean;
+varying float vCoatLength;
+varying float vCoatLie;
 `;
 
 /** The regions blended at this vertex, the shell's height, and the shell's offset before skinning. */
@@ -119,6 +127,8 @@ const VERTEX_REGIONS = /* glsl */ `
 	vCoatHeight = 0.8 * hkLength * ( 1.0 - 0.7 * hkLie ) / vCoatSpacing;
 	// How far a strand's axis leans off the skin's normal: the tip stands (1 - 0.7 lie) up and lie along.
 	vCoatCosLean = ( 1.0 - 0.7 * hkLie ) / max( length( vec2( 1.0 - 0.7 * hkLie, hkLie ) ), 1e-4 );
+	vCoatLength = hkLength;
+	vCoatLie = hkLie;
 	vCoatP = uv * ${UV_SCALE_ATTRIBUTE};
 `;
 
@@ -154,6 +164,8 @@ varying vec3 vCoatColour;
 varying vec3 vCoatComb;
 varying float vCoatHeight;
 varying float vCoatCosLean;
+varying float vCoatLength;
+varying float vCoatLie;
 uniform vec4 hkLobes;
 uniform float hkCoatShells;
 float hkCoatHash( vec2 p ) {
@@ -182,9 +194,55 @@ const FRAGMENT_STRANDS = /* glsl */ `
 		vec2 hkRoot = 0.25 + 0.5 * vec2( hkCoatHash( hkId ), hkCoatHash( hkId + 17.31 ) );
 		float hkReach = 0.6 + 0.4 * hkCoatHash( hkId + 5.17 );
 		float hkPresent = step( hkCoatHash( hkId + 9.13 ), vCoatCover );
-		float hkRadius = vCoatRadius * ( 1.0 - 0.75 * clamp( vCoatT / hkReach, 0.0, 1.0 ) );
+		// The standing-shell radius includes the overlap used by dense stubble.  A
+		// lying strand narrows toward its authored physical width (diameter), so
+		// neighbouring chest hairs do not merge sideways.
+		float hkWidthScale = 1.0 - ( 2.0 / 3.0 ) * vCoatLie;
+		float hkRadius = hkWidthScale * vCoatRadius * ( 1.0 - 0.75 * clamp( vCoatT / hkReach, 0.0, 1.0 ) );
+		// A shell is a cross-section of a strand, but a lying strand travels along
+		// its comb between adjacent shell heights.  Give that cross-section its own
+		// interval of the source path so the shells form one continuous strand rather
+		// than a row of isolated dots.  hkCellAxis maps the skinned comb back into
+		// this surface's cell coordinates from local derivatives, so this continues to
+		// follow the authored comb after the body bends or its UVs distort.
+		vec3 hkPxView = dFdx( vViewPosition );
+		vec3 hkPyView = dFdy( vViewPosition );
+		float hkCombLength = length( vCoatComb );
+		vec3 hkCombView = hkCombLength > 1e-8 ? vCoatComb / hkCombLength : vec3( 0.0 );
+		float hkXX = dot( hkPxView, hkPxView );
+		float hkXY = dot( hkPxView, hkPyView );
+		float hkYY = dot( hkPyView, hkPyView );
+		float hkDet = hkXX * hkYY - hkXY * hkXY;
+		// Test conditioning relative to the two derivative lengths. This accepts
+		// close, detailed coat patches while rejecting an edge-on projection.
+		vec2 hkScreen = hkDet > 1e-6 * hkXX * hkYY
+			? vec2(
+				( hkYY * dot( hkCombView, hkPxView ) - hkXY * dot( hkCombView, hkPyView ) ) / hkDet,
+				( hkXX * dot( hkCombView, hkPyView ) - hkXY * dot( hkCombView, hkPxView ) ) / hkDet
+			)
+			: vec2( 0.0 );
+		vec2 hkCellAxis = hkScreen.x * dFdx( hkCell ) + hkScreen.y * dFdy( hkCell );
+		float hkAxisLength = length( hkCellAxis );
+		// A comb that is edge-on to this projection has no meaningful screen path;
+		// its ordinary round cross-section remains the correct footprint there.
+		hkCellAxis = hkAxisLength > 1e-5 ? hkCellAxis / hkAxisLength : vec2( 0.0 );
+		float hkPreviousT = max( 0.0, vCoatT - 1.0 / hkCoatShells );
+		float hkSegment = vCoatLie * vCoatLength * ( vCoatT * vCoatT - hkPreviousT * hkPreviousT ) / vCoatSpacing;
+		vec2 hkToRoot = hkF - hkRoot;
+		float hkAlong = dot( hkToRoot, hkCellAxis );
+		float hkAcross = length( hkToRoot - hkAlong * hkCellAxis );
+		float hkBeyondEnd = max( abs( hkAlong ) - 0.5 * hkSegment, 0.0 );
+		float hkCapsuleEnd = length( vec2( hkAcross, hkBeyondEnd ) );
+		// A capsule is a strand's width along its middle, then a round tip.  The
+		// disc filter is deliberately area-preserving for an end-on hair, so using
+		// it across the whole capsule incorrectly fades a thin, resolved line to its
+		// area.  Filter the straight middle as a strand and reserve the disc filter
+		// for its two round ends.
+		float hkFootprint = hkBeyondEnd <= 0.0
+			? hkStrandFootprint( hkAcross, 2.0 * hkRadius, ${RESOLVED_CAPSULE_FILTER.toFixed(1)} * hkPx )
+			: hkDiscFootprint( hkCapsuleEnd, hkRadius, hkPx );
 		float hkNear = hkPresent * step( vCoatT, hkReach )
-			* hkDiscFootprint( length( hkF - hkRoot ), hkRadius, hkPx );
+			* hkFootprint;
 		// The strands as upright cylinders, one a cell at the cover's odds. Seen
 		// at an angle θ off the skin's normal each hides its base, π r², which no
 		// neighbour's overlaps (a root keeps to its cell's middle), and its side,
@@ -327,7 +385,7 @@ export class CoatMaterial extends MeshStandardMaterial {
       );
     patchShadowFilter(shader);
     if (this.hkCaptureCompileProbe) {
-      const from = shader.fragmentShader.indexOf("float hkBases");
+      const from = shader.fragmentShader.indexOf("float hkWidthScale");
       const to = shader.fragmentShader.indexOf("diffuseColor.a = hkCover;", from);
       if (from < 0 || to < 0)
         throw new Error("CoatMaterial: compiled fragment lost the coat alpha section");

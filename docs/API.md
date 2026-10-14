@@ -1426,6 +1426,22 @@ slices 1 and 2 of its build plan.
   silently redefined as the broad contact.
   `handShapeRotations` can also apply any `HAND_SHAPES` entry separately to a
   pose buffer. The caller chooses the gesture appropriate to its action.
+- `createSiteContactConstraint()` caches a full-weight `solveSiteContact` result
+  by the evaluated geometry generation, target object, shape and immutable source
+  pose generation. `update({ active, figure, geometryGeneration, source, target,
+  out })` only solves when one of those identities changes; it writes a weighted
+  pose from the cached result and returns `idle`, `blending`, `holding` or
+  `released`. `out` must be a separate same-length buffer: the source is immutable
+  for its generation and is never a destination. The report's `solution` is always
+  the full-weight receipt, never a claim that a partly blended frame already
+  touches. A source pose or target that mutates under the same identity throws
+  rather than silently drawing a stale solve. `release(source, out)` copies the
+  source byte-for-byte and drops the
+  cache; `cancel(source, out)` does the same immediately with `cancelled` state;
+  `invalidate()` drops it without writing; `dispose()` makes later updates invalid.
+  `useSiteContactConstraint()` from `humanoid-kit/react` owns this
+  controller for a mounted React figure and disposes it on unmount; call its
+  `update` from the renderer's frame writer, never from render.
 - `InteractionEvent` is delivered through `on(participant, listener)` to both
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,

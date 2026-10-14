@@ -23,15 +23,19 @@ import { SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 300_000 };
+/** A source-body review PNG is requested explicitly; isolation assertions always run. */
+const CAPTURE_WET_FILM = import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true";
 const recipe = createRecipe({ macros: { age: 25 } });
 const client = inlineWorkerClient({ subdivision: 1 });
 
 type Proof = {
   rest: FluidCoverageSnapshot;
   flexed: FluidCoverageSnapshot;
+  detached: FluidCoverageSnapshot;
   focus: readonly [number, number, number];
   initial: SupportMetadata;
   updated: SupportMetadata;
+  releasedKg: number;
 };
 
 type SupportMetadata = {
@@ -188,6 +192,43 @@ function supportMetadata(
   };
 }
 
+function occupiedTexels(material: SkinMaterial): number {
+  const texture = material.hkUniforms.hkFluidCoverage.value;
+  if (!texture) throw new Error("fluid wet-film figure proof needs a coverage texture");
+  const data = (texture as { image: { data: Uint8Array } }).image.data;
+  return data.reduce((total, value) => total + Number(value > 0), 0);
+}
+
+function renderedPixels(state: RootState): Uint8Array {
+  const { gl, scene, camera } = state;
+  gl.render(scene, camera);
+  const canvas = gl.domElement;
+  const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+  const context = gl.getContext();
+  context.readPixels(
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+    context.RGBA,
+    context.UNSIGNED_BYTE,
+    pixels,
+  );
+  return pixels;
+}
+
+function changedPixels(before: Uint8Array, after: Uint8Array): number {
+  let changed = 0;
+  for (let pixel = 0; pixel < before.length; pixel += 4)
+    if (
+      before[pixel] !== after[pixel] ||
+      before[pixel + 1] !== after[pixel + 1] ||
+      before[pixel + 2] !== after[pixel + 2]
+    )
+      changed++;
+  return changed;
+}
+
 async function proof(): Promise<Proof> {
   const assets = await loadHumanoidAssets({ body: bodyPack });
   const model = new HumanoidModel(assets, { subdivision: 1 });
@@ -232,9 +273,19 @@ async function proof(): Promise<Proof> {
     field.inject(id, source.anchor, "water", 0.0005);
   }
   const flexed = field.coverageSnapshot(flexedFrame);
+  const released = field.detach(
+    flexedFrame,
+    flexed.cells.slice(45).map((cell) => ({
+      triangle: cell.triangle,
+      materialId: cell.materialId,
+      massKg: cell.massKg,
+    })),
+  );
+  const detached = field.coverageSnapshot(flexedFrame);
   return {
     rest,
     flexed,
+    detached,
     focus: triangleCentre(flexedFrame, triangles[0] as number).toArray() as [
       number,
       number,
@@ -242,6 +293,7 @@ async function proof(): Promise<Proof> {
     ],
     initial: supportMetadata(restFrame, rest),
     updated: supportMetadata(flexedFrame, flexed),
+    releasedKg: released.reduce((total, release) => total + release.massKg, 0),
   };
 }
 
@@ -379,20 +431,29 @@ describe("posed source-body wet-film coverage", () => {
       camera.lookAt(pairCentreX, focus.y, focus.z);
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
+      const fullTexels = occupiedTexels(wetFlexedSkin);
+      const fullPixels = renderedPixels(state());
+      bindFluidWetFilmCoverage(wetFlexedSkin, wetFlexed.geometry, source.detached);
+      state().invalidate();
+      const detachedTexels = occupiedTexels(wetFlexedSkin);
+      const detachedPixels = renderedPixels(state());
+      expect(detachedTexels).toBeLessThan(fullTexels);
+      expect(changedPixels(fullPixels, detachedPixels)).toBeGreaterThan(0);
       const receipt = [
-        "POSE: flexed — left dry / right water support",
+        "POSE: flexed — left dry / right partially detached water support",
         "shared static LayerAtlas: same texture object",
-        `water: ${source.updated.occupiedTriangles} occupied triangles; ${source.updated.coveredVertices} non-zero vertices`,
+        `water: ${source.detached.cells.length}/${source.updated.occupiedTriangles} attached triangles after ${source.releasedKg.toFixed(4)} kg detached`,
         `vertex interpolation reaches ${source.updated.interpolatedFanTriangles} incident triangles (+${source.updated.interpolatedFanTriangles - source.updated.occupiedTriangles} support expansion)`,
         `attached mass: ${source.flexed.attachedKg.toFixed(4)} kg; coverage is support occupancy, not optical alpha or thickness`,
       ].join("\n");
       const receiptNode = screen.container.querySelector("[data-fluid-wet-film-receipt]");
       receiptNode?.replaceChildren(receipt);
       state().gl.render(state().scene, camera);
-      await page.screenshot({
-        element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
-        path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
-      });
+      if (CAPTURE_WET_FILM)
+        await page.screenshot({
+          element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
+          path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
+        });
     },
     LOAD.timeout + 30_000,
   );

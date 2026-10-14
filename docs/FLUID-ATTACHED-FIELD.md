@@ -10,6 +10,24 @@ The bounded field rejects a new triangle/material identity at capacity rather
 than coalescing or discarding it. It has no renderer, droplets, contact
 transfer, residue, adult aperture adapter, or mesh changes.
 
+## Explicit detachment
+
+`AttachedFluidField.detach(frame, requests)` is the first bounded detachment
+operation. A caller supplies each posed triangle, material identity, and mass
+to release in kilograms; this field does not invent a runoff threshold, drop
+radius, or material property. It prevalidates every request against the live
+sparse cells, then atomically debits those cells and transfers the exact total
+from `attachedKg` to `FluidState`'s `detachedKg` ledger.
+
+Its immutable releases carry the matching frame's triangle, source vertex IDs,
+barycentric position in metres, and surface normal. They are renderer-neutral
+handoff points for a later bounded droplet adapter. A full-cell release removes
+that triangle from the next wet-film coverage snapshot; a partial release keeps
+the occupied support with its reduced conserved mass. Rejected batches leave
+both the cells and ledger unchanged. This is detachment bookkeeping and posed
+release output, not a particle simulator, collision, contact transfer, or a
+rendered droplet claim.
+
 ## Coverage output
 
 `AttachedFluidField.coverageSnapshot(frame)` is an immutable, renderer-neutral
@@ -47,6 +65,14 @@ body geometry, avoiding an additional vertex attribute on the already dual-skinn
 source body and preventing figures from sharing dynamic coverage state. Rebinding
 either one releases and disposes the old figure-local texture before creating the
 new binding.
+
+The bridge retains only the last validated triangle/source-ID support key per
+render geometry. A repeated support selection can reuse its selected-by-all UV
+overlap check, while every bind still reads the current indexed source IDs and
+checks finite in-range UVs and selected-triangle degeneracy. Replacing either
+the index or UV attribute, or advancing either attribute's version, rebuilds
+the topology and clears that key. Rebinding or disposing a geometry also drops
+the cache; coverage changes do not grow a history.
 
 The bridge uses the existing documented sweat-film roughness and specular
 choices from `src/surface/regions/states.ts`; the coverage field itself still

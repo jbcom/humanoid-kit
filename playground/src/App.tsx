@@ -150,7 +150,17 @@ export interface CoatRuntimeProbe {
     opacity: number;
   };
   geometry: { indexCount: number; instanceCount: number; vertexCount: number };
-  uniforms: { shells: number; rows: { region: string; cover: number; density: number }[] };
+  uniforms: {
+    shells: number;
+    rows: {
+      region: string;
+      cover: number;
+      length: number;
+      density: number;
+      lie: number;
+      width: number;
+    }[];
+  };
   program: {
     key: string;
     found: boolean;
@@ -184,7 +194,7 @@ type CoatProbeMaterial = {
   blendEquation: number;
   opacity: number;
   hkUniforms: {
-    hkCoatPaint: { value: { x: number; z: number }[] };
+    hkCoatPaint: { value: { x: number; y: number; z: number; w: number }[] };
     hkCoatShells: { value: number };
   };
   customProgramCacheKey(): string;
@@ -387,7 +397,15 @@ function SceneProbe({
               shells: material.hkUniforms.hkCoatShells.value,
               rows: regions.map((region, index) => {
                 const row = material.hkUniforms.hkCoatPaint.value[index * 2];
-                return { region, cover: row?.x ?? 0, density: row?.z ?? 0 };
+                const look = material.hkUniforms.hkCoatPaint.value[index * 2 + 1];
+                return {
+                  region,
+                  cover: row?.x ?? 0,
+                  length: row?.y ?? 0,
+                  density: row?.z ?? 0,
+                  lie: row?.w ?? 0,
+                  width: look?.w ?? 0,
+                };
               }),
             },
             program: {

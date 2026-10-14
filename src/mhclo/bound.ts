@@ -229,6 +229,8 @@ export function evaluateBindingWithGrowth(
   sourceRootFrames?: Float32Array,
 ): Float32Array {
   if (!growth.visible) throw new RangeError("MHCLO growth at zero has no renderable mesh");
+  if (growth.sourceScale < 1 && sourceRootFrames?.length !== asset.entry.vertexCount * 3)
+    throw new RangeError("MHCLO contraction requires each source vertex's attachment-root frame");
   if (growth.sourceScale === 1 && growth.depthScale === 1)
     return evaluateBinding(asset, control, out);
   const native = evaluateBinding(asset, control, new Float32Array(asset.entry.vertexCount * 3));
