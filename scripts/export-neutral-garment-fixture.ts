@@ -82,6 +82,19 @@ const parts = rest.parts.map((p, i) => {
       save(`part-${i}-${key}`, p[key as keyof typeof p] as ArrayData),
     ]),
   );
+  // Visible render masks must not remove the hidden body from spatial queries.
+  // Both indices address exactly the same canonical rest vertices and UV chart.
+  const fullIndex =
+    p.role === "body" ? model.topology().body.index : model.garmentTopology(p.id).index;
+  assert.equal(fullIndex.length % 3, 0);
+  for (const index of fullIndex) assert.ok(index < vertices);
+  const fullTriangles = new Set<string>();
+  for (let t = 0; t < fullIndex.length; t += 3)
+    fullTriangles.add(`${fullIndex[t]},${fullIndex[t + 1]},${fullIndex[t + 2]}`);
+  for (let t = 0; t < p.index.length; t += 3)
+    assert.ok(fullTriangles.has(`${p.index[t]},${p.index[t + 1]},${p.index[t + 2]}`));
+  if (p.role === "body") assert.ok(fullIndex.length > p.index.length);
+  arrays.fullIndex = save(`part-${i}-fullIndex`, fullIndex);
   const geometryHash = createHash("sha256")
     .update(raw(p.rest))
     .update(raw(p.index))
@@ -97,6 +110,13 @@ const parts = rest.parts.map((p, i) => {
     vertexCount: vertices,
     triangleCount: p.index.length / 3,
     geometryHash,
+    indexPurpose: {
+      index: "render-visible triangles after outfit masking",
+      fullIndex:
+        "full source topology for occupancy and clearance, including hidden body triangles; not a watertightness certification",
+    },
+    fullTriangleCount: fullIndex.length / 3,
+    fullIndexHash: arrays.fullIndex.sha256,
     material: p.material,
     textureUrl: texture ?? null,
     arrays,
@@ -173,6 +193,9 @@ const receipt = {
     copiedArrays: true,
     sharedGroundLiftOnce: true,
     distinctGarmentPoses: true,
+    fullTopologyIndexRange: true,
+    visibleTrianglesSubsetOfFullTopology: true,
+    hiddenBodyPreservedForSpatialQueries: true,
   },
 };
 fs.writeFileSync(path.join(output, "fixture.json"), JSON.stringify(receipt, null, 2));
