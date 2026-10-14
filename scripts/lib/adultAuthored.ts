@@ -134,15 +134,15 @@ export const HIDDEN_SLIDERS: readonly string[] = [
 export const AUTHORED_PROVENANCE: readonly string[] = [
   "- `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` " +
     "on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).",
-  "- `genitals/phallus-k2..k4*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
+  "- `genitals/phallus-k1..k3*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
     "the flaccid shaft, glans and corona of ieroglif's CC0 `adult_male_genitalia_breast_fix` " +
     "(<http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>) and the erect ones of Slayer227's CC0 " +
     "`Male_Gen-Heal1` (<http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>), " +
     "cut by `scripts/blender/cut_sculpt.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
-    "by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` grows or shrinks each by one uniform factor to a " +
-    "published dorsal length, and blends the flaccid sculpt into the erect one for arousal " +
-    "(length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). `genitals/phallus-k1*` (the clitoral glans) " +
-    "is drawn by `scripts/lib/detail/phallus.ts` from the reservoir's loop and published measurements.",
+    "by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` scales each along its centreline and across it to a " +
+    "published dorsal length and mid-shaft girth, and blends the flaccid sculpt into the erect one for arousal " +
+    "(length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). Every key is sculpted; below the " +
+    "smallest the organ grows out of the reservoir at rest.",
   "- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: the sac of the same CC0 " +
     "`adult_male_genitalia_breast_fix`, cut, placed and projected onto the labioscrotal reservoir the same way and grown " +
     "or shrunk by `scripts/lib/detail/scrotum.ts` by one uniform factor to the width of two testes of a published volume " +

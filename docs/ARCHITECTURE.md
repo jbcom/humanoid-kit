@@ -42,7 +42,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | Pack | Files | Contents |
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to eight skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 1077 sparse targets (564 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
-| `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 98 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
+| `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 95 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | 98 clips (walks, idles, swims, combat, sitting and more) as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | 37 hair entries bound to the base mesh: 16 scalp styles, 12 eyebrows, 4 eyelashes and 5 CC0 facial-hair entries, each with its baked occlusion where it has one and a strand map or texture. `recipe.facialHair` selects authored facial assets independently (see "Scalp hair") |
@@ -2564,6 +2564,21 @@ evaluation, those weights spread the loop's displacement into the zone, with
 the authored folds added there. The closure reaches its full share at a canal
 target weight of 0.1 and fades smoothly to zero as that weight reaches zero
 (`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
+
+**In a pose (2026-10-13, #77).** At rest the closure meets the lips, but a pose
+skins them: each lip keeps its own side's thigh weights, so spreading the hips,
+as in lithotomy, pulls the two sides apart and opens the slit. Each vertex of a
+closure's zone therefore follows its canal's root as far as the closure reaches
+it: on the loop its weights are the root's, across the zone they blend from its
+own to the root's by the zone's harmonic weights summed (`closureSkinning`,
+`ReservoirSkinning.closure`), times how closed the opening is. That keeps the two
+sides together under abduction: in lithotomy the vaginal walls a camera at the
+foot end can see fell from 98 vertices to 46, the anal from 20 to 4
+(`tests/canalPosed.test.ts`). The lips keep their own hip fold: the fold plays
+per side too, and accounts for the opening that remains. Blending the fold rows
+toward the root's as well closed it, but regressed the foundation's seated and
+squatting rows (penetration and fold counts on the heavy and elderly bodies),
+and is not done; `canalPosed` stays red until a fold treatment holds both.
 
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below

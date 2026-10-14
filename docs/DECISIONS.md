@@ -152,6 +152,55 @@ pack entries. This ruling changes asset eligibility; source-to-pack validation
 and rendered anatomical acceptance still apply. The restriction against copying
 MakeHuman program code and ruling 8's procedural geometry boundaries remain.
 
+Owner extension, 2026-10-13: provide an explicit CC0-only asset build profile.
+It excludes attributed asset data and reports the corresponding features as
+unavailable. The commercial-use profile includes permitted attributed assets
+with their required notices. This profile governs asset data, not the code's
+MIT licence. Pack metadata, shipped files, attribution and feature availability
+must agree with the selected profile; no hidden procedural substitute is added.
+
+## 10. The kit exposes MakeHuman; it does not design replacement models
+
+Owner clarification, 2026-10-13: this kit is an API in front of MakeHuman.
+Preserve the source meshes and expose their capabilities through the kit's
+loaders, controls, bindings and independently written proxies. Do not author
+new meshes or turn integration into a separate modelling or art-design effort.
+Approved procedural work must meet the source material's quality; decision 8's
+exception boundaries remain in force.
+
+Every MakeHuman community or GitHub asset package with CC0, CC-BY or another
+commercially redistributable licence merits consideration. Inventory its actual
+capabilities, provenance, compatibility and integration needs rather than
+selecting by a human-versus-AI preference or an invented art direction. Decision
+9 governs asset licences, attribution and the CC0-only build profile. Source
+fidelity and current rendered proof remain necessary before acceptance.
+
+## 11. Comprehensive capabilities include coordinated multi-party animation
+
+Owner clarification, 2026-10-13: this is the definitive humanoid kit, not a
+curated slice of MakeHuman capabilities. The integration program considers all
+commercially redistributable MakeHuman ecosystem capabilities under decisions
+9 and 10. Compatibility work and staged delivery do not define permanent scope
+exclusions.
+
+Figures must be able to animate and communicate through reflective presence.
+The signaling plan must support a complex choreographed sequence with five or
+fifty participants: each figure exposes its active animation, seeks one or more
+partners when a cycle requires them, and participates in coordinating the cycle.
+This requirement extends the multi-party contract in decision 5 and
+`docs/PRESENCE.md`; it is a delivery requirement, not a claim that choreography,
+partner discovery or fifty-participant coordination is already implemented.
+
+## 12. Asset intake is confirmed once; delivery focuses on working capabilities
+
+Owner direction, 2026-10-13: unpack, confirm once, commit, and use Git LFS if
+needed. Commit the optimized asset outputs rather than the larger original
+distribution. Decide storage from the actual output sizes. Do not make repeated
+packaging checks or expanding data-validation matrices a substitute for building
+the API. Revisit intake only when the source or transformation changes or a
+concrete defect requires it. Tests and visual checks focus on actual runtime,
+animation, communication and rendering behavior.
+
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
