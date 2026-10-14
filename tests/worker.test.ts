@@ -8,6 +8,9 @@ import { shapeSignalNames } from "../src/model/detailFactors.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { HIP_FOLD } from "../src/rig/hipFold.ts";
+import { rowTexels, type SurfaceFold } from "../src/rig/jointFold.ts";
+import { KNEE_FOLD } from "../src/rig/kneeFold.ts";
 import { ADULT_SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { createWorkerHandler } from "../src/worker/handler.ts";
 import type { WorkerResponse } from "../src/worker/protocol.ts";
@@ -34,7 +37,10 @@ const ADULT_BUILD = { timeout: 300_000 };
 
 // Init parses the whole first stage and builds the model (~1 s), so these get room.
 describe("the evaluation worker", { timeout: 60_000 }, () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("evaluates the first figure at once and makes an older one wait for its stage only", async () => {
     let release = () => {};
@@ -73,6 +79,62 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
 
   it("solves a figure's joint folds between other requests, and lets a newer ask supersede an older", async () => {
     stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 1 },
+    });
+    const realFolds = HumanoidModel.prototype.folds;
+    let computedFlexions = 0;
+    let reportFlexion = () => {};
+    const flexion = new Promise<void>((resolve) => {
+      reportFlexion = resolve;
+    });
+    const started = performance.now();
+    // Observe a real computed flexion. No injected yield or solver replacement:
+    // cancellation must interrupt the handler after the source generator yields.
+    const folds = vi.spyOn(HumanoidModel.prototype, "folds").mockImplementation(function* (
+      this: HumanoidModel,
+      ...args
+    ) {
+      const steps = realFolds.apply(this, args);
+      for (;;) {
+        const step = steps.next();
+        if (step.done) return step.value;
+        computedFlexions++;
+        reportFlexion();
+        yield step.value;
+      }
+    });
+    const first = handle({ type: "folds", id: 2, recipe: createRecipe({ macros: { age: 30 } }) });
+    await flexion;
+    const firstFlexionMs = performance.now() - started;
+    expect(computedFlexions).toBe(1);
+    expect(replies.has(2)).toBe(false);
+    // This request runs while the source solve is incomplete.
+    const evaluated = handle({ type: "evaluate", id: 4, recipe: createRecipe() });
+    await evaluated;
+    expect(replies.get(4)?.type).toBe("evaluated");
+    expect(replies.has(2)).toBe(false);
+    // Transport is tested separately; an empty deterministic serialization
+    // fixture lets the superseding request finish without another full solve.
+    // biome-ignore lint/correctness/useYield: completed serialization fixture; the interrupted solve above yields real source flexions.
+    folds.mockImplementation(function* () {
+      return { surface: "base", folds: [] };
+    });
+    const second = handle({ type: "folds", id: 3, recipe: createRecipe() });
+    await Promise.all([first, second, evaluated]);
+    expect(replies.get(4)?.type).toBe("evaluated");
+    expect(replies.get(2)).toMatchObject({ type: "error", name: "AbortError" });
+    expect(replies.get(3)).toEqual({ type: "folds", id: 3, surface: "base", folds: [] });
+    expect(computedFlexions).toBe(1);
+    console.info("worker real fold cancellation", { firstFlexionMs, computedFlexions });
+  });
+
+  it("serializes joint fold results and transfers their slots and rows", async () => {
+    stubFetch();
     const { handle, replies, transfers } = start();
     await handle({
       type: "init",
@@ -80,25 +142,27 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       load: { body: "http://packs/body" },
       model: { subdivision: 1 },
     });
-    const first = handle({ type: "folds", id: 2, recipe: createRecipe({ macros: { age: 30 } }) });
-    // A newer ask for folds stops the older one at its next flexion.
-    const second = handle({ type: "folds", id: 3, recipe: createRecipe() });
-    // An evaluation is not held up behind either.
-    const evaluated = handle({ type: "evaluate", id: 4, recipe: createRecipe() });
-    await Promise.all([first, second, evaluated]);
-    expect(replies.get(4)?.type).toBe("evaluated");
-    expect(replies.get(2)).toMatchObject({ type: "error", name: "AbortError" });
+    const vertices = (replies.get(1) as Extract<WorkerResponse, { type: "ready" }>).topology.body
+      .vertexCount;
+    // Serialization fixtures, not source geometry acceptance. Full source
+    // hip/knee solves and projection remain in hipFold/foldQuality tests.
+    const fixtures: SurfaceFold[] = [HIP_FOLD, KNEE_FOLD].map((joint) => ({
+      joint,
+      rows: 2,
+      slot: Float32Array.from({ length: vertices }, (_, vertex) => (vertex < 2 ? vertex : -1)),
+      data: new Uint16Array(2 * rowTexels(joint) * 4).fill(0x3c00),
+    }));
+    // biome-ignore lint/correctness/useYield: completed serialization fixture, with no artificial solver progress.
+    vi.spyOn(HumanoidModel.prototype, "folds").mockImplementation(function* () {
+      return { surface: "base", folds: fixtures };
+    });
+    await handle({ type: "folds", id: 3, recipe: createRecipe() });
     const reply = replies.get(3);
     expect(reply?.type).toBe("folds");
     if (reply?.type !== "folds") return;
     expect(reply.surface).toBe("base");
     expect(reply.folds.map((f) => f.joint.name)).toEqual(["hip", "knee"]);
-    const vertices = (replies.get(1) as Extract<WorkerResponse, { type: "ready" }>).topology.body
-      .vertexCount;
-    for (const fold of reply.folds) {
-      expect(fold.rows, fold.joint.name).toBeGreaterThan(50);
-      expect(fold.slot.length).toBe(vertices);
-    }
+    expect(reply.folds).toEqual(fixtures);
     // The slots and the rows are transferred, not copied.
     expect(transfers.get(3)).toEqual(reply.folds.flatMap((f) => [f.slot.buffer, f.data.buffer]));
   });
