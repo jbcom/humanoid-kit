@@ -57,6 +57,30 @@ describe("recipe validation", () => {
     expect(p).toContain("macros.size is not a macro");
   });
 
+  it("accepts breastPresence only on the two breast regions and only in [0, 1]", () => {
+    expect(
+      recipeProblems(createRecipe({ regionalMacros: { breastL: { breastPresence: 0.25 } } })),
+    ).toEqual([]);
+
+    const misplaced = createRecipe() as unknown as {
+      regionalMacros: Record<string, Record<string, unknown>>;
+    };
+    misplaced.regionalMacros.chest = { breastPresence: 0.5 };
+    expect(recipeProblems(misplaced)).toContain(
+      "regionalMacros.chest.breastPresence applies only to breastL or breastR",
+    );
+
+    for (const value of [-0.01, 1.01, Number.NaN]) {
+      const invalid = createRecipe() as unknown as {
+        regionalMacros: Record<string, Record<string, unknown>>;
+      };
+      invalid.regionalMacros.breastR = { breastPresence: value };
+      expect(recipeProblems(invalid)).toContain(
+        "regionalMacros.breastR.breastPresence must be a number in [0, 1]",
+      );
+    }
+  });
+
   it("rejects structurally broken recipes, listing every problem", () => {
     expect(recipeProblems(null)).toEqual(["recipe is not an object"]);
     expect(recipeProblems("recipe")).toEqual(["recipe is not an object"]);

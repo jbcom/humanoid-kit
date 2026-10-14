@@ -176,7 +176,7 @@ input and does not validate it; validation happens at evaluation.
 interface Recipe {
   version: 1;
   macros: MacroValues;
-  regionalMacros: Partial<Record<BodyRegion, Partial<RegionalMacroValues>>>;
+  regionalMacros: RegionalTraitValues;
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
@@ -219,6 +219,18 @@ interface BeardSpec {
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
+type BreastRegionalTraitValues = Partial<RegionalMacroValues> & {
+  // breastL/breastR only. 0 = male source-frame share; 1 = female share.
+  // Absent preserves the figure's gender-derived MakeHuman source frame.
+  breastPresence?: number;
+};
+
+type RegionalTraitValues = {
+  [Region in BodyRegion]?: Region extends "breastL" | "breastR"
+    ? BreastRegionalTraitValues
+    : Partial<RegionalMacroValues>;
+};
+
 interface SkinRecipe {
   melanin: number;      // 0 very fair .. 1 very deep
   haemoglobin: number;  // 0 pale, 0.5 typical, 1 ruddy
@@ -258,7 +270,8 @@ interface MacroValues {
 - `DEFAULT_MACROS`: gender 0.5, age 25, muscle, weight, height, proportions,
   breastSize and breastFirmness 0.5, ethnic anchors 1/3 each.
 - `macroTargetWeights(macros): Map<string, number>`: target name to weight, for
-  names that exist in the packed data. Never weights breast targets under 18.
+  names that exist in the packed data. Breast development follows MakeHuman's
+  child, young and old anchors; only its baby anchor has no breast targets.
 - `macroTargetNames(): Set<string>`: every name `macroTargetWeights` can
   produce; the body pack's first targets file holds exactly these plus
   `SKIN_LAYER_TARGETS`.
