@@ -28,11 +28,22 @@ type UvTriangle = {
   readonly vertices: readonly [number, number, number];
   readonly points: readonly [UvPoint, UvPoint, UvPoint];
 };
+type UvAttribute = NonNullable<ReturnType<BufferGeometry["getAttribute"]>>;
+type IndexAttribute = NonNullable<ReturnType<BufferGeometry["getIndex"]>>;
+type UvTopology = {
+  readonly rows: readonly UvTriangle[];
+  readonly index: IndexAttribute;
+  readonly indexVersion: number;
+  readonly indexCount: number;
+  readonly uv: UvAttribute;
+  readonly uvVersion: number;
+  readonly uvCount: number;
+};
 
 const materialGeometry = new WeakMap<SkinMaterial, BufferGeometry>();
 const geometryMaterial = new WeakMap<BufferGeometry, SkinMaterial>();
 const materialCoverage = new WeakMap<SkinMaterial, CoverageTexture>();
-const uvTopologies = new WeakMap<BufferGeometry, readonly UvTriangle[]>();
+const uvTopologies = new WeakMap<BufferGeometry, UvTopology>();
 const validatedSupportKeys = new WeakMap<BufferGeometry, string>();
 const trackedMaterials = new WeakSet<SkinMaterial>();
 const trackedGeometries = new WeakSet<BufferGeometry>();
@@ -91,12 +102,27 @@ function coverageTexture(material: SkinMaterial): CoverageTexture {
   return { data, texture };
 }
 
+function attributeVersion(attribute: UvAttribute): number {
+  return "data" in attribute ? attribute.data.version : attribute.version;
+}
+
 function topology(geometry: BufferGeometry): readonly UvTriangle[] {
-  const cached = uvTopologies.get(geometry);
-  if (cached) return cached;
   const uvs = geometry.getAttribute("uv");
   const index = geometry.getIndex();
   if (!uvs || !index) throw new RangeError("fluid wet-film coverage requires indexed UV geometry");
+  const uvVersion = attributeVersion(uvs);
+  const cached = uvTopologies.get(geometry);
+  if (
+    cached &&
+    cached.index === index &&
+    cached.indexVersion === index.version &&
+    cached.indexCount === index.count &&
+    cached.uv === uvs &&
+    cached.uvVersion === uvVersion &&
+    cached.uvCount === uvs.count
+  )
+    return cached.rows;
+  validatedSupportKeys.delete(geometry);
   const out: UvTriangle[] = [];
   for (let triangle = 0; triangle < index.count / 3; triangle++) {
     const at = triangle * 3;
@@ -112,7 +138,18 @@ function topology(geometry: BufferGeometry): readonly UvTriangle[] {
     });
   }
   const immutable = Object.freeze(out);
-  uvTopologies.set(geometry, immutable);
+  uvTopologies.set(
+    geometry,
+    Object.freeze({
+      rows: immutable,
+      index,
+      indexVersion: index.version,
+      indexCount: index.count,
+      uv: uvs,
+      uvVersion,
+      uvCount: uvs.count,
+    }),
+  );
   return immutable;
 }
 
@@ -197,12 +234,25 @@ function validateSupport(
   cells: readonly FluidCoverageCell[],
 ): UvTriangle[] {
   const all = topology(geometry);
+  const index = geometry.getIndex();
+  const uvs = geometry.getAttribute("uv");
+  if (!index || !uvs) throw new RangeError("fluid wet-film coverage requires indexed UV geometry");
   const selected = cells.map((cell) => {
-    const triangle = all[cell.triangle];
-    if (!triangle)
+    if (!all[cell.triangle])
       throw new RangeError(`fluid wet-film triangle ${cell.triangle} is outside geometry`);
-    if (triangle.vertices.some((vertex, corner) => vertex !== cell.sourceVertices[corner]))
+    const at = cell.triangle * 3;
+    const vertices = [index.getX(at), index.getX(at + 1), index.getX(at + 2)] as const;
+    if (vertices.some((vertex, corner) => vertex !== cell.sourceVertices[corner]))
       throw new RangeError("fluid wet-film source triangle does not match render geometry");
+    const triangle: UvTriangle = {
+      triangle: cell.triangle,
+      vertices,
+      points: vertices.map((vertex) => [uvs.getX(vertex), uvs.getY(vertex)] as const) as [
+        UvPoint,
+        UvPoint,
+        UvPoint,
+      ],
+    };
     if (
       triangle.points.some(
         ([u, v]) => !Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1,
