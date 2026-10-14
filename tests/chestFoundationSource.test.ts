@@ -41,6 +41,18 @@ function maxDiff(a: Float32Array, b: Float32Array) {
   return max;
 }
 
+function maxDiffOnSide(a: Float32Array, b: Float32Array, side: number) {
+  let max = 0;
+  for (const vertex of foundation.reach) {
+    if ((foundation.side[vertex] as number) !== side) continue;
+    for (let axis = 0; axis < 3; axis++) {
+      const index = vertex * 3 + axis;
+      max = Math.max(max, Math.abs((a[index] as number) - (b[index] as number)));
+    }
+  }
+  return max;
+}
+
 describe("chest foundation source binding", () => {
   it("reproduces MakeHuman's average and maximum source controls exactly", () => {
     for (const [size, firmness] of [
@@ -111,6 +123,51 @@ describe("chest foundation model path", () => {
         expect(left[vertex * 3 + axis] as number).toBe(neutral[vertex * 3 + axis] as number);
     }
     expect(maxDiff(left, neutral)).toBeGreaterThan(1e-3);
+  });
+
+  it("uses the same source baseline for a unilateral left request as a bilateral request", () => {
+    for (const gender of [0, 0.5])
+      for (const breastSize of [0, 0.5, 1]) {
+        const source = {
+          ...cell,
+          macros: { ...cell.macros, gender, breastSize, breastFirmness: 0.5 },
+        };
+        const legacy = lab.model.evaluate(source).control;
+        const unilateral = lab.model.evaluate({
+          ...source,
+          regionalMacros: { breastL: { breastPresence: 1 } },
+        }).control;
+        const bilateral = lab.model.evaluate({
+          ...source,
+          regionalMacros: {
+            breastL: { breastPresence: 1 },
+            breastR: { breastPresence: 1 },
+          },
+        }).control;
+
+        expect(maxDiffOnSide(unilateral, bilateral, 0), `${gender}/${breastSize}`).toBeLessThan(
+          1e-5,
+        );
+        for (const vertex of foundation.reach) {
+          if ((foundation.side[vertex] as number) !== 1) continue;
+          for (let axis = 0; axis < 3; axis++) {
+            const index = vertex * 3 + axis;
+            expect(unilateral[index] as number, `${gender}/${breastSize}/${vertex}/${axis}`).toBe(
+              legacy[index] as number,
+            );
+          }
+        }
+        const inReach = new Set(foundation.reach);
+        for (let vertex = 0; vertex < lab.manifest.vertexCount; vertex++) {
+          if (inReach.has(vertex)) continue;
+          for (let axis = 0; axis < 3; axis++) {
+            const index = vertex * 3 + axis;
+            expect(unilateral[index] as number, `${gender}/${breastSize}/${vertex}/${axis}`).toBe(
+              legacy[index] as number,
+            );
+          }
+        }
+      }
   });
 });
 

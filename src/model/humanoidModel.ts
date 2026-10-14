@@ -66,7 +66,7 @@ import {
 import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
-import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { type BreastRegionalTraitValues, createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
 import { type JointFold, type SurfaceFold, surfaceFold } from "../rig/jointFold.ts";
 import { solveKneeFoldSteps } from "../rig/kneeFoldSolve.ts";
@@ -1739,6 +1739,65 @@ export class HumanoidModel {
     );
   }
 
+  /**
+   * The regular MakeHuman frame with only its breast target family at the source
+   * average. This is an internal binding frame, never a changed recipe value.
+   */
+  private chestSourceBaselineRecipe(recipe: Recipe): Recipe {
+    const regionalMacros = Object.fromEntries(
+      Object.entries(recipe.regionalMacros).map(([region, values]) => {
+        const { breastPresence: _presence, ...rest } = values as BreastRegionalTraitValues;
+        return [
+          region,
+          {
+            ...rest,
+            ...(rest.breastSize !== undefined ? { breastSize: 0.5 } : {}),
+            ...(rest.breastFirmness !== undefined ? { breastFirmness: 0.5 } : {}),
+          },
+        ];
+      }),
+    );
+    return {
+      ...recipe,
+      macros: { ...recipe.macros, breastSize: 0.5, breastFirmness: 0.5 },
+      regionalMacros,
+    };
+  }
+
+  /** The ordinary target evaluation, without surface detail targets. */
+  private evaluateRegular(all: readonly Contribution[]): Float32Array {
+    const regular = all.some((c) => this.detailTargets.has(c.target))
+      ? all.filter((c) => !this.detailTargets.has(c.target))
+      : all;
+    const control = new Float32Array(this.assets.positions.length);
+    evaluateMorph(this.assets.positions, this.assets.targets, regular, control, this.regions);
+    return control;
+  }
+
+  /**
+   * Rebind the source reach to the exact average breast family for the
+   * foundation's shared anchors and fill. The caller restores every inactive
+   * side from its normal control after applying the active source tissue.
+   */
+  private chestSourceBaseline(
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>>,
+    control: Float32Array,
+  ): Float32Array {
+    const baseline = this.evaluateRegular(
+      this.contributions(this.chestSourceBaselineRecipe(recipe), signals),
+    );
+    const foundation = this.chestFoundation(recipe);
+    const bound = new Float32Array(control);
+    for (const vertex of foundation.reach) {
+      for (let axis = 0; axis < 3; axis++) {
+        const index = vertex * 3 + axis;
+        bound[index] = baseline[index] as number;
+      }
+    }
+    return bound;
+  }
+
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {
     const pending = pendingTargetFiles(
       this.assets,
@@ -1996,11 +2055,7 @@ export class HumanoidModel {
       if (gate === 0) continue;
       detail.push(typeof c.weight === "number" ? { target: c.target, weight: c.weight * gate } : c);
     }
-    const contributions = isDetail.length
-      ? all.filter((c) => !this.detailTargets.has(c.target))
-      : all;
-    const control = new Float32Array(this.assets.positions.length);
-    evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
+    const control = this.evaluateRegular(all);
     const chest = this.chestPresenceParams(recipe);
     if (chest) {
       const pendingChest = this.pendingFor(this.chestSourceContributions(recipe));
@@ -2008,12 +2063,22 @@ export class HumanoidModel {
         throw new MorphError(
           `breastPresence needs target files that have not loaded yet: ${[...pendingChest].join(", ")}`,
         );
+      const foundation = this.chestFoundation(recipe);
       const applied = applyChestFoundation(
         this.chestFoundationContext(recipe),
-        this.chestFoundation(recipe),
-        control,
+        foundation,
+        this.chestSourceBaseline(recipe, signals, control),
         chest,
       );
+      for (const vertex of foundation.reach) {
+        const side =
+          foundation.side[vertex] === 0 ? "L" : foundation.side[vertex] === 1 ? "R" : null;
+        if (side && chest[side]) continue;
+        for (let axis = 0; axis < 3; axis++) {
+          const index = vertex * 3 + axis;
+          applied.positions[index] = control[index] as number;
+        }
+      }
       control.set(applied.positions);
     }
     return { control, detail };

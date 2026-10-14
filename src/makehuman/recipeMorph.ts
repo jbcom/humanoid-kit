@@ -27,23 +27,15 @@ export function recipeContributions(
   assertAgePolicy(recipe);
   // Age is a whole-figure property: a regional override can never change it,
   // even if a recipe loaded from JSON carries one (the type forbids it).
-  const bothBreastFoundations = (["breastL", "breastR"] as const).every(
-    (region) => recipe.regionalMacros[region]?.breastPresence !== undefined,
-  );
   const perRegion = BODY_REGIONS.map((region) => {
     // `breastPresence` is applied by the source-derived foundation after the
     // ordinary MakeHuman frame. It must never be turned into a masked whole-body
     // gender contribution here: that was the discontinuous experimental transfer.
     const { breastPresence, ...regionalMacros } = (recipe.regionalMacros[region] ??
       {}) as BreastRegionalTraitValues;
-    // The foundation starts from MakeHuman's average cup/firmness source cell;
-    // its own source grid then applies the requested coordinate. This confines
-    // the baseline substitution to the existing breast-target family, never a
-    // whole-body gender target.
     return macroTargetWeights({
       ...recipe.macros,
       ...regionalMacros,
-      ...(bothBreastFoundations ? { breastSize: 0.5, breastFirmness: 0.5 } : {}),
       age: recipe.macros.age,
     });
   });
