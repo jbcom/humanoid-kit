@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
+import { VULVA_ENGORGED } from "../scripts/lib/detail/vulva.ts";
 import type { EyeManifest } from "../src/eyes/library.ts";
 import {
   type AdultAnatomyManifest,
@@ -137,17 +138,42 @@ export function loadMiniatureAssets(): HumanoidAssets {
   return miniature;
 }
 
+let adultDetailOnly: HumanoidAssets | undefined;
 let organOnly: HumanoidAssets | undefined;
 
 /**
- * The packed assets with the adult pack's state morphs taken out: arousal then moves the
- * organ's detail targets alone, not the lips and nipples it also fills (#118, measured in
- * arousal.test.ts), so a test of the organ's surface can compare the whole body.
+ * The packed assets with adult state morphs taken out. Arousal then reaches only
+ * detail targets; callers disable the detail they are not measuring. This keeps
+ * an organ or vulva test from accidentally measuring the lip and nipple response
+ * that arousal.test.ts covers.
+ */
+export function loadAdultDetailOnlyAssets(): HumanoidAssets {
+  if (!adultDetailOnly) {
+    const manifest: AdultAnatomyManifest = structuredClone(adultManifest);
+    if (manifest.anatomy) manifest.anatomy.stateMorphs = [];
+    adultDetailOnly = parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest });
+  }
+  return adultDetailOnly;
+}
+
+/**
+ * The adult detail fixture for a phallus or scrotum test. It also removes the
+ * vulva's arousal-driven skin target, so whole-body comparisons contain only
+ * the organ detail under test.
  */
 export function loadOrganOnlyAssets(): HumanoidAssets {
   if (!organOnly) {
     const manifest: AdultAnatomyManifest = structuredClone(adultManifest);
-    if (manifest.anatomy) manifest.anatomy.stateMorphs = [];
+    const anatomy = manifest.anatomy;
+    if (anatomy) {
+      anatomy.stateMorphs = [];
+      const detail = anatomy.detail;
+      if (detail) {
+        detail.targets = detail.targets.filter((target) => target !== VULVA_ENGORGED);
+        if (detail.skin) detail.skin = detail.skin.filter((target) => target !== VULVA_ENGORGED);
+        if (detail.drives) delete detail.drives[VULVA_ENGORGED];
+      }
+    }
     organOnly = parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest });
   }
   return organOnly;

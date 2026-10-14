@@ -71,7 +71,7 @@ import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { reservoirRoot } from "./lib/detail/root.ts";
 import { maleParts } from "./lib/detail/sculpt.ts";
-import { placeVulva, vulvaSkinMask } from "./lib/detail/vulva.ts";
+import { placeVulva, vulvaSkinField, vulvaSkinMask } from "./lib/detail/vulva.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
 import { packHair } from "./lib/packHair.ts";
@@ -892,6 +892,12 @@ async function main() {
       islanded,
       patches,
       vulvaSkinMask(latticeWith, organ.vulva, control.control, control.body),
+      vulvaSkinField(
+        latticeWith,
+        organ.engorged,
+        control.control,
+        vulvaSkinMask(latticeWith, organ.vulva, control.control, control.body).indices,
+      ),
     ),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);

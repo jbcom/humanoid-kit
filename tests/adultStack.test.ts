@@ -42,11 +42,20 @@ describe("the adult anatomy spec in the pack's manifest", () => {
     // The surface's patches are the reservoirs' layout's, held to the generator in
     // adultReservoirs.test.ts; the refinement under them is the packer's spec for this body.
     const { detail: _detail, reservoirs: _reservoirs, ...rest } = spec ?? {};
-    // The vulva layer's mask is the generator's too, held to it in vulva.test.ts.
-    const vulvaMask = spec?.skinLayers.find((l) => l.id === "vulva-skin")?.vertexMask;
-    expect(vulvaMask).toBeDefined();
+    // The vulva layer's mask and generated coordinate are held to their source in
+    // vulva.test.ts and vulvaInnerColour.test.ts.
+    const vulva = spec?.skinLayers.find((layer) => layer.id === "vulva-skin");
+    expect(vulva?.vertexMask).toBeDefined();
+    expect(vulva?.vertexCoord).toBeDefined();
     expect(rest).toEqual(
-      adultAnatomySpec(core, undefined, undefined, spec?.surface?.patches, vulvaMask),
+      adultAnatomySpec(
+        core,
+        undefined,
+        undefined,
+        spec?.surface?.patches,
+        vulva?.vertexMask,
+        vulva?.vertexCoord,
+      ),
     );
     expect(spec).toMatchObject(ADULT_ANATOMY_SPEC);
   });
@@ -175,6 +184,15 @@ describe("the adult layers' fields", () => {
       expect(coord).toBeNull();
     }
     expect(genital.size).toBeGreaterThan(0);
+  });
+
+  it("maps the vulva's authored inner coordinate into its field atlas", () => {
+    const field = spec?.skinLayers.find((layer) => layer.id === "vulva-skin")?.vertexCoord;
+    const coord = fieldsOf("vulva-skin").coord;
+    if (!field || !coord) throw new Error("the loaded vulva has no authored coordinate");
+    field.indices.forEach((vertex, i) => {
+      expect(coord[vertex] as number).toBeCloseTo(field.values[i] as number, 6);
+    });
   });
 
   it("find the mound on the body's own skin", () => {

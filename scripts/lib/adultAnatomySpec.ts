@@ -96,7 +96,7 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
 /**
  * The whole spec for a base body: the fixed part and the surface refinement
  * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces;
- * with `vulvaMask`, the vulva layer's authored mask (`vulvaSkinMask`).
+ * with `vulvaMask` and `vulvaCoord`, its source-derived atlas fields.
  */
 export function adultAnatomySpec(
   base: HumanoidAssets,
@@ -104,11 +104,14 @@ export function adultAnatomySpec(
   reservoirs?: AdultReservoirSpec[],
   patches?: AdultSurfacePatch[],
   vulvaMask?: { indices: number[]; weights: number[] },
+  vulvaCoord?: { indices: number[]; values: number[] },
 ): AdultAnatomySpec {
   return {
     ...ADULT_ANATOMY_SPEC,
     skinLayers: ADULT_ANATOMY_SPEC.skinLayers.map((l) =>
-      l.id === "vulva-skin" && vulvaMask ? { ...l, vertexMask: vulvaMask } : l,
+      l.id === "vulva-skin" && vulvaMask
+        ? { ...l, vertexMask: vulvaMask, ...(vulvaCoord && { vertexCoord: vulvaCoord }) }
+        : l,
     ),
     surface: { ...pelvicRefinement(base), ...(patches?.length && { patches }) },
     ...(reservoirs && { reservoirs }),

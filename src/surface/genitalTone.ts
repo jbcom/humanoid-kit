@@ -92,18 +92,54 @@ export const VULVA = {
   override: [0.9, 0.82, 0.82] as Rgb,
 } as const;
 
-/** The albedo of vulvar skin for a skin tone; `arousal` 0..1 deepens it. */
+/** The albedo of outer vulvar skin for a skin tone; `arousal` 0..1 deepens it. */
 export function vulvaAlbedo(tone: SkinTone, arousal = 0): Rgb {
+  return vulvaSkinAlbedo(VULVA, tone, arousal);
+}
+
+/**
+ * The inner-vulva colour response. Its values are an uncalibrated rendering
+ * choice: the open evidence does not provide site-specific colour values.
+ */
+export const VULVA_INNER = {
+  density: 1.8,
+  haemoglobin: 0.3,
+  arousal: 0.85,
+  /** Extra oxygenated-red shift at full arousal: a rendering choice, not a measurement. */
+  arousalTint: [1.2, 0.55, 0.72] as Rgb,
+  override: [0.78, 0.52, 0.58] as Rgb,
+} as const;
+
+/** The modelled albedo of the inner vulva, which responds more strongly to arousal. */
+export function vulvaInnerAlbedo(tone: SkinTone, arousal = 0): Rgb {
+  return vulvaSkinAlbedo(VULVA_INNER, tone, arousal);
+}
+
+function vulvaSkinAlbedo(
+  model: {
+    density: number;
+    haemoglobin: number;
+    arousal: number;
+    override: Rgb;
+    arousalTint?: Rgb;
+  },
+  tone: SkinTone,
+  arousal: number,
+): Rgb {
   const a = clamp01(arousal);
   if (tone.override) {
     const base = skinAlbedo(tone);
-    const k = 1 - 0.2 * VULVA.arousal * a;
+    const k = 1 - 0.2 * model.arousal * a;
     return [
-      base[0] * VULVA.override[0],
-      base[1] * VULVA.override[1] * k,
-      base[2] * VULVA.override[2] * k,
+      base[0] * model.override[0],
+      base[1] * model.override[1] * k,
+      base[2] * model.override[2] * k,
     ];
   }
-  const rest = Math.min(1, clamp01(tone.haemoglobin) + VULVA.haemoglobin);
-  return melaninDensityAlbedo(tone, VULVA.density, rest + (1 - rest) * VULVA.arousal * a);
+  const rest = Math.min(1, clamp01(tone.haemoglobin) + model.haemoglobin);
+  const albedo = melaninDensityAlbedo(tone, model.density, rest + (1 - rest) * model.arousal * a);
+  if (!model.arousalTint) return albedo;
+  return albedo.map(
+    (channel, i) => channel * (1 + ((model.arousalTint?.[i] as number) - 1) * a),
+  ) as Rgb;
 }

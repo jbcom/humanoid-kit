@@ -2400,8 +2400,10 @@ over, and loading it fails unless it was built against the exact body pack.
 Its manifest also carries `anatomy` (`AdultAnatomySpec`): the anatomy features
 and the modifiers that apply each, how each adult skin layer's masks are
 measured from the pack's targets (`skinLayers`), and the shape states of the
-adult anatomy (`stateMorphs`, arousal). This is the pack's data so that the
-core, which ships in the public build, names no adult target or modifier
+adult anatomy (`stateMorphs`, arousal). A layer may also supply a generated
+per-base-vertex `vertexCoord` for an outer-to-inner colour interpolation when no
+adult detail target maps directly to the base mesh. This is the pack's data so
+that the core, which ships in the public build, names no adult target or modifier
 (`pnpm check:pages`); a pack without it adds no adult layers and no state
 morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
 and their `levels`) names the pelvic region the adult surface refines; a pack

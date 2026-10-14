@@ -231,6 +231,7 @@ export function authorDetail(
   targets: EncodedTarget[];
   detail: AdultDetailSpec;
   vulva: VulvaTarget;
+  engorged: VulvaTarget;
   reservoirs: AdultReservoirSpec[];
 } {
   const rootOf = (id: string) => {
@@ -300,6 +301,8 @@ export function authorDetail(
   ];
   return {
     vulva: folds,
+    // The generated state target is also the source-bound inner-colour field's anchor.
+    engorged,
     // The reservoirs with each canal's closure, which the lattice was needed for.
     reservoirs: reservoirs.map((r) => {
       const closure = closures[r.id];
