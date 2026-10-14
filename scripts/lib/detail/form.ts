@@ -17,7 +17,12 @@
  */
 import type { Vec3 } from "./disc.ts";
 import { capSurface, nearestOnSurface, type ReservoirRoot, type RootShape } from "./root.ts";
-import { smooth } from "./tube.ts";
+
+/** Smootherstep, 0 to 1 over 0 to 1 and clamped outside. */
+export const smooth = (x: number): number => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * t * (t * (t * 6 - 15) + 10);
+};
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

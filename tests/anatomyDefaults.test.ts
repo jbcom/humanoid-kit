@@ -28,9 +28,9 @@ describe("an adult figure drawn with the adult pack", { timeout: 600_000 }, () =
   });
 
   it("draws no phallic organ on the default woman, only the vulva", () => {
-    // The smallest phallic key is still a drawn tube (`phallusGeometry`): any share of it
-    // raised a plate with a nub on the mons. Until a sculpt fills that key, the female end
-    // of the default draws the reservoir at rest, as `phallus-size` 0 does.
+    // The clitoral hood and glans are the vulva's own, on the skin behind the phallic loop
+    // (#75), so the female end of the default draws the reservoir at rest, as
+    // `phallus-size` 0 does.
     const phallus = "genitals/phallus-size";
     const at = (modifiers: Record<string, number>) =>
       model.evaluate(createRecipe({ macros: { age: 30, gender: 0 }, modifiers })).positions;

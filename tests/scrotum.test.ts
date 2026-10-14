@@ -145,7 +145,8 @@ describe("the pack's testes", () => {
 
   it("names a target per key, each driven by the size alone and on the lattice they were authored on", () => {
     const made = scrotumTargets(root, parts.scrotum, skin);
-    expect(made.targets).toHaveLength(TESTES_KEYS.length);
+    // A key's shape for each key, and the reservoir laid flat that the smallest grows from.
+    expect(made.targets).toHaveLength(TESTES_KEYS.length + 1);
     for (const t of made.targets) {
       expect(detail?.targets).toContain(t.name);
       expect(detail?.drives?.[t.name]).toEqual(made.drives[t.name]);
