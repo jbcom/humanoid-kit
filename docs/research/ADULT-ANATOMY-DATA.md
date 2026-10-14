@@ -149,12 +149,14 @@ here is unverified.
 
 Consequence for the state morphs: the male shaft's flaccid and erect states are
 calibrated (circumference +25%, length +43%, section B4) and ship as the
-`arousal` morph. The vulvar and clitoral state has no CC0 target and no verified
-magnitude, so the library carries it as **absent and tested as absent**
-(`tests/adultPermutations.test.ts`), not as a guessed number. When the vulva
-sculpt exists, a provisional morph may use the two secondary figures above only
-if it is labelled uncalibrated in the pack and the doc, as `genitalAlbedo` is,
-and is replaced when the primary text is read.
+`arousal` morph.
+
+The vulva now has a **provisional, uncalibrated** engorgement (#118):
+
+- **What moves:** `genitals/vulva-engorged`, a skin detail target driven by the vulva's size times `arousal`. At full arousal it pushes the inner vulva 1.5 mm out of its own folded skin within 4 mm of the midline, falling to none by 12 mm, so the labia minora and vestibule swell and the majora hardly at all. It stays off the canals' closures.
+- **Source for the magnitude:** only the qualitative report of Masters and Johnson (1966) that the minora's diameter grows two to three times. The figures above are not used. The 1.5 mm (`VULVA_ENGORGEMENT` in `scripts/lib/detail/vulva.ts`) is a CHOICE.
+- **Tests:** held to a range in `tests/vulvaEngorgement.test.ts`.
+- **Still to come:** replace the magnitude when the primary MRI text is read. The clitoral state is still absent.
 
 ## D. Asset licences
 

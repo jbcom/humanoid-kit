@@ -41,7 +41,7 @@ import { displacedBy, regionIndex } from "./detail/region.ts";
 import { type ReservoirRoot, reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
 import type { MaleParts, SculptPart } from "./detail/sculpt.ts";
-import { VULVA_SIZE, type VulvaTarget, vulvaTarget } from "./detail/vulva.ts";
+import { VULVA_SIZE, type VulvaTarget, vulvaEngorgedTarget, vulvaTarget } from "./detail/vulva.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -284,10 +284,17 @@ export function authorDetail(
     vaginal: vagina.closure,
     anal: anus.closure,
   };
+  // The vulva's engorgement under arousal, out of its folded skin, off the closures (#118).
+  const engorged = vulvaEngorgedTarget(
+    withFolds,
+    folds,
+    new Set(Object.values(closures).flatMap((c) => [...c.loopRegion, ...c.zone])),
+  );
   const made = [
     ...organ.targets,
     ...sac.targets,
     folds,
+    engorged,
     ...vagina.canal.targets,
     ...anus.canal.targets,
   ];
@@ -305,11 +312,12 @@ export function authorDetail(
       // The figure the lattice was evaluated on: a reservoir's organ is carried from it.
       authoredOn: { macros: AUTHORING_FIGURE.macros },
       // The vulva is the skin's own fold, not an organ out of it.
-      skin: [folds.name],
+      skin: [folds.name, engorged.name],
       drives: {
         ...organ.drives,
         ...sac.drives,
         [folds.name]: [`mod:${VULVA_SIZE}`],
+        [engorged.name]: [`mod:${VULVA_SIZE}`, "signal:arousal"],
         ...vagina.canal.drives,
         ...anus.canal.drives,
       },

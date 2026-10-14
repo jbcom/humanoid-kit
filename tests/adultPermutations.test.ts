@@ -177,7 +177,6 @@ describe("flaccid and erect", () => {
   // The genitals alone under arousal: the pack's lip and nipple morphs (#118) are
   // measured in arousal.test.ts, so here the whole body can be compared.
   const organOnly = loadOrganOnlyAssets();
-  const control = new HumanoidModel(organOnly, { subdivision: 0 });
   const surfaced = new HumanoidModel(organOnly, { subdivision: 1 });
 
   it("lengthens the organ with the state, for every gender position", () => {
@@ -217,7 +216,11 @@ describe("flaccid and erect", () => {
       );
       // A figure with no organ: its size set to none. Left unset, an adult takes the pack's
       // default anatomy for its gender (`AdultAnatomySpec.defaults`) and has one.
-      const recipe = createRecipe({ macros, modifiers: { [SIZE]: 0, "genitals/testes-size": 0 } });
+      // The vulva set to none as well: it swells under arousal (#118).
+      const recipe = createRecipe({
+        macros,
+        modifiers: { [SIZE]: 0, "genitals/testes-size": 0, "genitals/vulva-size": 0 },
+      });
       const rest = surfaced.evaluate(recipe).positions;
       expect(Array.from(surfaced.evaluate(recipe, { arousal: 1 }).positions)).toEqual(
         Array.from(rest),
@@ -225,15 +228,23 @@ describe("flaccid and erect", () => {
     }
   });
 
-  it("has no vulva state morph yet: a female-macro figure's aroused surface equals its rest surface", () => {
-    // The vulva's engorgement has no CC0 target and no verified magnitude
-    // (docs/research/ADULT-ANATOMY-DATA.md, "Arousal"), so until the sculpt
-    // adds the vulva it is documented as absent rather than guessed. This pins
-    // the gap: when the vulva morph lands this test is replaced by a
-    // measurement of it, not silently passed.
-    const recipe = createRecipe({ macros: { age: 30, gender: 0 } });
-    const rest = control.evaluate(recipe);
-    const aroused = control.evaluate(recipe, { arousal: 1 });
-    expect(Array.from(aroused.positions)).toEqual(Array.from(rest.positions));
+  it("swells a female-macro figure's vulva under arousal, at every adult age (#118)", () => {
+    // Provisional and uncalibrated (docs/research/ADULT-ANATOMY-DATA.md, section C); the
+    // magnitude and where it lies are tests/vulvaEngorgement.test.ts's.
+    for (const age of AGES) {
+      const recipe = createRecipe({ macros: { age, gender: 0 } });
+      const rest = surfaced.evaluate(recipe).positions.slice();
+      const aroused = surfaced.evaluate(recipe, { arousal: 1 }).positions;
+      let far = 0;
+      for (let v = 0; v < rest.length / 3; v++)
+        far = Math.max(
+          far,
+          Math.hypot(
+            ...[0, 1, 2].map((k) => (aroused[v * 3 + k] as number) - (rest[v * 3 + k] as number)),
+          ),
+        );
+      expect(far, `age ${age}`).toBeGreaterThan(5e-4);
+      expect(far, `age ${age}`).toBeLessThan(5e-3);
+    }
   });
 });

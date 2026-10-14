@@ -330,6 +330,168 @@ export function vulvaTarget(lattice: AdultDetailLattice, sheet: SculptPart): Vul
   };
 }
 
+/** The vulva's engorgement under arousal (#118): a detail target of the skin, on the vulva's form. */
+export const VULVA_ENGORGED = "genitals/vulva-engorged";
+
+/**
+ * How the vulva swells at full arousal (`vulvaEngorgedTarget`), metres: out of its own
+ * folded skin by `depth` within `inner` of the midline (the labia minora and the
+ * vestibule), falling to none at `outer` (the labia majora's inner slopes), by a
+ * smootherstep. Provisional and uncalibrated: Masters and Johnson (1966) report the
+ * minora's diameter growing two to three times; no measurement of the surface's
+ * displacement was found (docs/research/ADULT-ANATOMY-DATA.md, section C). A CHOICE:
+ * each face of a minor lip 1.5 mm out roughly doubles a 3 mm lip, and the 4 to 6 mm
+ * cleft between the labia still parts them.
+ */
+export const VULVA_ENGORGEMENT = { depth: 0.0015, inner: 0.004, outer: 0.012 } as const;
+
+/** Rounds of neighbour averaging over the engorgement's weights, so it has no lattice staircase. */
+const ENGORGEMENT_SMOOTHING = 3;
+
+/** Over how many rings of vertices the swelling fades in from the canals' closures. */
+const CLOSURE_CLEAR_RINGS = 3;
+
+/**
+ * The vulva's engorgement as a displacement of the lattice's region: each vertex the
+ * vulva's form moves (`folds`) pushed out of the folded skin (`folded`, the lattice
+ * with the form applied) along that skin's own normal, by `VULVA_ENGORGEMENT` from the
+ * midline (the form's own mean across), and faded in where the form itself fades in
+ * so it starts with the form. No ring of a reservoir, as the form moves none.
+ *
+ * Nothing on the canals' closures (`held`, their loops' and zones' region vertices),
+ * fading in over `CLOSURE_CLEAR_RINGS` rings from them: the closure draws its lips to
+ * one centreline from where the figure's own skin puts them, and lips pushed out along
+ * normals that face across the slit closed with their normals 99 degrees apart.
+ */
+export function vulvaEngorgedTarget(
+  folded: AdultDetailLattice,
+  folds: VulvaTarget,
+  held: ReadonlySet<number>,
+): VulvaTarget {
+  const regionOf = regionIndex(folded);
+  const nb = regionNeighbours(folded, regionOf);
+  const normals = regionNormals(folded, regionOf);
+  const size = new Map<number, number>();
+  folds.indices.forEach((v, i) => {
+    size.set(
+      v,
+      Math.hypot(
+        folds.xyz[i * 3] as number,
+        folds.xyz[i * 3 + 1] as number,
+        folds.xyz[i * 3 + 2] as number,
+      ),
+    );
+  });
+  // The midline: the form's mean across, weighted by how far it moves each vertex.
+  let sx = 0;
+  let sw = 0;
+  for (const [v, d] of size) {
+    sx += d * (folded.positions[v * 3] as number);
+    sw += d;
+  }
+  const mid = sw > 0 ? sx / sw : 0;
+  const smoother = (t: number) => {
+    const u = Math.min(1, Math.max(0, t));
+    return u * u * u * (u * (6 * u - 15) + 10);
+  };
+  const { inner, outer, depth } = VULVA_ENGORGEMENT;
+  /** The swelling's fall across, from the midline: whole within `inner`, none past `outer`. */
+  const acrossOf = (v: number) =>
+    smoother((outer - Math.abs((folded.positions[v * 3] as number) - mid)) / (outer - inner));
+  // Rings of neighbours out from the closures: 0 on them.
+  const ring = new Map<number, number>();
+  let front = [...held];
+  for (const v of front) ring.set(v, 0);
+  for (let r = 1; r <= CLOSURE_CLEAR_RINGS && front.length; r++) {
+    const next: number[] = [];
+    for (const v of front)
+      for (const u of nb[v] as number[])
+        if (!ring.has(u)) {
+          ring.set(u, r);
+          next.push(u);
+        }
+    front = next;
+  }
+  const clear = (v: number) => smoother((ring.get(v) ?? CLOSURE_CLEAR_RINGS) / CLOSURE_CLEAR_RINGS);
+  let weight = new Map<number, number>();
+  // Where the form fades in (under a millimetre), the swelling fades with it.
+  for (const [v, d] of size) weight.set(v, acrossOf(v) * smoother(d / 0.001));
+  for (let r = 0; r < ENGORGEMENT_SMOOTHING; r++) {
+    const next = new Map<number, number>();
+    for (const [v, w] of weight) {
+      let s = w;
+      let n = 1;
+      for (const u of nb[v] as number[]) {
+        s += weight.get(u) ?? 0;
+        n++;
+      }
+      next.set(v, s / n);
+    }
+    weight = next;
+  }
+  // The averaging carried some across past `outer` and onto the closures: held to both again.
+  for (const [v, w] of weight) weight.set(v, w * acrossOf(v) * clear(v));
+  const indices = [...weight.keys()]
+    .filter((v) => (weight.get(v) as number) > 1e-3)
+    .sort((a, b) => a - b);
+  return {
+    name: VULVA_ENGORGED,
+    indices,
+    xyz: indices.flatMap((v) => {
+      const w = (weight.get(v) as number) * depth;
+      return [0, 1, 2].map((k) => w * (normals[v * 3 + k] as number));
+    }),
+  };
+}
+
+/**
+ * Each region vertex's unit normal on the lattice as its positions are now (the base's
+ * smooth normals are not the folded skin's): the sum of its polygons' Newell normals,
+ * turned to face the way the lattice's own normal does.
+ */
+function regionNormals(
+  lattice: AdultDetailLattice,
+  regionOf: ReadonlyMap<number, number>,
+): Float64Array {
+  const out = new Float64Array(lattice.regionCount * 3);
+  const { start, vertices } = lattice.polygons;
+  const P = lattice.positions;
+  for (let p = 0; p + 1 < start.length; p++) {
+    const s = start[p] as number;
+    const e = start[p + 1] as number;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let c = s; c < e; c++) {
+      const a = (regionOf.get(vertices[c] as number) ?? -1) as number;
+      const b = (regionOf.get(vertices[c + 1 < e ? c + 1 : s] as number) ?? -1) as number;
+      if (a < 0 || b < 0) continue;
+      const [ax, ay, az] = [P[a * 3] as number, P[a * 3 + 1] as number, P[a * 3 + 2] as number];
+      const [bx, by, bz] = [P[b * 3] as number, P[b * 3 + 1] as number, P[b * 3 + 2] as number];
+      nx += (ay - by) * (az + bz);
+      ny += (az - bz) * (ax + bx);
+      nz += (ax - bx) * (ay + by);
+    }
+    for (let c = s; c < e; c++) {
+      const a = regionOf.get(vertices[c] as number);
+      if (a === undefined) continue;
+      out[a * 3] = (out[a * 3] as number) + nx;
+      out[a * 3 + 1] = (out[a * 3 + 1] as number) + ny;
+      out[a * 3 + 2] = (out[a * 3 + 2] as number) + nz;
+    }
+  }
+  for (let v = 0; v < lattice.regionCount; v++) {
+    const n = point3(out, v);
+    const base = point3(lattice.normals, v);
+    const len = Math.hypot(n[0], n[1], n[2]);
+    const sign = n[0] * base[0] + n[1] * base[1] + n[2] * base[2] < 0 ? -1 : 1;
+    for (let k = 0; k < 3; k++)
+      out[v * 3 + k] =
+        len > 0 ? (sign * (n[k as 0 | 1 | 2] as number)) / len : base[k as 0 | 1 | 2];
+  }
+  return out;
+}
+
 /**
  * Where the vulva's skin colour lies, metres from its form (`vulvaSkinMask`): the
  * whole colour within `inner` of a vertex the form moves by more than `moved`,
