@@ -12,8 +12,6 @@ export const hairPack = {
 		"bantu01.webp": new URL("./data/bantu01.webp", import.meta.url).href,
 		"beard-faun.bin.gz": new URL("./data/beard-faun.bin.gz", import.meta.url).href,
 		"beard-faun.webp": new URL("./data/beard-faun.webp", import.meta.url).href,
-		"beard-full.bin.gz": new URL("./data/beard-full.bin.gz", import.meta.url).href,
-		"beard-full.webp": new URL("./data/beard-full.webp", import.meta.url).href,
 		"beard-scruffy.bin.gz": new URL("./data/beard-scruffy.bin.gz", import.meta.url).href,
 		"beard-scruffy.webp": new URL("./data/beard-scruffy.webp", import.meta.url).href,
 		"beard-sigmund.bin.gz": new URL("./data/beard-sigmund.bin.gz", import.meta.url).href,

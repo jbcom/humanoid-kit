@@ -88,14 +88,17 @@ Full detail in `docs/ARCHITECTURE.md`.
    React bindings evaluate through `HumanoidWorkerClient`; do not move
    evaluation onto the render path.
 7. Data files are generated, never hand-edited. Change the packer and rerun
-   `pnpm pack:data`. The packer's licence gate must keep refusing any source file
-   that does not prove CC0: a MakeHuman team asset by its own CC0 release header,
-   a community asset by its captured page stating CC0, whose licence governs,
-   or by its own CC0 mesh with the binding rebuilt and the asset's binding file
-   never shipped (owner rulings 2026-10-09; `scripts/lib/licenceRule.ts`,
+   `pnpm pack:data`. The licence gate must require verified commercial-use and
+   redistribution permission from the asset's release header or captured
+   official licence page. CC0 and attributed assets such as CC-BY are accepted
+   under decision 9 (owner, 2026-10-13). Preserve each asset's actual licence,
+   source, author, attribution and modification records; never relabel it CC0.
+   Keep binding provenance separate and rebuild any binding whose licence does
+   not permit its redistribution (`scripts/lib/licenceRule.ts`,
    `docs/licence-history.md`).
-8. Only MakeHuman asset data (CC0) is used. Never copy, port or translate
-   MakeHuman program code, and keep `NOTICE.md` accurate.
+8. Use licensed asset data; never copy, port or translate MakeHuman program
+   code. Keep `NOTICE.md` and per-asset provenance accurate, including required
+   attribution. Procedural geometry remains governed by decision 8.
 9. Public names, docs, examples and fixtures are neutral. Do not put the name of
    any game, studio or host app in code, comments, docs, tests or fixtures.
 

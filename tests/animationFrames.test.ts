@@ -13,6 +13,7 @@ import {
   ANIMATION_CONTACTS,
   type AnimationFrames,
   copyAnimationFrame,
+  createAnimationFrame,
   createAnimationFrames,
   type FrameBinding,
   frameContactWorld,
@@ -166,6 +167,27 @@ describe("the frame a headless producer writes", () => {
 });
 
 describe("the frame channel", () => {
+  it("advertises only the latest live producer frame", () => {
+    const frames = createAnimationFrames();
+    const first = frames.bind("figure");
+    const frame = createAnimationFrame();
+    frame.clip = "walk_normal";
+    expect(first.publish(frame)).toBe(true);
+    expect(frames.latest("figure")).toBe(frame);
+
+    const second = frames.bind("figure");
+    expect(frames.latest("figure"), "a superseded frame is stale").toBeUndefined();
+    expect(first.publish(frame)).toBe(false);
+    const current = createAnimationFrame();
+    current.clip = "walk_normal";
+    expect(second.publish(current)).toBe(true);
+    expect(frames.latest("figure")).toBe(current);
+    second.rebind();
+    expect(frames.latest("figure"), "a prior evaluation is stale").toBeUndefined();
+    second.release();
+    expect(frames.latest("figure"), "a released producer is not active").toBeUndefined();
+  });
+
   it("routes each figure's frames to its own observers only: an adult and a child walk, each its own stride", () => {
     const frames = createAnimationFrames();
     const adult = walker(frames, "adult", ADULT, [-1, 0, 0]);

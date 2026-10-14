@@ -42,10 +42,10 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | Pack | Files | Contents |
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to eight skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 1077 sparse targets (564 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
-| `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 98 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
+| `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 95 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | 98 clips (walks, idles, swims, combat, sitting and more) as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
-| `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | 38 hair entries bound to the base mesh: 16 scalp styles, 12 eyebrows, 4 eyelashes, 5 CC0 facial-hair entries and 1 generated beard entry awaiting replacement, each with its baked occlusion where it has one and a strand map or texture. Facial runtime integration remains in progress (see "Scalp hair") |
+| `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | 37 hair entries bound to the base mesh: 16 scalp styles, 12 eyebrows, 4 eyelashes and 5 CC0 facial-hair entries, each with its baked occlusion where it has one and a strand map or texture. `recipe.facialHair` selects authored facial assets independently (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 87 garments: 19 from MakeHuman's system assets (suits, shoes, a hat) and 68 from the community's clothing packs, CC0 by their pages; each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
@@ -2565,6 +2565,34 @@ the authored folds added there. The closure reaches its full share at a canal
 target weight of 0.1 and fades smoothly to zero as that weight reaches zero
 (`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
 
+**In a pose (2026-10-13, #77).** At rest the closure meets the lips, but a pose
+skins them: each lip keeps its own side's thigh weights, so spreading the hips,
+as in lithotomy, pulls the two sides apart and opens the slit. Each vertex of a
+closure's zone therefore follows its canal's root as far as the closure reaches
+it: on the loop its weights are the root's, across the zone they blend from its
+own to the root's by the zone's harmonic weights summed (`closureSkinning`,
+`ReservoirSkinning.closure`), times how closed the opening is. That keeps the two
+sides together under abduction: in lithotomy the vaginal walls a camera at the
+foot end can see fell from 98 vertices to 46, the anal from 20 to 4
+(`tests/canalPosed.test.ts`). The lips keep their own hip fold: the fold plays
+per side too, and accounts for the opening that remains. Blending the fold rows
+toward the root's as well closed it, but regressed the foundation's seated and
+squatting rows (penetration and fold counts on the heavy and elderly bodies),
+and is not done; `canalPosed` stays red until a fold treatment holds both.
+
+**The lips' shading (2026-10-13, #77).** Closed, the two lips lie on one line,
+but each lip vertex took its normal from its own side's faces alone, which face
+across the slit. Along the slit the normals alternated side to side, as much as
+175 degrees between a lip and the one beside it. Every lit and matte sheet of a
+woman showed a beaded rope of glints down the vulva. Sinking the meeting line
+under the skin did not help: an 8 mm recess shortened the rope but left it.
+Each lip's normal is now the Gaussian-weighted mean of the lips round it on both
+sides, as the closure places them. The width is the loop's mean spacing along
+one side. This mean is taken as far as the canal is closed (`closedLipNormals`,
+applied to the evaluated adult surface, whose normals a pose skins).
+Neighbouring lips now lie within about 10 degrees of each other
+(`tests/canalSeam.test.ts`).
+
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below
 and front-low across six adult body variants. These checks complement the
@@ -2590,8 +2618,8 @@ a coloured texture; everything in the pure core is testable in Node.
 - *A separate pack, `humanoid-kit-hair`, with one binary and one texture per
   style, fetched when a figure first wears the style.* The body pack's
   attachments (eyes, teeth, tongue) load in the first stage for every figure;
-  the hair would add 3.5 MB (the pack's size when it held ten styles; 11 MB for
-  its 33 entries today) to the body pack's 1.9, for
+  the hair would add 3.5 MB (the pack's size when it held ten styles; now
+  13,650,831 bytes of geometry and textures across 37 entries) to the body pack's 1.9 MB, for
   applications that never show hair. A single hair binary would load every
   entry to wear one. The pack follows the adult pack's model instead: its manifest
   records `topology` and the body pack's `bodySha256`, and the loader refuses a
@@ -2839,9 +2867,9 @@ a coloured texture; everything in the pure core is testable in Node.
   hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
   knot taller than it is wide. Not yet: tight curls in the longer styles.
 
-**Costs and limits.** The pack is 11 MB for its 33 entries, mostly strand maps at
-1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
-because their alpha is fine detail. Hair has no physics and no strand shadows
+**Costs and limits.** The pack's 37 entries contain 13,650,831 bytes of compressed
+geometry and textures. Entries load independently; authored styles retain their
+source fidelity, and their sizes vary. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured
 (`docs/research/HAIR-COLOUR.md`).
@@ -4003,8 +4031,8 @@ allow it: their anchors (`landmarkAnchors`, fixed by the topology, which the
 worker serves, `HumanoidWorkerClient.landmarkAnchors`), each figure's up
 neighbours (`landmarkUps`, from its rest shape), and the frame
 (`landmarkFrameInto`, from a skin-a-vertex callback and the posed skeleton).
-With a custom `material` the figure skins linearly with no fold, and so does
-the handle. The figure runs its per-frame work at `useFrame` priority -1
+With a custom `material` the figure skins linearly with no fold, through all
+eight stored influences, and so does the handle. The figure runs its per-frame work at `useFrame` priority -1
 (auto-render stays on), so a caller's own `useFrame` reads the pose of the
 frame about to be drawn. A browser test holds `frame(id, "world")` within
 2e-5 m of the landmark vertices the GPU draws, seated (the fold), with the jaw

@@ -103,6 +103,80 @@ export function closedLoop(
 }
 
 /**
+ * How far a render vertex follows its canal's closed opening
+ * (`ReservoirSkinning.closure.follows`) from which it is one of the opening's lips: the
+ * loop itself, which follows it whole.
+ */
+export const LIP = 0.999;
+
+/**
+ * Shades a closed canal's lips as the crease they meet in (#77), in place on `normals`
+ * (a body surface's, unit, xyz per render vertex). Closed, the two lips meet on one
+ * line, but each lip vertex has its normal from its own side's faces alone, which face
+ * across the slit: along it the normals alternated side to side, as much as 175 degrees
+ * apart, a beaded rope of glints. Each lip's normal is instead the mean of its own and
+ * those of the lips round it on both sides, by a Gaussian of their distance as the
+ * closure places them (its width the loop's mean spacing along one side, so the
+ * lips across the slit and the next ones along it count, the far end not), as far
+ * as the canal is closed (`shares`, by canal, `closureShare`).
+ */
+export function closedLipNormals(
+  closure: { canal: Int16Array; follows: Float32Array },
+  shares: readonly number[],
+  positions: Float32Array,
+  normals: Float32Array,
+): void {
+  const lips = new Map<number, number[]>();
+  closure.canal.forEach((c, v) => {
+    if (c < 0 || !((shares[c] ?? 0) > 0) || (closure.follows[v] as number) < LIP) return;
+    lips.set(c, [...(lips.get(c) ?? []), v]);
+  });
+  const at = (v: number): Vec3 => [
+    positions[v * 3] as number,
+    positions[v * 3 + 1] as number,
+    positions[v * 3 + 2] as number,
+  ];
+  for (const [c, vs] of lips) {
+    if (vs.length < 2) continue;
+    let far = 0;
+    for (const v of vs)
+      for (const u of vs) {
+        const a = at(v);
+        const b = at(u);
+        far = Math.max(far, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+      }
+    // Each side of a slit `far` long has half the loop's vertices along it.
+    const width = far / (vs.length / 2);
+    if (!(width > 0)) continue;
+    const share = shares[c] as number;
+    const mixed = vs.map((v) => {
+      const a = at(v);
+      const n = [0, 0, 0];
+      for (const u of vs) {
+        const b = at(u);
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / width;
+        const w = Math.exp(-d * d);
+        for (let k = 0; k < 3; k++) n[k] = (n[k] as number) + w * (normals[u * 3 + k] as number);
+      }
+      const own: Vec3 = [
+        normals[v * 3] as number,
+        normals[v * 3 + 1] as number,
+        normals[v * 3 + 2] as number,
+      ];
+      const m = norm(n as unknown as Vec3);
+      return norm([
+        own[0] + share * (m[0] - own[0]),
+        own[1] + share * (m[1] - own[1]),
+        own[2] + share * (m[2] - own[2]),
+      ]);
+    });
+    vs.forEach((v, i) => {
+      normals.set(mixed[i] as Vec3, v * 3);
+    });
+  }
+}
+
+/**
  * How much of its closure a canal takes at its target's weight `w`: all of it from
  * `CLOSED_FROM` up, so a canal is closed at the skin at every size it is drawn at,
  * and smoothly none at 0, where the reservoir is the skin. CHOICE.

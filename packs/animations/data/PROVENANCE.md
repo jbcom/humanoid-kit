@@ -48,7 +48,7 @@ dedicated to the public domain (CC0 1.0 Universal (authored for humanoid-kit)). 
 
 - charge_advance: `scripts/clips/charge_advance.json` (sha256 `602981d64522924237afb71b4bbe075fca55147d27e24e62443ce468982323ef`)
 - colour_bearer: `scripts/clips/colour_bearer.json` (sha256 `718035801b4b785d2f1f8a25f76fe58fa534bb8c95e95893b54a7bb06e5e9f83`)
-- kneel_pray: `scripts/clips/kneel_pray.json` (sha256 `1fc9657512e194f454c13995bdd522cca93928fcaa67f50c77b7fa7c3f4b0275`)
+- kneel_pray: `scripts/clips/kneel_pray.json` (sha256 `edd700f02b2cc849190a9de5498b176c0dd7d1b77ce7e54750e2fb7181d10ddd`)
 - march_quick: `scripts/clips/march_quick.json` (sha256 `040e6322278f94c3c81f8774cc0e654a92e58cf3f967acd187e3760855ac1435`)
 - musket_fire: `scripts/clips/musket_fire.json` (sha256 `7070819762399f99406673f877d693ae45cab24a2c5460d17c6f2dfed8b3c474`)
 - musket_load: `scripts/clips/musket_load.json` (sha256 `371d8018f7ea0eb9ffc88e498b64fb5cda944fa858d4103be5a10a1200b0d569`)

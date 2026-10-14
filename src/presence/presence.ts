@@ -38,6 +38,20 @@ export interface FigureMeasures {
   eyeHeight: number;
 }
 
+/**
+ * An advisory request for one interaction class of partners. It is presence
+ * metadata, not a reservation or a matched group: the discovery slice chooses
+ * candidates and the interaction runtime claims them later.
+ */
+export interface PartnerNeed {
+  /** One or more dotted, lower-case semantic tags, such as `"dance.circle"`. */
+  readonly tags: readonly string[];
+  /** Partners required before this request can be fulfilled. Zero makes every partner optional. */
+  readonly minPartners: number;
+  /** Most partners this requester can take; always at least one. */
+  readonly maxPartners: number;
+}
+
 /** The names a `Length` may measure, in the order `FigureMeasures` declares them. */
 export const MEASURE_NAMES = ["reach", "shoulderHeight", "hipHeight", "eyeHeight"] as const;
 
@@ -60,6 +74,11 @@ export interface FigurePresence {
   faceRadius: number;
   /** The figure's age bracket, for interaction contracts that the age policy limits. */
   adult: boolean;
+  /**
+   * Advisory interaction requests. Absent or empty means this figure is not seeking
+   * partners. The publisher owns these values; this does not reserve or match anyone.
+   */
+  partnerNeeds?: readonly PartnerNeed[];
 }
 
 /** A figure as published, with the velocity the registry measured. */
@@ -153,6 +172,21 @@ const SLOT_STRIDE = 0x10000;
 const groundDistance = (a: FigurePresence, b: FigurePresence) =>
   Math.hypot(a.position[0] - b.position[0], a.position[2] - b.position[2]);
 
+const SEMANTIC_TAG = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
+
+function assertPartnerNeeds(needs: readonly PartnerNeed[] | undefined): void {
+  for (const [index, need] of (needs ?? []).entries()) {
+    if (need.tags.length === 0 || need.tags.some((tag) => !SEMANTIC_TAG.test(tag)))
+      throw new RangeError(`partner need ${index} must have dotted, lower-case semantic tags`);
+    if (!Number.isInteger(need.minPartners) || need.minPartners < 0)
+      throw new RangeError(`partner need ${index} has an invalid minPartners`);
+    if (!Number.isInteger(need.maxPartners) || need.maxPartners < 1)
+      throw new RangeError(`partner need ${index} has an invalid maxPartners`);
+    if (need.minPartners > need.maxPartners)
+      throw new RangeError(`partner need ${index} has minPartners above maxPartners`);
+  }
+}
+
 export function createPresenceRegistry(): PresenceRegistry {
   const figures = new Map<string, PublishedPresence>();
   /** Each figure holds a numeric slot while published, so pairs key without strings. */
@@ -173,6 +207,14 @@ export function createPresenceRegistry(): PresenceRegistry {
   const things = new Map<string, ObjectPresence>();
   let thingList: readonly ObjectPresence[] = [];
   const channels = new Set<PresenceChannel>();
+  const frameStore = createAnimationFrames();
+  /** A frame is active presence only while the matching figure is published. */
+  const frames: AnimationFrames = {
+    observe: (figure, onFrame, onRelease) => frameStore.observe(figure, onFrame, onRelease),
+    bind: (figure) => frameStore.bind(figure),
+    latest: (figure) => (figures.has(figure) ? frameStore.latest(figure) : undefined),
+    remove: (figure) => frameStore.remove(figure),
+  };
 
   const idOf = (slot: number) => slots[slot]?.id ?? (retiredId[slot] as string);
   const pairIds = (a: number, b: number): [string, string] => {
@@ -183,6 +225,7 @@ export function createPresenceRegistry(): PresenceRegistry {
 
   return {
     set(presence) {
+      assertPartnerNeeds(presence.partnerNeeds);
       const existing = figures.get(presence.id);
       if (existing) {
         const velocity = existing.velocity;
@@ -206,6 +249,7 @@ export function createPresenceRegistry(): PresenceRegistry {
       retired.push(slot);
       retiredId[slot] = id;
       list = [...figures.values()];
+      frameStore.remove(id);
     },
     get: (id) => figures.get(id),
     all: () => list,
@@ -293,7 +337,7 @@ export function createPresenceRegistry(): PresenceRegistry {
       channels.add(channel);
       return () => channels.delete(channel);
     },
-    frames: createAnimationFrames(),
+    frames,
   };
 }
 

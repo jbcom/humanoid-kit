@@ -11,15 +11,18 @@ import type { Marks } from "../scripts/lib/drill.ts";
 import { Animator } from "../src/animation/animator.ts";
 import type { AnimationClip } from "../src/animation/clip.ts";
 import { contactPoints } from "../src/animation/locomotion.ts";
+import type { SupportFigure, SupportReport } from "../src/animation/supportConstraint.ts";
 import {
   type FrameOut,
   type LandmarkFrame,
   type LandmarkId,
+  landmarkAnchors,
   landmarks,
 } from "../src/foundation/landmarks.ts";
-import { type PosedBody, surfacePoser } from "../src/foundation/posed.ts";
+import { type PosedBody, solvedFolds, surfacePoser } from "../src/foundation/posed.ts";
 import type { MacroValues } from "../src/makehuman/macro.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { skinOfEvaluation } from "../src/model/reservoirSkin.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { restBones } from "../src/rig/pose.ts";
 import { assets, rig } from "./animationHarness.ts";
@@ -40,18 +43,42 @@ export interface DrillFrame {
   marks: Marks;
   /** The six sole points (`CONTACT_BONES`: heel and ball's two toe joints, left then right), grounded. */
   soles: Float32Array;
+  /** The internal support result for this exact sample. */
+  support: SupportReport;
 }
 
 const model = new HumanoidModel(assets, { subdivision: 1 });
 
-export function drillFigure(macros: Partial<MacroValues>) {
+/** The evaluated renderer surface fed to the private support path in a drill test. */
+export function drillSupport(macros: Partial<MacroValues>): SupportFigure {
   const recipe = createRecipe({ macros });
-  const pose = surfacePoser(model, recipe);
   const ev = model.evaluate(recipe);
   const groundOffset = ev.groundOffset;
   const rest = restBones(assets, Float32Array.from(ev.control));
+  const topology = ev.surface === "adult" ? model.adultSurface() : model.topology().body;
+  if (!topology) throw new Error("drill figure has no evaluated surface");
+  const skin = skinOfEvaluation(ev, topology);
+  return {
+    generation: {},
+    restBones: rest,
+    ground: -groundOffset,
+    rest: Float32Array.from(ev.positions),
+    skinIndex: skin.skinIndex,
+    skinWeight: skin.skinWeight,
+    anchors: landmarkAnchors(model, ev.surface),
+    folds: solvedFolds(model, recipe),
+  };
+}
+
+export function drillFigure(macros: Partial<MacroValues>) {
+  const support = drillSupport(macros);
+  const recipe = createRecipe({ macros });
+  const pose = surfacePoser(model, recipe);
+  const groundOffset = model.evaluate(recipe).groundOffset;
+  const rest = support.restBones;
   return (clip: AnimationClip, t: number): DrillFrame => {
     const an = new Animator(rig.bones.length, rest, -groundOffset);
+    an.setSupportFigure(support);
     an.play(clip);
     an.seek(t);
     const body = pose(an.rotations);
@@ -78,6 +105,6 @@ export function drillFigure(macros: Partial<MacroValues>) {
       }
       return f;
     };
-    return { body, lift, marks, soles };
+    return { body, lift, marks, soles, support: { ...an.supportReport } };
   };
 }

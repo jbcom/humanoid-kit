@@ -82,6 +82,26 @@ describe("the animation pack", () => {
     expect(entry("walk_loop")).toMatchObject({ rootMotion: true, grounded: true, loop: true });
   });
 
+  it("round-trips kneeling support metadata through the generated manifest and binary clip", () => {
+    const expected = {
+      times: [1.2, 1.6, 2, 4],
+      supports: [
+        { kind: "surface", landmark: "knee.R", radius: 0.1 },
+        { kind: "sole", bone: "foot.L" },
+        { kind: "sole", bone: "toe1-1.L" },
+        { kind: "sole", bone: "toe5-1.L" },
+        { kind: "sole", bone: "toe1-1.R" },
+        { kind: "sole", bone: "toe5-1.R" },
+      ],
+      chains: ["upperleg01.L", "lowerleg01.L", "foot.L", "upperleg01.R", "lowerleg01.R", "foot.R"],
+      quality: { contactTolerance: 0.015, maxRotationRadians: 0.7, iterations: 24 },
+    };
+    expect(entry("kneel_pray").supportTracks).toEqual([expected]);
+    expect(clip("kneel_pray").supportTracks).toEqual([expected]);
+    expect(entry("walk_normal").supportTracks).toBeUndefined();
+    expect(clip("walk_normal").supportTracks).toBeUndefined();
+  });
+
   it("is what its manifest and provenance say: each binary's hash, bones the rig has, pinned archives, CC0 by each source's own file", () => {
     const provenance = fs.readFileSync(path.join(PACK, "PROVENANCE.md"), "utf8");
     expect(provenance).toContain(ADDITIONAL_ASSETS.sha256);
@@ -176,6 +196,15 @@ describe("the animation pack", () => {
     const library = createAnimationLibrary(manifest, async () => new ArrayBuffer(0));
     await expect(library.load("walk_normal", BONES)).rejects.toThrow(/bytes for 24 frames/);
     await expect(library.load("nope", BONES)).rejects.toThrow(/no animation clip nope/);
+  });
+
+  it("rejects malformed support metadata rather than making a legacy clip adaptive", () => {
+    const e = entry("kneel_pray");
+    const malformed = {
+      ...e,
+      supportTracks: [{ ...e.supportTracks?.[0], quality: { iterations: 0 } }],
+    } as unknown as typeof e;
+    expect(() => parseClip(malformed, BONES, clipBinary(e))).toThrow(/supportTracks.*quality/);
   });
 
   it("fetches a clip once however many figures play it, and forgets a failed fetch", async () => {

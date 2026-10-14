@@ -1262,6 +1262,10 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   until a figure joins or leaves, and entries are updated in place as figures
   move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
   figure has joined.
+  `FigurePresence.partnerNeeds?` is a list of advisory `{ tags, minPartners,
+  maxPartners }` requests: tags must be nonempty dotted lower-case strings, both
+  bounds are integers, `minPartners >= 0`, `maxPartners >= 1`, and the minimum
+  cannot exceed the maximum. It does not match or reserve anyone.
 - Objects and fixtures join the same registry as `ObjectPresence` (`{ id,
   kind: "object", position, rotation, bounds, frames, tags, state }`):
   `setObject`, `removeObject`, `getObject`, `objects()`. An object has no age.
@@ -1590,8 +1594,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   skin material skins by linear blending mixed with dual quaternions, by each
   bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
-  and picking follow. A `material` of your own skins by three's linear skinning
-  alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
+  and picking follow. A `material` of your own skins linearly by all eight
+  stored influences (with no dual-quaternion blend or joint folds), and the
+  attachments (eyes, teeth, tongue) follow single bones. With a
   hip or a knee flexed past 30° it asks the worker for the figure's joint folds
   (`client.folds`) and the skin adds them, so the groin folds against the belly
   and the calf against the thigh without passing through, and the back of a
@@ -2247,7 +2252,10 @@ animator.root;                // how far the figure has been carried: [x across,
   docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
   framework-free channel every `PresenceRegistry` owns as `frames`.
   `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
-  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  `onRelease(reason, figure)` hears `"released"`, `"superseded"` or `"removed"`.
+  `frames.latest(figure)` returns the live producer's latest reused frame, or
+  `undefined` before publish and after replacement, re-evaluation, release or removal;
+  copy it before retaining it. `frames.bind(figure)`
   returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
   `live`; `generation`); binding an id again supersedes its producer. An observer's exception
   is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`

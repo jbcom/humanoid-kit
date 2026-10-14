@@ -76,10 +76,13 @@ import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
+  applyLinearSkinning,
   DualBones,
   dualShadowMaterials,
   FOLD_SLOTS_ATTRIBUTE,
   followDualSkinning,
+  followLinearSkinning,
+  linearShadowMaterials,
   makeFoldSlots,
   setSkinAttributes,
   writeFoldSlots,
@@ -103,7 +106,7 @@ import {
 import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { FOLD_JOINTS, foldFlexion } from "../rig/folds.ts";
-import { flexedPast } from "../rig/jointFold.ts";
+import { flexedPast, type SurfaceFold } from "../rig/jointFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   type BoneRotations,
@@ -125,7 +128,7 @@ import {
   type HairColour,
   hairAlbedo,
 } from "../surface/hairTone.ts";
-import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import type { HumanoidWorkerClient, ReadyInfo, SurfaceAnchors } from "../worker/client.ts";
 import { CoatMesh } from "./CoatMesh.tsx";
 import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
@@ -564,6 +567,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  linear,
   shadows = true,
 }: {
   geometry: BufferGeometry;
@@ -578,6 +582,8 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /** Set when a host body material skins linearly through all eight influences. */
+  linear?: DualBones | null;
   /**
    * Whether it casts and receives shadows (default true). A decal lying on the skin
    * does neither: its quad's outline would shade the skin round it, and the skin
@@ -592,17 +598,18 @@ function SkinnedPart({
     m.receiveShadow = shadows;
     return m;
   }, [geometry, material, skeleton, shadows]);
-  // Shadows are cast by a depth material, which would skin linearly alone; and
-  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  // Shadows are cast by a depth material, and CPU bounds and ray picking have
+  // their own skinning hook: both must follow the material the body draws with.
   useEffect(() => {
-    if (!dual) return;
-    // The body's carries the joint folds, which its shadow, bounds and picking follow too.
+    if (!dual && !linear) return;
+    // The built-in body carries folds; a host material is eight-place linear with no folds.
     const body = part === "body" || part === "adultBody";
-    const shadows = dualShadowMaterials(dual, body);
+    const shadows = dual ? dualShadowMaterials(dual, body) : linearShadowMaterials();
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
-    followDualSkinning(mesh, dual, body);
+    if (dual) followDualSkinning(mesh, dual, body);
+    else followLinearSkinning(mesh, linear as DualBones);
     return () => {
       mesh.customDepthMaterial = undefined as never;
       mesh.customDistanceMaterial = undefined as never;
@@ -610,7 +617,7 @@ function SkinnedPart({
       shadows.depth.dispose();
       shadows.distance.dispose();
     };
-  }, [mesh, dual, part]);
+  }, [mesh, dual, linear, part]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -1148,14 +1155,15 @@ export function Humanoid({
     [ready],
   );
   useEffect(() => () => dual?.dispose(), [dual]);
-  // A custom material skins as it chooses; ours follows the dual quaternions.
+  // The built-in skin mixes dual quaternions and folds. A host material stays
+  // deliberately linear and fold-free, but must still read all eight body weights.
   useLayoutEffect(() => {
-    if (material) return;
+    if (material) return applyLinearSkinning(material);
     skin.setDualBones(dual);
     return () => skin.setDualBones(null);
   }, [skin, dual, material]);
-  // Whatever else skins to this figure (clothing, a custom material) follows its
-  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  // Whatever else skins to this figure follows its joints by
+  // `applyDualSkinning(material, group.userData.dualBones)`.
   useLayoutEffect(() => {
     const group = groupRef.current;
     if (!group) return;
@@ -1299,6 +1307,9 @@ export function Humanoid({
   const writePoseRef = useLatest(writePose);
   useEffect(() => writePose(figure), [writePose, figure]);
   const materialRef = useLatest(material);
+  /** Private support input follows the same evaluated surface that the renderer draws. */
+  const supportAnchors = useRef<SurfaceAnchors | null>(null);
+  const supportFolds = useRef<{ surface: "base" | "adult"; folds: SurfaceFold[] } | null>(null);
   /**
    * Gives the affordances the figure `ev` of `evaluated` as it is drawn: its rest
    * surface and skin weights, and the live pose, fold and lifted group. With a
@@ -1341,14 +1352,15 @@ export function Humanoid({
   // Where the landmarks are held, which the affordances' frames need: the figure is not
   // settled until they have arrived.
   useEffect(() => {
-    if (!affordances || !ready) return;
+    if (!ready) return;
     let live = true;
     const end = settle.begin();
     client.landmarkAnchors().then(
       (anchors) => {
         end();
         if (!live) return;
-        affordances.setAnchors(anchors);
+        supportAnchors.current = anchors;
+        affordances?.setAnchors(anchors);
         // Landmark data arrives outside React; wake a demand canvas so its anchors can place themselves.
         invalidate();
       },
@@ -1360,9 +1372,10 @@ export function Humanoid({
     return () => {
       live = false;
       end();
+      supportAnchors.current = null;
       // Another client's (or no) figure is coming: its anchors are not these, so until its own
       // arrive the frames are null rather than these anchors read on its figure.
-      affordances.setAnchors(null);
+      affordances?.setAnchors(null);
     };
   }, [client, affordances, ready, report, settle, invalidate]);
   // The joint folds (docs/ARCHITECTURE.md, "The hip fold", "The knee fold") are solved for
@@ -1414,7 +1427,7 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
   useEffect(() => {
     const wanted = foldedFor.current;
-    if (!jointsFlexed || !wanted || !dual || !geometries) return;
+    if ((!jointsFlexed && animation === undefined) || !wanted || !dual || !geometries) return;
     let live = true;
     // The figure is not settled until the folds that shape it have been drawn.
     const end = settle.begin();
@@ -1433,6 +1446,7 @@ export function Humanoid({
           const left = other?.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;
           if (left) writeFoldSlots(left, joint, undefined);
         }
+        supportFolds.current = { surface, folds };
         dual.setFolds(folds, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
         fading.current?.();
@@ -1448,12 +1462,32 @@ export function Humanoid({
       live = false;
       end();
     };
-  }, [client, jointsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
+  }, [client, jointsFlexed, figureKey, dual, geometries, adultGeometry, animation, report, settle]);
   // A new identity whenever the figure or its pose changes, or a fold has faded in: the
   // meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure, rotations and foldsShown are the triggers
   const shape = useMemo(() => ({}), [figure, rotations, foldsShown]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
+  const animationSupport = useCallback(() => {
+    if (!ready || !figure) return null;
+    const anchors = supportAnchors.current;
+    const fold = supportFolds.current;
+    if (!anchors || !fold || fold.surface !== figure.surface) return null;
+    const topology = figure.surface === "adult" ? adultSurface : ready.topology.body;
+    const surfaceAnchors = figure.surface === "adult" ? anchors.adult : anchors.base;
+    if (!topology || !surfaceAnchors) return null;
+    const skin = skinOfEvaluation(figure, topology);
+    return {
+      generation: figure,
+      restBones: restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
+      ground: -figure.groundOffset,
+      rest: figure.positions,
+      skinIndex: skin.skinIndex,
+      skinWeight: skin.skinWeight,
+      anchors: surfaceAnchors,
+      folds: fold.folds,
+    };
+  }, [ready, figure, adultSurface]);
   // A clip's pose is written each frame (`useFigureAnimation`), the face units (with the
   // jaw laid over, `writePose`) over it.
   useFigureAnimation({
@@ -1472,6 +1506,7 @@ export function Humanoid({
     presenceSource,
     frames: presence ? (presenceContext?.registry.frames ?? null) : null,
     figureId: presence?.id,
+    support: animationSupport,
     report,
   });
   // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.
@@ -1787,6 +1822,7 @@ export function Humanoid({
           const g = wornRef.current?.geometries[i];
           if (g) writeGeometry(g, a);
         });
+        supportFolds.current = null;
         foldedFor.current = { recipe, signals: shapeSignals };
         setFigure(ev);
         setAreolaScale(Math.round(ev.areolaScale * 100) / 100);
@@ -1887,6 +1923,7 @@ export function Humanoid({
               part="body"
               shape={shape}
               dual={material ? null : dual}
+              linear={material ? dual : null}
             />
             {adultGeometry && (
               <SkinnedPart
@@ -1897,6 +1934,7 @@ export function Humanoid({
                 part="adultBody"
                 shape={shape}
                 dual={material ? null : dual}
+                linear={material ? dual : null}
               />
             )}
             {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}

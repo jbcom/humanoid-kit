@@ -16,7 +16,7 @@
   (`humanoid-kit/editor`).
 - `humanoid-kit-body` (CC0 1.0): base mesh, shape targets, skeleton, skin
   weights, facial pose units, 275 shape modifiers.
-- `humanoid-kit-adult-anatomy` (CC0 1.0): 98 adult-only targets and
+- `humanoid-kit-adult-anatomy` (CC0 1.0): 95 adult-only targets and
   12 modifiers (9 with sliders; 3 retained legacy ids); separate install,
   refused unless built against the exact body pack.
 - `humanoid-kit-eyes` (CC0 1.0): 32 eye materials (human, slit-pupil, toon, creature) adding iris pattern and sclera detail
@@ -24,8 +24,8 @@
 - `humanoid-kit-animations` (CC0 1.0): 98 clips (walks, jog, sprint, idles, swims, combat, sitting and more) on the default
   skeleton, played on any figure with root motion and planted feet derived from the
   figure's own legs; separate install, a clip's file loads when first played.
-- `humanoid-kit-hair` (CC0 1.0): scalp styles, eyebrows, eyelashes and authored
-  facial-hair assets as alpha cards bound to the base body; separate install,
+- `humanoid-kit-hair` (CC0 1.0): 37 hair entries (16 scalp styles, 12 eyebrows,
+  4 eyelashes and 5 authored facial-hair assets) bound to the base body; separate install,
   an entry's files load when worn, refused unless built against the exact body
   pack. `recipe.hair` picks scalp style and colour; `recipe.facialHair` selects
   zero or more authored beard and moustache assets with that colour.

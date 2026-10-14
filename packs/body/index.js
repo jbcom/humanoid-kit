@@ -6,6 +6,7 @@
 export const bodyPack = {
 	manifest: new URL("./data/manifest.json", import.meta.url).href,
 	files: {
+		"age-surface.webp": new URL("./data/age-surface.webp", import.meta.url).href,
 		"attachments.bin.gz": new URL("./data/attachments.bin.gz", import.meta.url).href,
 		"body-occlusion.bin.gz": new URL("./data/body-occlusion.bin.gz", import.meta.url).href,
 		"body.bin.gz": new URL("./data/body.bin.gz", import.meta.url).href,
