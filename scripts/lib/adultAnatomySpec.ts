@@ -58,7 +58,23 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
   // Arousal changes the organ through the detail's drives (`detail/phallus.ts`: erect against
   // flaccid is length +43% and circumference +25%, docs/research/ADULT-ANATOMY-DATA.md, F), which
   // read the signal, not through state morphs on the CC0 penis targets that this replaces.
-  stateMorphs: [],
+  // Elsewhere it drives body targets (#118), from this pack so the core names no arousal
+  // response: the lips fill with blood (vasocongestion; no measured volume change was found,
+  // so 0.15 of each lip's volume target, under a millimetre, is a CHOICE), the nipple
+  // becomes erect (cold's measured rise, 0.37 of `nipple-point-incr`: the same smooth-muscle
+  // response, B3) and the areola swells (0.1 of `nipple-size-incr`, a CHOICE: areolar
+  // tumescence at plateau, Masters and Johnson, unmeasured in size).
+  stateMorphs: [
+    {
+      signal: "arousal",
+      targets: [
+        { name: "mouth/mouth-upperlip-volume-incr", weight: 0.15 },
+        { name: "mouth/mouth-lowerlip-volume-incr", weight: 0.15 },
+        { name: "breast/nipple-point-incr", weight: 0.37 },
+        { name: "breast/nipple-size-incr", weight: 0.1 },
+      ],
+    },
+  ],
   // An adult with this pack loaded is anatomically complete without the recipe naming any of
   // it (docs/FOUNDATION.md, "both forms"): the organ's size runs from none (0) at the female
   // end to the pooled mean (0.65, 9.2 cm, Veale 2015) at the male end, the testes from none
@@ -100,6 +116,15 @@ export function adultAnatomySpec(
     coatRegions: adultCoatRegions(base),
   };
 }
+
+/**
+ * The targets the spec's state morphs drive: the adult pack's own, or body targets
+ * the body pack ships (the lips and nipples under arousal), which the packer checks
+ * there instead.
+ */
+export const ADULT_STATE_MORPH_TARGETS: ReadonlySet<string> = new Set(
+  ADULT_ANATOMY_SPEC.stateMorphs.flatMap((m) => m.targets.map((t) => t.name)),
+);
 
 /** Every target the spec names, for the packer to check against what it packed. */
 export const ADULT_SPEC_TARGETS: readonly string[] = [

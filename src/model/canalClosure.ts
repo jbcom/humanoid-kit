@@ -177,6 +177,59 @@ export function closedLipNormals(
 }
 
 /**
+ * How fast a closed canal's crease shade falls off from its lips across the closure's
+ * zone (`closedLipShade`): the power of how far each vertex follows the closed opening.
+ * The zone is a few millimetres round (`CanalForm.closure.zone`); at 2 the shade is a
+ * quarter by halfway across it, so it stays a line. CHOICE, judged on renders (#77): at
+ * 4 it fell to nothing within a lattice vertex of the lips, and the line's edge drew
+ * the lattice's staircase, spiked.
+ */
+export const CLOSED_LIP_SHADE_POWER = 2;
+
+/**
+ * The share of its light a closed canal's lips lose where they meet, and its walls
+ * lose inside it (`closedLipShade`). The lips touch, so little light reaches the line
+ * between them; the walls are inside the body, lit only through the opening. CHOICE,
+ * judged on renders (#77): at 0.6 the lips' line is dark without a black rim; walls
+ * that lost as much still showed a pale slot where a pose parts the opening.
+ */
+export const CANAL_DARK = { lips: 0.6, walls: 0.92 } as const;
+
+/**
+ * The light a closed canal keeps out (#77): per render vertex, into `out`, the share
+ * of its light it loses. On the lips and the skin round them, `CANAL_DARK.lips` times
+ * `share` of the canal times how far it follows the closed opening
+ * (`ReservoirSkinning.closure.follows`) to `CLOSED_LIP_SHADE_POWER`: a real closed slit
+ * is a thin dark line, which the surface alone cannot show (its lips meet on one line
+ * with one normal, `closedLipNormals`, and the body's occlusion is baked once for every
+ * figure, with no canal closed), so each figure's occlusion takes this in
+ * (`creasedOcclusion`). On the canal's own walls (`walls`, each render vertex's canal
+ * reservoir or -1, `AdultSurfaceTopology.canals.of`), `CANAL_DARK.walls` times `share`:
+ * baked with the canal collapsed on the skin, they were lit as open skin, a pale strip
+ * down the slit at rest and a pale slot where a pose parts it. A canal not drawn
+ * (`shares` 0) loses none: its loop is skin.
+ */
+export function closedLipShade(
+  closure: { canal: Int16Array; follows: Float32Array },
+  walls: Int16Array,
+  shares: readonly number[],
+  out: Float32Array,
+): Float32Array {
+  out.fill(0);
+  closure.canal.forEach((c, v) => {
+    if (c < 0) return;
+    const share = shares[c] ?? 0;
+    if (!(share > 0)) return;
+    out[v] = CANAL_DARK.lips * share * (closure.follows[v] as number) ** CLOSED_LIP_SHADE_POWER;
+  });
+  walls.forEach((c, v) => {
+    if (c < 0) return;
+    out[v] = Math.max(out[v] as number, CANAL_DARK.walls * (shares[c] ?? 0));
+  });
+  return out;
+}
+
+/**
  * How much of its closure a canal takes at its target's weight `w`: all of it from
  * `CLOSED_FROM` up, so a canal is closed at the skin at every size it is drawn at,
  * and smoothly none at 0, where the reservoir is the skin. CHOICE.

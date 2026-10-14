@@ -59,6 +59,29 @@ const FINGER_PADS: readonly Affordance[] = (["L", "R"] as const).flatMap((side) 
   }),
 );
 
+/**
+ * The body's own sites a figure of any age may touch with its own hand
+ * (docs/SELF-CONTACT.md, R10): idle fidgets such as picking the nose or
+ * tugging an ear lobe. Each is a core affordance that says it is
+ * not the adult anatomy's, which is what keeps a child's fidget naming it for
+ * all audiences (`audienceOf` treats an id the core does not know as adult).
+ * The nipples are among them: a child touches its own chest, and nursing puts
+ * an infant's mouth and hand at its mother's nipple. The age line is drawn by
+ * content, not by site: adult-only signals (`ADULT_ONLY_SIGNALS`) and the adult
+ * package's own sites, which the core does not name.
+ */
+export const SELF_CONTACT_SITES = [
+  "nose-tip",
+  "chin",
+  "crown",
+  "ear-lobe.L",
+  "ear-lobe.R",
+  "sternum-notch",
+  "nipple.L",
+  "nipple.R",
+  "navel",
+] as const satisfies readonly LandmarkId[];
+
 /** The core's affordances. */
 export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("mouth", "aperture", { between: ["upper-lip", "lower-lip"] }, "oral"),
@@ -78,6 +101,16 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("wrist.R", "mount", { landmark: "wrist.R" }),
   core("sole.L", "contact", { landmark: "sole.L" }),
   core("sole.R", "contact", { landmark: "sole.R" }),
+  // Self-contact sites that are not already mounts above (the ear lobes, nipples and navel are).
+  core("nose-tip", "contact", { landmark: "nose-tip" }),
+  core("chin", "contact", { landmark: "chin" }),
+  core("crown", "contact", { landmark: "crown" }),
+  core("sternum-notch", "contact", { landmark: "sternum-notch" }),
+  // A finger to the lips, and one hand on the other's palm: everyday at any age.
+  core("upper-lip", "contact", { landmark: "upper-lip" }),
+  core("lower-lip", "contact", { landmark: "lower-lip" }),
+  core("palm.L", "contact", { landmark: "palm.L" }),
+  core("palm.R", "contact", { landmark: "palm.R" }),
   ...FINGER_PADS,
 ];
 

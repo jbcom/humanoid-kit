@@ -95,7 +95,11 @@ import {
   setHairStrandAttributes,
 } from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
-import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
+import {
+  creasedOcclusion,
+  setBodyOcclusionAttributes,
+  setOcclusionAttributes,
+} from "../render/occlusion.ts";
 import { applyShadowFilter } from "../render/shadowFilter.ts";
 import {
   CURVATURE_ATTRIBUTE,
@@ -1750,6 +1754,10 @@ export function Humanoid({
         (target.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
         ).needsUpdate = true;
+        // A figure's closed canals keep the light out of their creases: its own share of the
+        // body's occlusion (`creasedOcclusion`). Only the adult surface has canals.
+        if (ev.surface === "adult" && topology && "occlusion" in topology)
+          setBodyOcclusionAttributes(target, creasedOcclusion(topology.occlusion, ev.canalShade));
         setSurface(ev.surface);
         ev.attachments.forEach((a, i) => {
           const g = geometries.attachments[i];

@@ -501,7 +501,10 @@ whether that sampler reached its target.
 `createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
 one solve. It owns transient skeleton and skinning scratch, borrows one
 immutable evaluated generation, and rejects stale generations, malformed shapes
-and trial changes outside the declared arm chain. Its lower-level `Into` helpers
+and trial changes outside the declared arm chain (and the same hand's finger
+bones, when a hand shape declares them). Its effector is the hand's grip by
+default, or any other affordance or landmark of the hand (a finger pad for site
+contact). Its lower-level `Into` helpers
 remain trusted rig math: callers provide finite unit rotations and independent,
 non-overlapping output buffers. This seam deliberately makes an integration
 choose when it has a final live hand frame to close, rather than quietly moving
@@ -577,6 +580,62 @@ policy; a target is placed out of one figure's reach.
 `orientationError`, `geometricallyReachable`, `target` and `hand` (world).
 The report object is reused between calls; copy what you keep.
 
+### Site contact
+
+`solveSiteContact(input)` (framework-free, headless,
+`src/interaction/siteContact.ts`) puts a point of a figure's hand on a named
+site of the same figure's body: the index pad on the nose tip, the chin, the
+crown, an ear lobe, the sternum notch or the navel. It is slice 1 of
+self-contact (`docs/SELF-CONTACT.md`, #117). It works in figure space on the
+surface as the renderer skins it, so one call lands on any body's own nose.
+The `<Humanoid>` seam, the blend clock and `RegionalContact` emission belong to
+later slices.
+
+- **Hand shape first.** `handShapeRotations` sets one hand's finger bones
+  outright to a `HAND_SHAPES` entry, mirrored for the left hand. `point` keeps
+  the index straight, curls the other fingers and tucks the thumb. Nothing
+  else moves: the fingers belong to the shape and the arm to the solver.
+- **Effector and site from one skinning.** `createArmSkinnedFrameSampler` takes
+  an `effector` (an affordance or landmark id; `hand.X` by default, so hand
+  contact is unchanged) and the hand's `fingerBones` as declared candidates.
+  Its `frames` reads the effector and a site landmark from the same skinned
+  candidate pose.
+- **Hand placed, then closed on the skin.** The shaped hand is rigid on its
+  wrist. So the finger's frame at the goal (the site, lifted 1 mm along its
+  normal) fixes where the wrist must be. The solver searches the free heading
+  across the skin (every 10°) and the finger's pitch into it (15° to 55°,
+  about 35° preferred). For each candidate it seeds the elbow and shoulder to
+  that wrist (`seedArmTwoBone`), turns the wrist to the hand and moves half of
+  the turn about the forearm into the forearm's twist bone. A position-only
+  `solveArmTarget` on the skinned pad then closes the last millimetres.
+- **Choosing the approach.** A candidate whose wrist is out of reach always
+  loses. After that, the cost is how far a sample of the hand's skin sinks into
+  the rest of the body, then the wrist's bend.
+  - The body sample is coarse, but taken whole within 4 cm of the site, and it
+    leaves out the touching arm.
+  - The direction the finger comes in against is the site's normal, turned out
+    from the body's axis and toward the figure's front. Under the chin the skin
+    normal faces the chest, so a hand that came in along it would sink.
+- **The site moves with the arm (R4).** The site is measured again under each
+  solved pose. The solve repeats until the site holds within 0.5 mm, for at most
+  4 rounds.
+- **No stretching.** No joint is translated. The report's `gap` is the
+  measured skinned effector to its goal. `status` is `reached` only when that
+  gap is within `tolerance` (4 mm, so the pad is within 5 mm of the site) at
+  full weight. Otherwise it is `unreached`, with `reason` set to
+  `geometrically-unreachable`, `tolerance-not-reached` or `partial-weight`.
+- **Blending.** `weight` slerps the arm and the shaped fingers from the source.
+  At weight 0 `out` is the source byte for byte.
+- **Age policy.** The all-ages sites (`SELF_CONTACT_SITES`, the nipples among
+  them) are core affordances with `adult: false`, so a child's fidget naming
+  one stays "all" (`audienceOf`). Any site the core does not know, such as a
+  pack's `introitus`, makes the definition adult. The solver applies the same
+  rule itself: a `SiteContactFigure` whose `adult` is not `true` is refused,
+  with `AgePolicyError`, any site that `defaultAffordanceAdult` calls adult
+  (today `pubic-point` and the joint landmarks, until one is registered; the
+  lips and the palms are all-ages contact sites). The effector is a finger pad, a palm or a hand's grip
+  (`finger-pad-N.X`, `palm.X`, `hand.X`), and nothing else.
+
 ### Stimuli and reactions
 
 Any participant can be **stimulated**, inside an interaction or not:
@@ -643,7 +702,11 @@ policy requires, and none clamps.
    adult ids: its answer is joined with that default, never replacing it, so a
    predicate that answers `false` by default cannot open an adult act to a
    minor. A contact or coupling point that is not `role:name`, or names no role,
-   is adult.
+   is adult. A beat effect that drives an adult-only signal
+   (`ADULT_ONLY_SIGNALS`: `arousal`, `genitalMoisture`) is adult; one that
+   drives `blush` or `exertion` is not. The line is the content, not the body
+   site: a core nipple is an all-ages site (nursing, a child's own chest), and
+   only a sexual signal or an adult package site makes the act adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure
@@ -655,7 +718,9 @@ policy requires, and none clamps.
 6. **Structurally, the parts are not there.** A figure under 18 has no adult
    affordances (`affordances(recipe)`), so a coupling naming one cannot even
    resolve.
-7. **Signals.** Routes to `arousal` pass through `assertSignalPolicy`.
+7. **Signals.** Routes to `arousal` pass through `assertSignalPolicy`. A beat's
+   signal effect reaches the figure only through the host's `applySignals`,
+   whose values go to the figure's evaluation and so through the same check.
 8. **Packages.** Adult definitions, their clips and their routes are data of
    `humanoid-kit-adult-animations`; the core's source names none (the same
    source scan as `tests/adultStack.test.ts`), and `pnpm check:pages` refuses a
@@ -672,7 +737,7 @@ posing, framing and purpose remain the application's responsibility.
 | Package | Holds |
 | --- | --- |
 | `humanoid-kit` (core, framework-free `src/interaction/`) | Types, tag matching, definition validation, offers, claims, the runtime on the presence registry, alignment and contact solving, signals, stimuli, the generic age checks above. No clips, no definitions of its own except test fixtures |
-| `humanoid-kit/react` | `<Interactable>`, `<Interaction>`, event props on `<Humanoid>`, hooks |
+| `humanoid-kit/react` | Existing-runtime context, `<Interactable>` object/offer registration, and observation hooks; declarative proposals and `<Humanoid>` event props remain future slices |
 | `humanoid-kit-animations` | Everyday definitions as data with their clips: pick up, hand over, eat, drink, sit, lie down, lean, open a door, wave, handshake, hug, walk together, dance; reaction rules (flinch, turn to look) |
 | `humanoid-kit-adult-animations` | Adult definitions, clips and signal routes; depends on `humanoid-kit-adult-anatomy` for the adult affordances; refuses any participant under 18 at load of each definition and at every point above |
 
@@ -759,6 +824,8 @@ interface Beat {
 type Effect =
   | { set: `${RoleName}:${string}`; change: AffordanceChange }   // the mouth's occupancy
   | { object: RoleName; state: Record<string, number | string | boolean | { add: number }> }
+  // A figure role's skin signals, handed to the host's `applySignals` (built).
+  | { signal: RoleName; change: Record<string, number | { add: number }> }   // { blush: { add: 0.2 } }
   | { transfer: RoleName; from: `${RoleName}:${string}`; to: `${RoleName}:${string}` };
 
 interface SignalRoute {
@@ -852,37 +919,37 @@ interface InteractionRuntime {
 
 ### React
 
+The first React slice wraps an **existing** framework-free runtime. The caller
+creates `createInteractions(registry, options)` from the same registry it gives
+to `PresenceProvider`; `InteractionsProvider` does not make a second scheduler
+or clock.
+
 ```tsx
-<PresenceProvider interactions={{ definitions: [...everyday], seed: 42 }}>
-  <Humanoid
-    recipe={ada}
-    presence
-    affordances={adaHands}
-    onInteractionStart={(e) => {}}
-    onInteractionBeat={(e) => {}}
-    onInteractionEnd={(e) => {}}
-    onStimulus={(s) => {}}
-    acceptInteraction={(i) => i.definition.audience === "all"}
-  />
-  <Interactable id="apple-1" tags={["food.fruit.apple"]} offers={["eat"]}
-    frames={{ bite: biteRef }} state={{ stage: 0 }}>
-    <Apple />
-  </Interactable>
-  {/* Declarative: proposed on mount, cancelled on unmount. */}
-  {eating && <Interaction definition="eat" roles={{ eater: "ada", food: "apple-1" }}
-    onEnd={() => setEating(false)} />}
+function Events() {
+  useInteractionEvents("ada", (event) => report(event));
+  return null;
+}
+
+<PresenceProvider registry={registry}>
+  <InteractionsProvider runtime={interactions}>
+    <Interactable object={apple} offers={[eatOffer]}>
+      <Apple />
+    </Interactable>
+    <Events />
+  </InteractionsProvider>
 </PresenceProvider>
 ```
 
-- `useInteractions()` returns the runtime (`propose`, `offersFor`, `stimulate`).
-- `useInteraction(id)` is a live accessor to read in `useFrame`
-  (`signal("contact:0.depth")`), as `usePresence` is; it does not re-render.
-- `useInteractionEvents(participant, listener)` and `useStimulus(participant,
-  listener)` subscribe to discrete events.
-- Event props are named and shaped like R3F's pointer props; the event names
-  the participant receiving it and its role, as R3F's `eventObject` names who
-  handles a pointer event. Events reach participants only; they do not bubble
-  to scene ancestors.
+`<Interactable>` registers its `ObjectPresence` plus offers whose `by` is that
+object's id. Its id must be unique in the registry: an existing object is
+rejected rather than replaced and reported through `onRegistrationError`; without
+a handler, the registration error throws. It removes both when it changes or
+unmounts. `useInteractions()`
+returns the runtime; `useInteraction(id)` is a live `{ current }` accessor for
+frame callbacks and event handlers, not React state; and
+`useInteractionEvents(participant, listener)` receives discrete lifecycle
+events and cleans up on unmount. These bindings do not move figures, animate
+clips or provide physical contact.
 
 ### glTF
 
@@ -1070,9 +1137,11 @@ document's status and [API](API.md) as it lands.
    Before integration, the target-to-hand closure and framing milestone above
    must pass a new root-reviewed tall/short capture. Authored handshake
    animation and hand pose/IK remain unfinished.
-3. **React bindings** (issue 100). `<Interactable>`, `<Interaction>`, the event props,
-   `useInteractions`, `useInteraction`, `useInteractionEvents`; tests that
-   reading signals does not re-render.
+3. **React bindings** (issue 100). The existing-runtime provider,
+   `<Interactable>` object/offer registration, `useInteractions`,
+   `useInteraction` and `useInteractionEvents` now ship with lifecycle and
+   no-re-render browser coverage. Declarative proposals and event props on
+   `<Humanoid>` remain later work.
 4. **Reactions** (issue 101). Stimuli (touch from contact distances, approach from
    proximity), reaction rules, gaze with VRM-style range maps; flinch and turn
    to look in `humanoid-kit-animations`.

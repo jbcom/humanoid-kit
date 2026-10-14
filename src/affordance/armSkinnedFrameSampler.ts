@@ -1,5 +1,9 @@
 /**
  * A transient, true-rendered hand-frame sampler for an arm constraint solve.
+ * Its effector is the hand's grip by default (hand-to-hand contact) or any
+ * other affordance or landmark of the hand, such as a finger pad touching the
+ * figure's own body (`solveSiteContact`), which also reads the touched site
+ * from the same candidate pose.
  *
  * It deliberately has no live figure, scene object, state handle or global
  * cache. A factory belongs to one immutable evaluated-geometry generation; its
@@ -8,6 +12,8 @@
 import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import {
   type FrameOut,
+  LANDMARK_IDS,
+  type LandmarkId,
   landmarkFrameInto,
   landmarkUps,
   type SkinRenderVertex,
@@ -43,8 +49,19 @@ export interface ArmSkinnedFrameSamplerInput {
   readonly sourceRotations: BoneRotations;
   /** The six consecutive MakeHuman bones the solver may change. */
   readonly armBones: readonly number[];
-  /** Which rendered hand frame is sampled. */
+  /** Which arm the solve moves, and whose hand `effector` defaults to. */
   readonly side: "L" | "R";
+  /**
+   * The touching point `frame` samples: a core affordance id, or a landmark id
+   * (a finger pad, the palm). Defaults to the side's grip, `hand.L` or `hand.R`,
+   * which is what hand-to-hand contact closes on.
+   */
+  readonly effector?: string;
+  /**
+   * That side's finger bones (`finger1-1` to `finger5-3`) the candidate poses may
+   * also change: a contact's hand shape, blended by its weight. None by default.
+   */
+  readonly fingerBones?: readonly number[];
   /** The source pose's fixed joint folds (`LiveFigure.folds`): none when it shows none. */
   readonly folds?: readonly SkinFold[];
 }
@@ -58,6 +75,18 @@ export interface ArmSkinnedFrameSampler {
    * explicit rather than silently sampling a previous body.
    */
   frame(generation: object, rotations: BoneRotations, out: FrameOut): FrameOut;
+  /**
+   * Writes the effector's frame into `effector` and landmark `site`'s into
+   * `site`, both skinned once for the same `rotations`: a target on the
+   * figure's own body that the arm's pose may move (docs/SELF-CONTACT.md, R4).
+   */
+  frames(
+    generation: object,
+    rotations: BoneRotations,
+    effector: FrameOut,
+    site: LandmarkId,
+    siteOut: FrameOut,
+  ): void;
 }
 
 const armNames = (side: "L" | "R") => [
@@ -69,11 +98,19 @@ const armNames = (side: "L" | "R") => [
   `wrist.${side}`,
 ];
 
-const hand = (side: "L" | "R"): Affordance => {
-  const found = CORE_AFFORDANCES.find((entry) => entry.id === `hand.${side}`);
-  if (!found) throw new Error(`arm sampler: hand.${side} affordance is unavailable`);
-  return found;
+/**
+ * The affordance an effector id names: a core affordance's own (so `hand.R`
+ * keeps its grip frame), else a landmark's, read as a contact at that landmark.
+ */
+const effectorOf = (id: string): Affordance => {
+  const found = CORE_AFFORDANCES.find((entry) => entry.id === id);
+  if (found) return found;
+  if ((LANDMARK_IDS as readonly string[]).includes(id))
+    return { id, kind: "contact", at: { landmark: id as LandmarkId }, adult: false };
+  throw new RangeError(`arm sampler: no affordance or landmark ${id}`);
 };
+
+const fingerName = (side: "L" | "R") => new RegExp(`^finger[1-5]-[1-3]\\.${side}$`);
 
 /**
  * Creates one sampler for one solve/evaluation generation. It borrows the
@@ -93,6 +130,7 @@ export function createArmSkinnedFrameSampler(
     restBones,
     armBones,
     side,
+    fingerBones = [],
     folds = NO_FOLDS,
   } = input;
   if (generation === null || typeof generation !== "object")
@@ -104,6 +142,10 @@ export function createArmSkinnedFrameSampler(
     if (!Number.isInteger(bone) || restBones.names[bone] !== expectedNames[index])
       throw new RangeError("arm sampler: allowed bones must be one consecutive arm only");
   });
+  const ownFinger = fingerName(side);
+  for (const bone of fingerBones)
+    if (!Number.isInteger(bone) || !ownFinger.test(restBones.names[bone] ?? ""))
+      throw new RangeError("arm sampler: allowed finger bones must be the same hand's fingers");
   const bones = restBones.names.length;
   if (input.sourceRotations.length !== bones * 4)
     throw new RangeError("arm sampler: source rotations do not match rest bones");
@@ -125,6 +167,7 @@ export function createArmSkinnedFrameSampler(
   const ups = landmarkUps(anchors, rest, restNormals);
   const allowed = new Uint8Array(bones);
   for (const bone of armBones) allowed[bone] = 1;
+  for (const bone of fingerBones) allowed[bone] = 1;
   const skin: SkinRenderVertex = (vertex, position, normal) => {
     skinPositionAt(
       scratch.pose,
@@ -154,27 +197,36 @@ export function createArmSkinnedFrameSampler(
   };
   const read: LandmarkReader = (id, out) =>
     landmarkFrameInto(id, anchors, ups, skin, scratch.skeleton, out);
-  const affordance = hand(side);
+  const affordance = effectorOf(input.effector ?? `hand.${side}`);
+  /** Checks a candidate against the source's guarded bones, then skins it. */
+  const pose = (currentGeneration: object, rotations: BoneRotations) => {
+    if (currentGeneration !== generation)
+      throw new Error("arm sampler: evaluated geometry generation is stale");
+    if (rotations.length !== source.length)
+      throw new RangeError("arm sampler: candidate rotations do not match rest bones");
+    for (let bone = 0; bone < bones; bone++) {
+      const at = bone * 4;
+      for (let component = 0; component < 4; component++) {
+        if (!Number.isFinite(rotations[at + component] as number))
+          throw new RangeError("arm sampler: candidate rotations must be finite");
+        if (allowed[bone]) continue;
+        if (rotations[at + component] !== source[at + component])
+          throw new RangeError("arm sampler: candidate changed a non-arm pose bone");
+      }
+    }
+    skinPoseInto(restBones, rotations, share, scratch);
+  };
 
   return {
     generation,
     frame(currentGeneration, rotations, out) {
-      if (currentGeneration !== generation)
-        throw new Error("arm sampler: evaluated geometry generation is stale");
-      if (rotations.length !== source.length)
-        throw new RangeError("arm sampler: candidate rotations do not match rest bones");
-      for (let bone = 0; bone < bones; bone++) {
-        const at = bone * 4;
-        for (let component = 0; component < 4; component++) {
-          if (!Number.isFinite(rotations[at + component] as number))
-            throw new RangeError("arm sampler: candidate rotations must be finite");
-          if (allowed[bone]) continue;
-          if (rotations[at + component] !== source[at + component])
-            throw new RangeError("arm sampler: candidate changed a non-arm pose bone");
-        }
-      }
-      skinPoseInto(restBones, rotations, share, scratch);
+      pose(currentGeneration, rotations);
       return affordanceFrameInto(affordance, read, out);
+    },
+    frames(currentGeneration, rotations, effector, site, siteOut) {
+      pose(currentGeneration, rotations);
+      affordanceFrameInto(affordance, read, effector);
+      read(site, siteOut);
     },
   };
 }

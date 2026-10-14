@@ -9,6 +9,12 @@ version metadata, tags and GitHub Releases. The package is pre-release; the firs
 published version will be `0.1.0`. Published releases use npm provenance and the
 project supports the latest `0.x` line.
 
+`integration` is the development line. Release milestones promote it to `main`
+with a normal merge commit after the CI, visual-acceptance and #22 licence gates
+pass. CI runs on both branches; Release Please, Pages and CD run only from
+`main`, where releases publish the seven public workspaces with npm provenance.
+Issue #69 remains the public-release gate.
+
 For planned changes, use a Conventional Commit type such as `fix:`, `feat:`,
 `docs:`, `refactor:`, `test:` or `chore:`. Breaking public API changes need a `!`
 or `BREAKING CHANGE:` footer.

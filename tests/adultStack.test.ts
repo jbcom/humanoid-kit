@@ -5,6 +5,7 @@ import {
   ADULT_ANATOMY_SPEC,
   ADULT_SPEC_MODIFIERS,
   ADULT_SPEC_TARGETS,
+  ADULT_STATE_MORPH_TARGETS,
   adultAnatomySpec,
 } from "../scripts/lib/adultAnatomySpec.ts";
 import { groupFaces, parseHumanoidAssets } from "../src/format/assetFormat.ts";
@@ -53,9 +54,17 @@ describe("the adult anatomy spec in the pack's manifest", () => {
   it("names only targets and modifiers the adult pack ships, and none of the body pack's", () => {
     expect(ADULT_SPEC_TARGETS.length).toBeGreaterThan(0);
     for (const t of ADULT_SPEC_TARGETS) {
+      // A state morph may drive a body target instead (the lips and nipples under arousal, #118).
+      if (ADULT_STATE_MORPH_TARGETS.has(t) && bodyNames.has(t)) {
+        expect(adultNames.has(t), t).toBe(false);
+        continue;
+      }
       expect(adultNames.has(t), t).toBe(true);
       expect(bodyNames.has(t), t).toBe(false);
     }
+    expect([...ADULT_STATE_MORPH_TARGETS].filter((t) => bodyNames.has(t)).length).toBeGreaterThan(
+      0,
+    );
     const modifiers = new Set(adultManifest.modifiers.map((m) => m.id));
     for (const id of ADULT_SPEC_MODIFIERS) expect(modifiers.has(id), id).toBe(true);
   });

@@ -28,6 +28,7 @@ export class RecipeValidationError extends Error {
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 const SKIN_NUMBER_KEYS = Object.keys(DEFAULT_SKIN).filter((k) => k !== "override");
 const REGIONS = new Set<string>(BODY_REGIONS);
+const BREAST_PRESENCE_REGIONS = new Set(["breastL", "breastR"]);
 const HAIR_PIGMENT_KEYS = ["eumelanin", "pheomelanin", "grey"] as const;
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -58,7 +59,12 @@ export function recipeProblems(recipe: unknown): string[] {
       }
       for (const [k, v] of Object.entries(values)) {
         if (k === "age") p.push(`regionalMacros.${region}.age: age applies to the whole figure`);
-        else if (!MACRO_KEYS.has(k)) p.push(`regionalMacros.${region}.${k} is not a macro`);
+        else if (k === "breastPresence") {
+          if (!BREAST_PRESENCE_REGIONS.has(region))
+            p.push(`regionalMacros.${region}.breastPresence applies only to breastL or breastR`);
+          else if (!finite(v) || v < 0 || v > 1)
+            p.push(`regionalMacros.${region}.breastPresence must be a number in [0, 1]`);
+        } else if (!MACRO_KEYS.has(k)) p.push(`regionalMacros.${region}.${k} is not a macro`);
         else if (!finite(v)) p.push(`regionalMacros.${region}.${k} must be a finite number`);
       }
     }

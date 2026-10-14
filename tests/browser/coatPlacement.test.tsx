@@ -42,6 +42,7 @@ import {
 import { HairMaterial } from "../../src/render/hairMaterial.ts";
 import { hairTint } from "../../src/surface/hairTone.ts";
 import { BEARD_LENGTHS } from "../../src/surface/regions/bodyHairCoat.ts";
+import { expectSameArray } from "./arrays.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 120_000 };
@@ -666,7 +667,7 @@ describe("the coat on a figure", () => {
         const after = Array.from(
           (bodyMesh() as SkinnedMesh).geometry.getAttribute("position").array,
         );
-        expect(after).toEqual(before);
+        expectSameArray(after, before, { what: `${id} body positions after removal` });
         console.info(
           `HK_FACIAL_LEGACY age=${macros.age} id=${id} bodyBytes=${before.length * 4} unchanged=true removed=true`,
         );

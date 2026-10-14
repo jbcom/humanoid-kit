@@ -5,6 +5,10 @@ typecheck, coverage, build and package checks. The hosted workflow separates
 coverage from the Node support matrix so that it proves the same thing once
 instead of timing out while proving it three times.
 
+The `CI` workflow runs for pull requests and for pushes to both `integration`
+and `main`. Only a normal milestone merge may advance `main`; Pages and release
+automation remain tied to that branch.
+
 ## Required gates
 
 - **Node 24 and 26** each install from the lockfile, run lint and documentation

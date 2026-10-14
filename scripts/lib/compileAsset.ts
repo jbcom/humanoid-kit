@@ -164,6 +164,14 @@ export interface CompileOptions {
    * licence and the names of its mesh and material.
    */
   body?: BodyMesh;
+  /**
+   * A non-CC0 source whose distribution terms were checked by the calling
+   * packer's asset-licence profile. This is deliberately an explicit evidence
+   * string instead of a licence-name allow-list: the caller must record the
+   * source, selected terms, and any contradictory file headers in generated
+   * provenance. Omitting it retains the CC0-only gate above.
+   */
+  externalLicenceEvidence?: string;
 }
 
 /**
@@ -210,19 +218,28 @@ export function compileAsset(
     })),
     page,
   );
-  if (!judgement.pass) throw new Error(`licence gate: ${mhcloFile}: ${judgement.reason}`);
-  const regenerate = new Set(judgement.regenerate);
-  const exclude = new Set(judgement.exclude);
+  if (!judgement.pass && !options.externalLicenceEvidence)
+    throw new Error(`licence gate: ${mhcloFile}: ${judgement.reason}`);
+  const external = options.externalLicenceEvidence;
+  const regenerate = new Set(judgement.pass ? judgement.regenerate : []);
+  const exclude = new Set(judgement.pass ? judgement.exclude : []);
   const cite =
-    judgement.clause === "B" && page ? ` (<${page.url}>, submitted ${page.submitted})` : "";
+    judgement.pass && judgement.clause === "B" && page
+      ? ` (<${page.url}>, submitted ${page.submitted})`
+      : "";
   const evidence: Record<string, string> = {};
   for (const { file } of files) {
     const name = path.basename(file);
-    evidence[file] = regenerate.has(name)
-      ? "M: binding is not CC0; not shipped, rebuilt from the CC0 mesh against our base"
-      : exclude.has(name)
-        ? "M: not CC0; not shipped"
-        : `${judgement.evidence[name]}${cite}`;
+    if (external) {
+      evidence[file] = `External asset-licence profile: ${external}`;
+    } else {
+      if (!judgement.pass) throw new Error(`licence gate: ${mhcloFile}: ${judgement.reason}`);
+      evidence[file] = regenerate.has(name)
+        ? "M: binding is not CC0; not shipped, rebuilt from the CC0 mesh against our base"
+        : exclude.has(name)
+          ? "M: not CC0; not shipped"
+          : `${judgement.evidence[name]}${cite}`;
+    }
   }
 
   const obj = parseObjAsset(objText);

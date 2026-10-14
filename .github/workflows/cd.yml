@@ -81,4 +81,12 @@ jobs:
       - if: steps.release.outputs.tag != ''
         run: pnpm verify
       - if: steps.release.outputs.tag != ''
-        run: npm publish --access public --provenance
+        run: >-
+          pnpm --filter humanoid-kit
+          --filter humanoid-kit-body
+          --filter humanoid-kit-adult-anatomy
+          --filter humanoid-kit-hair
+          --filter humanoid-kit-eyes
+          --filter humanoid-kit-animations
+          --filter humanoid-kit-clothing
+          -r publish --access public --provenance

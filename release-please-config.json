@@ -30,6 +30,20 @@
       "include-component-in-tag": true,
       "bump-minor-pre-major": true
     },
+    "packs/eyes": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-eyes",
+      "component": "humanoid-kit-eyes",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    },
+    "packs/animations": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-animations",
+      "component": "humanoid-kit-animations",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    },
     "packs/clothing": {
       "release-type": "node",
       "package-name": "humanoid-kit-clothing",

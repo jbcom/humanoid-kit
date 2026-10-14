@@ -72,6 +72,8 @@ export function adultPackWith(o: SyntheticPack = {}): AdultAnatomyData {
   delete spec.detail;
   delete spec.reservoirs;
   if (o.reservoirs) spec.reservoirs = o.reservoirs;
+  // And its state morphs (the lips and nipples under arousal): a signal drives the synthetic targets alone.
+  spec.stateMorphs = [];
   const parts: Uint8Array[] = [];
   let at = base.targets.byteLength;
   for (const t of o.targets ?? []) {

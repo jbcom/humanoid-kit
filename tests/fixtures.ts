@@ -137,6 +137,22 @@ export function loadMiniatureAssets(): HumanoidAssets {
   return miniature;
 }
 
+let organOnly: HumanoidAssets | undefined;
+
+/**
+ * The packed assets with the adult pack's state morphs taken out: arousal then moves the
+ * organ's detail targets alone, not the lips and nipples it also fills (#118, measured in
+ * arousal.test.ts), so a test of the organ's surface can compare the whole body.
+ */
+export function loadOrganOnlyAssets(): HumanoidAssets {
+  if (!organOnly) {
+    const manifest: AdultAnatomyManifest = structuredClone(adultManifest);
+    if (manifest.anatomy) manifest.anatomy.stateMorphs = [];
+    organOnly = parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest });
+  }
+  return organOnly;
+}
+
 /** The packed assets read from disk, parsed once per test file. */
 export function loadFixtureAssets(adultAnatomy = false): HumanoidAssets {
   if (!adultAnatomy) {

@@ -86,7 +86,12 @@ import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
-import { closedLipNormals, closureDisplacement, closureShare } from "./canalClosure.ts";
+import {
+  closedLipNormals,
+  closedLipShade,
+  closureDisplacement,
+  closureShare,
+} from "./canalClosure.ts";
 import {
   carriedDetail,
   latticePositions,
@@ -443,6 +448,11 @@ export interface Evaluation extends SurfaceEvaluation {
   areolaScale: number;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
+  /**
+   * Per body render vertex: how much of a closed canal's crease darkness it takes
+   * (`closedLipShade`), 0 to 1; all 0 on the base surface and where no canal is closed.
+   */
+  canalShade: Float32Array;
   /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
   boneHeads: Float32Array;
   /** The recipe's body art placed on this shape (`placeBodyArt`), or null when it has none. */
@@ -1655,8 +1665,11 @@ export class HumanoidModel {
       pushed,
     );
     const closed = adult && pushed ? this.closedShares(detail) : null;
-    if (adult?.skinning.closure && closed)
+    const canalShade = new Float32Array(body.positions.length / 3);
+    if (adult?.skinning.closure && closed) {
       closedLipNormals(adult.skinning.closure, closed, body.positions, body.normals);
+      closedLipShade(adult.skinning.closure, adult.topology.canals.of, closed, canalShade);
+    }
     const skin =
       adult && pushed
         ? evaluatedSkin(
@@ -1739,6 +1752,7 @@ export class HumanoidModel {
       control,
       areolaScale: areolaStretch(this.assets, control),
       curvature,
+      canalShade,
       boneHeads,
       bodyArt: recipe.bodyArt
         ? placeBodyArt(
@@ -2255,14 +2269,8 @@ export class HumanoidModel {
       const drawn = this.evaluatePart(adult.part, control, displacement, pushed);
       shares = rootShares(adult.skinning, pushed, drawn.positions);
     }
-    const skin = adult
-      ? evaluatedSkin(
-          adult.topology,
-          adult.skinning,
-          shares,
-          displacement ? this.closedShares(detail) : null,
-        )
-      : null;
+    const closed = adult && displacement ? this.closedShares(detail) : null;
+    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares, closed) : null;
     const folds = solved.map((fold) => {
       // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
       // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
@@ -2274,8 +2282,9 @@ export class HumanoidModel {
         control,
         this.assets,
       );
-      // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-      return adult ? evaluatedFold(onSurface, adult.skinning, shares) : onSurface;
+      // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights,
+      // and a closed canal's lips with its root, so the two sides fold alike (`evaluatedFold`).
+      return adult ? evaluatedFold(onSurface, adult.skinning, shares, closed) : onSurface;
     });
     return { surface: adult ? "adult" : "base", folds };
   }

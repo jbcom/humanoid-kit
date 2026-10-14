@@ -118,11 +118,20 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
     expect(Array.from(b)).toEqual(Array.from(a));
   });
 
-  it("moves nothing in a figure that has no organ, whatever the signal", () => {
-    const rest = adultModel.evaluate(bare);
-    const aroused = adultModel.evaluate(bare, { arousal: 1 });
-    expect(Array.from(aroused.positions)).toEqual(Array.from(rest.positions));
-    expect(Array.from(aroused.control)).toEqual(Array.from(rest.control));
+  it("moves no genital skin in a figure that has no organ, whatever the signal", () => {
+    // Arousal also fills the lips and raises the nipples (#118): every other vertex stays.
+    const swelling = new Set<number>();
+    for (const m of adultManifest.anatomy?.stateMorphs ?? [])
+      for (const t of m.targets)
+        for (const v of withAdult.targets.get(t.name)?.indices ?? []) swelling.add(v);
+    expect(swelling.size).toBeGreaterThan(0);
+    const rest = adultModel.evaluate(bare).control.slice();
+    const aroused = adultModel.evaluate(bare, { arousal: 1 }).control;
+    for (let v = 0; v < rest.length / 3; v++) {
+      if (swelling.has(v)) continue;
+      for (let k = 0; k < 3; k++)
+        expect(aroused[v * 3 + k], `control vertex ${v}`).toBe(rest[v * 3 + k]);
+    }
   });
 
   it("is refused under 18 with or without the adult pack, and never reaches a target there", () => {
@@ -257,5 +266,43 @@ describe("colour deepening with arousal (modelled, not calibrated)", () => {
       expect(t[row]).toBe(0);
       expect(stop(t)).toEqual([0, 0, 0]);
     }
+  });
+});
+
+describe("the lips and nipples under arousal (#118)", { timeout: 300_000 }, () => {
+  const woman = createRecipe({ macros: { age: 30, gender: 0 } });
+  /** The largest move arousal makes at the vertices one body target moves. */
+  const swell = (model: HumanoidModel, assets: typeof withAdult, target: string) => {
+    const t = assets.targets.get(target);
+    if (!t) throw new Error(`no target ${target}`);
+    const a = model.evaluate(woman).control.slice();
+    const b = model.evaluate(woman, { arousal: 1 }).control;
+    let far = 0;
+    for (const v of t.indices)
+      far = Math.max(
+        far,
+        Math.hypot(...[0, 1, 2].map((k) => (b[v * 3 + k] as number) - (a[v * 3 + k] as number))),
+      );
+    return far;
+  };
+
+  it("fills the lips and raises the nipples, through the adult pack's own state morphs", () => {
+    const morph = adultManifest.anatomy?.stateMorphs.find((m) => m.signal === "arousal");
+    const names = morph?.targets.map((t) => t.name) ?? [];
+    for (const n of [
+      "mouth/mouth-upperlip-volume-incr",
+      "mouth/mouth-lowerlip-volume-incr",
+      "breast/nipple-point-incr",
+    ])
+      expect(names, n).toContain(n);
+    // A visible change at full arousal: a fraction of a millimetre at the lips, more at the nipple.
+    expect(swell(adultModel, withAdult, "mouth/mouth-upperlip-volume-incr")).toBeGreaterThan(3e-4);
+    expect(swell(adultModel, withAdult, "mouth/mouth-lowerlip-volume-incr")).toBeGreaterThan(3e-4);
+    expect(swell(adultModel, withAdult, "breast/nipple-point-incr")).toBeGreaterThan(5e-4);
+  });
+
+  it("leaves them still without the adult pack, and never names arousal in the body's morphs", () => {
+    expect(swell(coreModel, core, "mouth/mouth-upperlip-volume-incr")).toBe(0);
+    expect(shapeSignalNames(STATE_MORPHS)).not.toContain("arousal");
   });
 });
