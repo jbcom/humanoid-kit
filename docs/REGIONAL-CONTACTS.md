@@ -1,9 +1,10 @@
 # Regional contact and injury contract
 
-Status: **contact payload validation is implemented; regional response,
-animation, injury and persistence are planned.** This note keeps those states
-separate so a caller cannot mistake an affordance frame or a visual scar for a
-physiological simulation.
+Status: **contact payload validation and neutral injury-state validation are
+implemented.** Regional response, visual rendering, posed anchor evaluation and
+garment coverage are still separate work. This note keeps those states apart so
+a caller cannot mistake an affordance frame or visual scar for a physiological
+simulation.
 
 ## What exists now
 
@@ -16,6 +17,7 @@ physiological simulation.
 | External adult regions | No external adult region is registered in the core. | A future adult-pack surface region is distinct from its canal and from ear contact; it needs its own registration and response profile. |
 | Persistent skin marks | Recipes can already contain stable, base-surface-anchored scars as body art. | They are authored appearance, not runtime injuries, and they do not alter collision, affordances or clothing. |
 | Time response | `SkinStateFilter` can filter application-provided signals. | It has no regional contact mapping and must not be used to imply one. |
+| Runtime injury records | `RegionalInjuryState` validates neutral record classes, compatible base-mesh vertex anchors, explicit lifecycle calls and saved-only snapshots. | It does not infer records from contact, render an effect, evaluate a pose, alter collision or alter affordances. |
 
 `canalClosure` and `closedLoop` are specifically a rest-geometry operation in
 the adult lane. They close a named canal loop against its own wall and classify
@@ -73,17 +75,22 @@ unless that pack declares a distinct aperture. Numerical response calibration,
 medical limits and tissue laws are not approved by this contract and belong in
 separate evidence-backed work.
 
-## Planned injury-state design and test contract
+## Implemented neutral injury-state contract
 
-No injury state is exported or rendered today. The following is a bounded design
-contract for a future neutral record; it is not an API declaration and does not
-promise a solver, medical calibration, or a particular visual effect.
+`RegionalInjuryState`, `RegionalInjury`, `RegionalInjuryAnchor` and
+`RegionalInjurySnapshot` are exported today. They are a bounded neutral data
+contract, not a solver, medical calibration, or a particular visual effect.
+The record routes only through a caller-owned renderer hook.
 
 ### Record classes
 
 A record must choose exactly one class, keep its class through its lifecycle,
 and carry a schema version, stable body-space anchor, consumer-owned identity,
-explicit lifecycle transition and persistence policy.
+consumer-authored creation and update time, opaque source category, opaque
+non-empty severity band, explicit lifecycle transition and persistence policy.
+Times are in the consumer's own coordinate; the kit supplies no global clock.
+The source category groups local source semantics only, and the severity band
+has no kit-defined threshold, ordering, anatomy or gameplay meaning.
 
 | Planned class | Meaning and hard boundary | Persistence |
 | --- | --- | --- |
@@ -96,9 +103,9 @@ The minimal future record contract is structural rather than anatomical:
 | Required field or relation | Planned rule |
 | --- | --- |
 | `schemaVersion` and `id` | A loader rejects an unsupported version or duplicate identity rather than guessing migration. |
-| Class and lifecycle | The class is one of the three rows above. A record is explicitly created, updated, resolved, restored from persistence or reset; transitions are observable and idempotence is specified before implementation. |
+| Class and lifecycle | The class is one of the three rows above. Records hold the current lifecycle and metadata; `create`, `update`, `resolve`, `restore` and `reset` return the corresponding observable event. `resolve` and a repeated reset are idempotent. Restore is a replacement action and reports success even when the snapshot matches. |
 | Stable body-space anchor | The anchor identifies one compatible body topology and resolves on the current morphed, posed, skinned surface. It cannot be an arbitrary world coordinate, UV-only point, or unversioned triangle index. |
-| Presentation parameters | The class owns only the data needed by its renderer. It never carries an implicit wound aperture, response profile, collision override or combat outcome. |
+| Consumer metadata | `createdAt` and `updatedAt` are finite consumer-authored times. `sourceCategory` and `severityBand` are non-empty opaque consumer labels. None supplies a global clock, medical threshold, source taxonomy or gameplay outcome. |
 | Persistence policy | Session data is not accidentally serialized. Saved data retains its schema version and anchor. Reset removes records selected by the consumer policy. |
 
 The existing body-art system establishes the desired anchor direction: named
@@ -132,19 +139,20 @@ choices stay in the games. The kit's future responsibility is limited to a
 neutral, deterministic state representation and resolver. It does not classify
 damage, choose an effect, create combat outcomes, or model physiology.
 
-### Required proof before implementation
+### Validation and remaining proof
 
-The only current tests cover `RegionalContact` input validation. They do **not**
-cover injury state, rendering, recovery, skinning or persistence. Any future
-implementation must add focused red/green tests for the applicable rows before
-it claims support:
+Focused source tests cover schema, duplicate identity, compatible base-mesh
+vertex anchors, opaque source-category and severity-band validation, class
+isolation, transient lifetime, saved-only snapshots, exact restore and explicit
+layer routing. They do **not** prove rendering,
+posed/skinned placement or garment coverage. Those require separate evidence:
 
 | Test area | Required evidence |
 | --- | --- |
-| Record validation | Reject an unsupported schema, duplicate id, invalid lifecycle transition, missing compatible anchor and class-specific forbidden fields. Mutation checks must prove each rejection guard matters. |
-| Anchor resolution | Resolve the same record across morphs and posed/skinned animation without changing its anatomical target. Reject topology mismatch rather than retargeting. |
-| Class isolation | Prove a surface marking creates no channel, aperture, collision or affordance change; prove no contact input automatically emits a regional response or injury state. |
-| Recovery and persistence | Prove a transient record resolves under its declared policy; round-trip a saved persistent record with version and anchor intact; prove reset removes exactly the records selected by policy. |
+| Record validation | Source tests reject unsupported schema, duplicate id, incompatible topology or hash, out-of-range vertex, invalid duration and class-specific forbidden fields. Mutation proof verifies the guards. |
+| Anchor resolution | A future renderer must resolve the same compatible base vertex across morphs and posed/skinned animation without changing anatomical target. It must reject topology mismatch rather than retargeting. |
+| Class isolation | Source tests prove state routing does not create an aperture, collision or affordance state; no contact input automatically emits a regional response or injury record. |
+| Recovery and persistence | Source tests resolve a transient at its declared duration, round-trip saved records with version and anchor intact, and prove reset removes only selected records. |
 | Clothing and wrapping | Exercise bound garments and any wrapping implementation across morph and pose, verifying coverage remains coherent and does not drift or hide state without its declared coverage rule. |
 | Collision and affordances | Prove defaults are unchanged. A later explicit override requires its own behavior and regression suite. |
 | Renderer lab | Root must inspect marked, transient and persistent candidates through relevant morphs, animation, clothing/wrapping, save/reload and reset. This proof is currently absent. |
@@ -155,8 +163,7 @@ it claims support:
   targets; do not borrow adult canal identifiers or infer them from geometry.
 - Add region-specific response/recovery implementations only with their own
   pure lifecycle tests and evidence-backed calibration.
-- Add a stable injury-anchor representation before dynamic effects, then test
-  morphing, animation, clothing/wrapping coverage, save, reload, reset,
-  collision and affordance behavior independently.
+- Connect the stable base-mesh vertex anchor to a posed/skinned renderer, then
+  test morphing, animation and clothing/wrapping coverage independently.
 - Root reviews any eventual rendered opening, response, injury or deformation
   change. This document is not visual acceptance evidence.

@@ -22,6 +22,22 @@ export const RECIPE_VERSION = 1 as const;
 /** Macros a region may override. Age is a property of the whole figure. */
 export type RegionalMacroValues = Omit<MacroValues, "age">;
 
+/**
+ * A breast region's optional source-frame choice. `breastPresence` is not a
+ * macro: in `breastL` and `breastR` it selects the existing MakeHuman source
+ * frame (0 = male share, 1 = female share) beneath that side's breast targets.
+ */
+export type BreastRegionalTraitValues = Partial<RegionalMacroValues> & {
+  breastPresence?: number;
+};
+
+/** Values that may vary by body region; only breast regions admit `breastPresence`. */
+export type RegionalTraitValues = {
+  [Region in BodyRegion]?: Region extends "breastL" | "breastR"
+    ? BreastRegionalTraitValues
+    : Partial<RegionalMacroValues>;
+};
+
 export interface SkinRecipe {
   /** 0 = very fair, 1 = very deep. */
   melanin: number;
@@ -91,7 +107,7 @@ export type FacialHairRecipe = readonly string[];
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
-  regionalMacros: Partial<Record<BodyRegion, Partial<RegionalMacroValues>>>;
+  regionalMacros: RegionalTraitValues;
   /** Shape modifier id → value in [-1, 1] (one-sided modifiers [0, 1]). Missing ids are 0. */
   modifiers: Record<string, number>;
   skin: SkinRecipe;

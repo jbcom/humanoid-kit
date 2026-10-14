@@ -183,20 +183,42 @@ export function lipAlbedo(tone: SkinTone, depth: number): Rgb {
 export const COLD_LIP_HUE_SHIFT = 40;
 
 /**
- * Lips under cold and fear (each 0..1), from their resting albedo: in the cold
- * the hue turns toward violet and the lips darken and grey a little (blood
- * pooled and deoxygenated); in fright they lose chroma and lighten (blood
- * drawn away). Magnitudes are CHOICES, as `COLD_LIP_HUE_SHIFT`. A colour that
- * is not human skin keeps its lips.
+ * The lips at full arousal (#118): vasocongestion fills the thin skin with
+ * oxygenated blood, so they deepen, saturate and turn a little toward red. No
+ * measurement of the change at any skin tone was found (docs/research/
+ * SKIN-STATES.md B4), so each is a CHOICE: about as large as cold's darkening,
+ * the opposite way in chroma, a quarter of its hue turn and toward red rather
+ * than violet.
  */
-export function lipStateAlbedo(tone: SkinTone, depth: number, cold: number, fear: number): Rgb {
+export const AROUSAL_LIP = { darken: 4, saturate: 0.3, hue: 6 } as const;
+
+/**
+ * Lips under cold, fear and arousal (each 0..1), from their resting albedo: in
+ * the cold the hue turns toward violet and the lips darken and grey a little
+ * (blood pooled and deoxygenated); in fright they lose chroma and lighten (blood
+ * drawn away); aroused they deepen and saturate toward red (`AROUSAL_LIP`).
+ * Magnitudes are CHOICES, as `COLD_LIP_HUE_SHIFT`. A colour that is not human
+ * skin keeps its lips.
+ */
+export function lipStateAlbedo(
+  tone: SkinTone,
+  depth: number,
+  cold: number,
+  fear: number,
+  arousal = 0,
+): Rgb {
   const rest = lipAlbedo(tone, depth);
   const c = clamp(cold, 0, 1);
   const f = clamp(fear, 0, 1);
-  if (tone.override || (c === 0 && f === 0)) return rest;
+  const a = clamp(arousal, 0, 1);
+  if (tone.override || (c === 0 && f === 0 && a === 0)) return rest;
   const [L, C, h] = lchFromLab(labFromLinear(rest));
   const state = linearFromLab(
-    labFromLch(L - 5 * c + 3 * f, C * (1 - 0.35 * c - 0.45 * f), h - COLD_LIP_HUE_SHIFT * c),
+    labFromLch(
+      L - 5 * c + 3 * f - AROUSAL_LIP.darken * a,
+      C * (1 - 0.35 * c - 0.45 * f + AROUSAL_LIP.saturate * a),
+      h - COLD_LIP_HUE_SHIFT * c - AROUSAL_LIP.hue * a,
+    ),
   );
   return state.map((x) => clamp(x, 0, 1)) as Rgb;
 }

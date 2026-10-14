@@ -249,6 +249,7 @@ interface ClipMeta {
   loop: boolean;
   rootMotion: boolean;
   grounded: boolean;
+  supportTracks?: ClipEntry["supportTracks"];
   source: ClipSource;
 }
 
@@ -295,6 +296,7 @@ export function packAnimations(options: PackAnimationsOptions): void {
       loop: meta.loop,
       rootMotion: meta.rootMotion,
       grounded: meta.grounded,
+      ...(meta.supportTracks && { supportTracks: meta.supportTracks }),
       bones: clip.bones,
       file,
       sha256: sha256(gz),
@@ -376,6 +378,7 @@ export function packAnimations(options: PackAnimationsOptions): void {
         loop: a.loop,
         rootMotion: a.rootMotion,
         grounded: a.grounded,
+        ...(a.supportTracks && { supportTracks: a.supportTracks }),
         source: {
           archive: "humanoid-kit",
           archiveSha256: a.sha256,

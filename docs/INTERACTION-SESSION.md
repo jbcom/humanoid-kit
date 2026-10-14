@@ -129,7 +129,11 @@ Units are metres and seconds throughout.
   as `registry.frames`, so figure ids are presence ids.
 - `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe
   function. `onRelease(reason)` is called with `"released"` when the producer
-  stops and `"superseded"` when another producer binds the id.
+  stops, `"superseded"` when another producer binds the id, and `"removed"`
+  when its presence leaves the registry. `frames.latest(figure)` returns the
+  live producer's most recent frame, or `undefined` until it publishes and
+  after rebind, release, replacement or removal. It is producer-owned and
+  reused: copy it before retaining it.
 - `frames.bind(figure)` returns a `FrameBinding` with `publish(frame)`
   (`false` once the binding is not live), `rebind()` and `release()`; release is
   idempotent.

@@ -176,7 +176,7 @@ input and does not validate it; validation happens at evaluation.
 interface Recipe {
   version: 1;
   macros: MacroValues;
-  regionalMacros: Partial<Record<BodyRegion, Partial<RegionalMacroValues>>>;
+  regionalMacros: RegionalTraitValues;
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
@@ -219,6 +219,18 @@ interface BeardSpec {
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
+type BreastRegionalTraitValues = Partial<RegionalMacroValues> & {
+  // breastL/breastR only. 0 = male source-frame share; 1 = female share.
+  // Absent preserves the figure's gender-derived MakeHuman source frame.
+  breastPresence?: number;
+};
+
+type RegionalTraitValues = {
+  [Region in BodyRegion]?: Region extends "breastL" | "breastR"
+    ? BreastRegionalTraitValues
+    : Partial<RegionalMacroValues>;
+};
+
 interface SkinRecipe {
   melanin: number;      // 0 very fair .. 1 very deep
   haemoglobin: number;  // 0 pale, 0.5 typical, 1 ruddy
@@ -258,7 +270,8 @@ interface MacroValues {
 - `DEFAULT_MACROS`: gender 0.5, age 25, muscle, weight, height, proportions,
   breastSize and breastFirmness 0.5, ethnic anchors 1/3 each.
 - `macroTargetWeights(macros): Map<string, number>`: target name to weight, for
-  names that exist in the packed data. Never weights breast targets under 18.
+  names that exist in the packed data. Breast development follows MakeHuman's
+  child, young and old anchors; only its baby anchor has no breast targets.
 - `macroTargetNames(): Set<string>`: every name `macroTargetWeights` can
   produce; the body pack's first targets file holds exactly these plus
   `SKIN_LAYER_TARGETS`.
@@ -1262,6 +1275,10 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   until a figure joins or leaves, and entries are updated in place as figures
   move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
   figure has joined.
+  `FigurePresence.partnerNeeds?` is a list of advisory `{ tags, minPartners,
+  maxPartners }` requests: tags must be nonempty dotted lower-case strings, both
+  bounds are integers, `minPartners >= 0`, `maxPartners >= 1`, and the minimum
+  cannot exceed the maximum. It does not match or reserve anyone.
 - Objects and fixtures join the same registry as `ObjectPresence` (`{ id,
   kind: "object", position, rotation, bounds, frames, tags, state }`):
   `setObject`, `removeObject`, `getObject`, `objects()`. An object has no age.
@@ -1768,9 +1785,22 @@ request. `assertRegionalContact(contact, own)` is the implemented pure
 validator: it checks a finite location, unit normal, non-negative force and
 duration, phase, and whether `surface` versus `aperture-entry` agrees with the
 registered affordance. It does not create a response, animation, deformation or
-injury. There is no exported `InjuryState` today. See [Regional contact and
-injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
-recovery, injury, persistence and renderer-proof gates.
+injury.
+
+`RegionalInjuryState` is a separate framework-free state boundary. Its
+`RegionalInjury` union distinguishes `surface-marking`,
+`transient-deformation` and `persistent-body-change` records.
+`RegionalInjuryAnchor` pins a base-mesh vertex to the loaded body
+`topology` and body SHA-256; incompatible anchors fail instead of
+retargeting. Every record carries consumer-authored creation and update time,
+an opaque `sourceCategory` and an opaque non-empty `severityBand`; the kit
+assigns neither clock semantics nor severity thresholds. State methods return
+events for the applied action, while records retain the current lifecycle and
+metadata. `snapshot()` serializes only records explicitly marked `saved`;
+`restore()` validates that boundary and always reports a replacement event.
+`routeRegionalInjuryLayers()` passes active records to a caller-owned body or
+under-cover layer without rendering, collision or affordance effects. See the [regional contact and injury
+contract](REGIONAL-CONTACTS.md) for lifecycle and renderer-proof limits.
 
 ## `humanoid-kit/editor`
 
@@ -2235,7 +2265,10 @@ animator.root;                // how far the figure has been carried: [x across,
   docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
   framework-free channel every `PresenceRegistry` owns as `frames`.
   `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
-  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  `onRelease(reason, figure)` hears `"released"`, `"superseded"` or `"removed"`.
+  `frames.latest(figure)` returns the live producer's latest reused frame, or
+  `undefined` before publish and after replacement, re-evaluation, release or removal;
+  copy it before retaining it. `frames.bind(figure)`
   returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
   `live`; `generation`); binding an id again supersedes its producer. An observer's exception
   is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`

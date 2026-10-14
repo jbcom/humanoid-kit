@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AUTHORED_STYLES, DERIVED_STYLES } from "../scripts/lib/hairCards/index.ts";
+import { FACIAL_HAIR, selectFacialHair } from "../scripts/lib/packHair.ts";
 import { TEXTURE_CEILING } from "../scripts/lib/texelBudget.ts";
 import {
   addHairStyle,
@@ -48,6 +49,17 @@ const FACIAL_STYLES = [
   "beard-viking",
   "moustache-viking",
   "beard-scruffy",
+  "moustache-dal",
+  "beard-long-scruffy",
+  "beard-black-full",
+  "moustache-thin-black",
+];
+
+const COMMERCIAL_FACIAL_STYLES = [
+  "moustache-dal",
+  "beard-long-scruffy",
+  "beard-black-full",
+  "moustache-thin-black",
 ];
 
 /** The styles compiled from MakeHuman's assets: the authored ones carry no source files. */
@@ -78,9 +90,25 @@ describe("the hair pack's manifest", () => {
     }
   });
 
-  it("ships the five licensed community facial-hair assets, with no generated beard entry", () => {
+  it("ships the licensed community facial-hair assets selected by the commercial profile, with no generated beard entry", () => {
     const facial = hairManifest.styles.filter((s) => s.kind === "facial");
     expect(facial.map((s) => s.id)).toEqual(FACIAL_STYLES);
+    const profile = hairManifest as HairManifest & {
+      assetLicenceProfile?: {
+        profile: string;
+        attributionFile: string;
+        sourceAvailabilityFile: string;
+        selections: unknown[];
+      };
+    };
+    expect(profile.assetLicenceProfile).toMatchObject({
+      profile: "commercial",
+      attributionFile: "ASSET-ATTRIBUTION.md",
+      sourceAvailabilityFile: "ASSET-SOURCES.md",
+    });
+    expect(profile.assetLicenceProfile?.selections).toHaveLength(FACIAL_HAIR.length);
+    expect(fs.existsSync(path.join(hairDir, "ASSET-ATTRIBUTION.md"))).toBe(true);
+    expect(fs.existsSync(path.join(hairDir, "ASSET-SOURCES.md"))).toBe(true);
     expect(hairManifest.styles.some((s) => s.kind === "beard")).toBe(false);
     expect(fs.existsSync(path.join(hairDir, "beard-full.bin.gz"))).toBe(false);
     expect(fs.existsSync(path.join(hairDir, "beard-full.webp"))).toBe(false);
@@ -91,6 +119,33 @@ describe("the hair pack's manifest", () => {
       expect(s.sha256, s.id).toBe(sha(s.file));
       expect(fs.existsSync(path.join(hairDir, s.material.texture as string)), s.id).toBe(true);
     }
+  });
+});
+
+describe("facial-hair licence profiles", () => {
+  it("keeps every reviewed MakeHuman facial source in commercial and records the header conflict", () => {
+    const selections = selectFacialHair("commercial");
+    expect(selections).toHaveLength(FACIAL_HAIR.length);
+    expect(selections.every((selection) => selection.included)).toBe(true);
+    const selected = FACIAL_HAIR.filter((_, index) => selections[index]?.included).map(
+      (spec) => spec.id,
+    );
+    expect(selected.slice(-4)).toEqual(COMMERCIAL_FACIAL_STYLES);
+    const grinsegold = FACIAL_HAIR.find((spec) => spec.id === "beard-black-full");
+    expect(grinsegold?.licence.licence.selected).toContain("AGPL3");
+    expect(grinsegold?.licence.licence.selected).toContain("CC-BY");
+  });
+
+  it("makes only the attributed Bodyparts06 features explicitly unavailable in cc0-only", () => {
+    const unavailable = selectFacialHair("cc0-only")
+      .filter((selection) => !selection.included)
+      .map((selection) => {
+        if (selection.included) throw new Error("expected unavailable selection");
+        return selection.unavailable;
+      });
+    expect(unavailable.map((selection) => selection.id)).toEqual(COMMERCIAL_FACIAL_STYLES);
+    for (const selection of unavailable)
+      expect(selection.reason).toBe("profile-excludes-attributed-asset");
   });
 });
 
@@ -302,7 +357,9 @@ describe("provenance", () => {
       (s) => s.kind !== "facial" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
     ).length;
     expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — (A: )?file header`));
-    expect(text).toMatch(/The facial hair \(kind `facial`\) is the community pack/);
+    expect(text).toMatch(
+      /The facial hair \(kind `facial`\) is selected with the `commercial` asset-licence profile/,
+    );
     expect(text).not.toMatch(/body hair cards \(kind `beard`\) come from no source file/);
   });
 

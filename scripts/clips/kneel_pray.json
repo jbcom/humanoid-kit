@@ -9,6 +9,32 @@
   "loop": false,
   "rootMotion": false,
   "grounded": true,
+  "supportTracks": [
+    {
+      "times": [1.2, 1.6, 2, 4],
+      "supports": [
+        { "kind": "surface", "landmark": "knee.R", "radius": 0.1 },
+        { "kind": "sole", "bone": "foot.L" },
+        { "kind": "sole", "bone": "toe1-1.L" },
+        { "kind": "sole", "bone": "toe5-1.L" },
+        { "kind": "sole", "bone": "toe1-1.R" },
+        { "kind": "sole", "bone": "toe5-1.R" }
+      ],
+      "chains": [
+        "upperleg01.L",
+        "lowerleg01.L",
+        "foot.L",
+        "upperleg01.R",
+        "lowerleg01.R",
+        "foot.R"
+      ],
+      "quality": {
+        "contactTolerance": 0.015,
+        "maxRotationRadians": 0.7,
+        "iterations": 24
+      }
+    }
+  ],
   "keys": [
     {
       "t": 0,
@@ -62,11 +88,11 @@
         "neck01": { "Xrotation": 15 },
         "head": { "Xrotation": 20 },
         "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
-        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
-        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 79.1 },
+        "wrist.L": { "Xrotation": -15, "Yrotation": -90, "Zrotation": -41.2 },
         "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
-        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
-        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 },
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -79.1 },
+        "wrist.R": { "Xrotation": -15, "Yrotation": 90, "Zrotation": 41.2 },
         "upperleg01.L": { "Xrotation": -90 },
         "lowerleg01.L": { "Xrotation": 90 },
         "upperleg01.R": { "Xrotation": 0 },
@@ -80,11 +106,11 @@
         "neck01": { "Xrotation": 15 },
         "head": { "Xrotation": 20 },
         "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
-        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
-        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 79.1 },
+        "wrist.L": { "Xrotation": -15, "Yrotation": -90, "Zrotation": -41.2 },
         "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
-        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
-        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 },
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -79.1 },
+        "wrist.R": { "Xrotation": -15, "Yrotation": 90, "Zrotation": 41.2 },
         "upperleg01.L": { "Xrotation": -90 },
         "lowerleg01.L": { "Xrotation": 90 },
         "upperleg01.R": { "Xrotation": 0 },

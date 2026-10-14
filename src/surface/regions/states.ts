@@ -207,9 +207,10 @@ export const COLD_PALLOR_LAYER = haemoglobinLayer(
 );
 
 /**
- * The lips' colour under `cold` (bluer) and `fear` (paler), `lipStateAlbedo`,
- * mixed over the resting lips by the stronger signal. A colour that is not
- * human skin keeps its lips.
+ * The lips' colour under `cold` (bluer), `fear` (paler) and `arousal` (deeper and
+ * redder), `lipStateAlbedo`, mixed over the resting lips by the strongest signal.
+ * A colour that is not human skin keeps its lips. Arousal is adult-only
+ * (`ADULT_ONLY_SIGNALS`), refused for a figure under 18 before any paint.
  */
 export const LIP_STATE_LAYER: ColourLayer = {
   id: "lips-state",
@@ -219,13 +220,13 @@ export const LIP_STATE_LAYER: ColourLayer = {
   paint: ({ tone, lips, signals }) => {
     const cold = unit(signals.cold ?? 0);
     const fear = unit(signals.fear ?? 0);
-    const strength = tone.override ? 0 : Math.max(cold, fear);
+    const arousal = unit(signals.arousal ?? 0);
+    const strength = tone.override ? 0 : Math.max(cold, fear, arousal);
+    const share = (s: number) => (strength ? s / strength : 0);
     // The colour at full strength of whichever signals are present, in their proportion.
     return {
       strength,
-      stops: [
-        lipStateAlbedo(tone, lips, strength ? cold / strength : 0, strength ? fear / strength : 0),
-      ],
+      stops: [lipStateAlbedo(tone, lips, share(cold), share(fear), share(arousal))],
     };
   },
 };

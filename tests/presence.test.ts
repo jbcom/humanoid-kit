@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createAnimationFrame } from "../src/animation/frames.ts";
 import {
   createPresenceRegistry,
   type FigurePresence,
@@ -81,6 +82,61 @@ describe("the presence registry", () => {
     r.set(figure("c", 0.5, 0));
     r.tick(0.6);
     expect(events).toHaveLength(4);
+  });
+
+  it("publishes validated advisory partner needs without claiming a match", () => {
+    const r = createPresenceRegistry();
+    const needs = [{ tags: ["dance.circle", "social.greeting"], minPartners: 0, maxPartners: 8 }];
+    r.set({ ...figure("a", 0, 0), partnerNeeds: needs });
+    expect(r.get("a")?.partnerNeeds).toBe(needs);
+
+    for (const partnerNeeds of [
+      [{ tags: [], minPartners: 1, maxPartners: 1 }],
+      [{ tags: ["Dance Circle"], minPartners: 1, maxPartners: 1 }],
+      [{ tags: ["dance.circle"], minPartners: -1, maxPartners: 1 }],
+      [{ tags: ["dance.circle"], minPartners: 1, maxPartners: 0 }],
+      [{ tags: ["dance.circle"], minPartners: 2, maxPartners: 1 }],
+    ])
+      expect(() => r.set({ ...figure("a", 0, 0), partnerNeeds })).toThrow(RangeError);
+    expect(r.get("a")?.partnerNeeds).toBe(needs);
+  });
+
+  it("removes active-animation advertisement with its presence and rejects the old producer", () => {
+    const r = createPresenceRegistry();
+    const releases: string[] = [];
+    r.frames.observe(
+      "a",
+      () => {},
+      (reason) => releases.push(reason),
+    );
+    r.set(figure("a", 0, 0));
+    const old = r.frames.bind("a");
+    const first = createAnimationFrame();
+    first.clip = "dance";
+    expect(old.publish(first)).toBe(true);
+    expect(r.frames.latest("a")).toBe(first);
+
+    r.remove("a");
+    expect(r.frames.latest("a")).toBeUndefined();
+    expect(releases).toEqual(["removed"]);
+    expect(old.live).toBe(false);
+    expect(old.publish(first)).toBe(false);
+
+    r.set(figure("a", 0, 0));
+    expect(r.frames.latest("a")).toBeUndefined();
+    const current = r.frames.bind("a");
+    const next = createAnimationFrame();
+    next.clip = "dance";
+    expect(current.publish(next)).toBe(true);
+    expect(r.frames.latest("a")).toBe(next);
+  });
+
+  it("does not advertise a frame whose id has no published presence", () => {
+    const r = createPresenceRegistry();
+    const producer = r.frames.bind("not-present");
+    const frame = createAnimationFrame();
+    expect(producer.publish(frame)).toBe(true);
+    expect(r.frames.latest("not-present")).toBeUndefined();
   });
 });
 

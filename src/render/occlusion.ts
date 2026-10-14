@@ -133,12 +133,48 @@ export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Floa
  * how enclosed each vertex is, so a body geometry without them is open.
  */
 export function setBodyOcclusionAttributes(geometry: BufferGeometry, occlusion: Uint8Array): void {
-  setAttributes(
-    geometry,
-    BODY,
-    Uint8Array.from(occlusion, (v) => 255 - v),
-    true,
-  );
+  const enclosure = Uint8Array.from(occlusion, (v) => 255 - v);
+  // Called again with as many values (a figure's creases, `creasedOcclusion`), it refills the
+  // same buffer, as `setOcclusionAttributes` does.
+  const current = geometry.getAttribute(BODY.attributes[0]?.name as string);
+  if (
+    current instanceof InterleavedBufferAttribute &&
+    current.data.array.length === enclosure.length
+  ) {
+    current.data.array = enclosure;
+    current.data.needsUpdate = true;
+    return;
+  }
+  setAttributes(geometry, BODY, enclosure, true);
+}
+
+/**
+ * The body's per-vertex corner bytes (`ModelTopology.body.occlusion`, how open each
+ * vertex is at each corner) with the light a figure's closed canals keep out taken in
+ * (`Evaluation.canalShade`, the share each vertex loses, `CANAL_DARK`), into `out`:
+ * each vertex's openness times 1 - shade, at every corner, for a closed canal is closed
+ * in every pose. Occlusion is the light the skin cannot see; the body's is baked once
+ * for every figure, with no canal closed, and the skin shader has no attribute to
+ * spare, so the canals' is the figure's own share of it. The body's shader raises
+ * occlusion to a power that grows with enclosure (`BODY_OCCLUSION_POWER`), so a vertex
+ * keeps less light than its openness says.
+ */
+export function creasedOcclusion(
+  occlusion: Uint8Array,
+  shade: Float32Array,
+  out: Uint8Array = new Uint8Array(occlusion.length),
+): Uint8Array {
+  const corners = occlusion.length / shade.length;
+  if (!Number.isInteger(corners))
+    throw new Error("occlusion: the crease shade is not one value per vertex");
+  out.set(occlusion);
+  shade.forEach((s, v) => {
+    if (!(s > 0)) return;
+    const keep = 1 - Math.min(1, s);
+    for (let c = 0; c < corners; c++)
+      out[v * corners + c] = Math.round((occlusion[v * corners + c] as number) * keep);
+  });
+  return out;
 }
 
 /**

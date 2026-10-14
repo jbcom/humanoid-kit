@@ -10,7 +10,7 @@
 import type { ShapeModifierEntry } from "../format/assetFormat.ts";
 import { type Contribution, mergeRegionalWeights } from "../morph/evaluate.ts";
 import { assertAgePolicy, isAdult } from "../recipe/agePolicy.ts";
-import type { Recipe } from "../recipe/recipe.ts";
+import type { BreastRegionalTraitValues, Recipe } from "../recipe/recipe.ts";
 import { assertValidRecipe } from "../recipe/validate.ts";
 import { macroTargetWeights } from "./macro.ts";
 import { BODY_REGIONS } from "./regions.ts";
@@ -27,13 +27,20 @@ export function recipeContributions(
   assertAgePolicy(recipe);
   // Age is a whole-figure property: a regional override can never change it,
   // even if a recipe loaded from JSON carries one (the type forbids it).
-  const perRegion = BODY_REGIONS.map((region) =>
-    macroTargetWeights({
+  const perRegion = BODY_REGIONS.map((region) => {
+    // `breastPresence` is a source-frame choice, not a public MakeHuman macro.
+    // It is valid only in breastL/breastR (the validator enforces that), where
+    // the region mask confines the matching MakeHuman frame and breast targets
+    // to that side. Omitting it keeps the exact legacy macro input.
+    const { breastPresence, ...regionalMacros } = (recipe.regionalMacros[region] ??
+      {}) as BreastRegionalTraitValues;
+    return macroTargetWeights({
       ...recipe.macros,
-      ...recipe.regionalMacros[region],
+      ...regionalMacros,
+      ...(breastPresence === undefined ? {} : { gender: 1 - breastPresence }),
       age: recipe.macros.age,
-    }),
-  );
+    });
+  });
   const contributions = mergeRegionalWeights(perRegion);
   for (const [id, value] of Object.entries(recipe.modifiers)) {
     if (value === 0) continue;

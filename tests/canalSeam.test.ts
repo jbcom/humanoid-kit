@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { posedSurface, surfacePoser } from "../src/foundation/posed.ts";
-import { LIP } from "../src/model/canalClosure.ts";
+import { CANAL_DARK, LIP } from "../src/model/canalClosure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import type { ReservoirSkinning } from "../src/model/reservoirSkin.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
@@ -112,4 +112,59 @@ describe("a closed canal's slit", { timeout: 900_000 }, () => {
             `${name}, ${pose}, ${canal}: degrees between neighbouring lips' normals`,
           ).toBeLessThan(30);
       });
+});
+
+describe("a closed canal's crease shade (canalShade)", { timeout: 600_000 }, () => {
+  /** The largest shade on each canal's lips, by canal. */
+  const onLips = (recipe: ReturnType<typeof createRecipe>) => {
+    const body = model.evaluate(recipe);
+    const closure = closureOf();
+    if (!closure) throw new Error("no canal closure on the adult surface");
+    const most = new Map<number, number>();
+    for (let v = 0; v < body.canalShade.length; v++) {
+      const c = closure.canal[v] as number;
+      if (c < 0 || (closure.follows[v] as number) < LIP) continue;
+      most.set(c, Math.max(most.get(c) ?? 0, body.canalShade[v] as number));
+    }
+    return { most, shade: body.canalShade };
+  };
+
+  it("darkens a woman's closed vulva and anus along their lips, a line, not a patch", () => {
+    const { most, shade } = onLips(createRecipe({ macros: { age: 30, gender: 0 } }));
+    expect(most.size).toBe(2);
+    for (const [c, s] of most) expect(s, `canal ${c}`).toBeCloseTo(CANAL_DARK.lips, 3);
+    // Most of the skin round them is barely shaded: the dark is the line where the lips meet.
+    // (The canals' walls, inside, are darker still and not skin: `walls` below.)
+    const closure = closureOf();
+    const skin = [...shade].filter((_, v) => (closure?.canal[v] ?? -1) >= 0);
+    const shaded = skin.filter((s) => s > CANAL_DARK.lips / 2).length;
+    const touched = skin.filter((s) => s > 0).length;
+    expect(shaded).toBeLessThan(touched / 2);
+  });
+
+  it("darkens the canals' own walls more than their lips", () => {
+    const body = model.evaluate(createRecipe({ macros: { age: 30, gender: 0 } }));
+    const walls = model.adultSurface()?.canals.of;
+    if (!walls) throw new Error("no canals on the adult surface");
+    let n = 0;
+    walls.forEach((c, v) => {
+      if (c < 0) return;
+      n++;
+      expect(body.canalShade[v] as number).toBeCloseTo(CANAL_DARK.walls, 3);
+    });
+    expect(n).toBeGreaterThan(0);
+  });
+
+  it("leaves a man's undrawn vaginal loop as skin, and shades his anus", () => {
+    const { most } = onLips(createRecipe({ macros: { age: 30, gender: 1 } }));
+    const values = [...most.values()].sort((a, b) => a - b);
+    expect(values[0]).toBe(0);
+    expect(values[1]).toBeCloseTo(CANAL_DARK.lips, 3);
+  });
+
+  it("is none on a child, whose surface is the base body's", () => {
+    const body = model.evaluate(createRecipe({ macros: { age: 8 } }));
+    expect(body.surface).toBe("base");
+    expect(body.canalShade.every((s) => s === 0)).toBe(true);
+  });
 });
