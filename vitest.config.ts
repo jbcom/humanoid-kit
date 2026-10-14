@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import type { ChromiumGpuMode } from "game-harness/chromium";
 import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
+import type { Reporter, TestCase, TestModule } from "vitest/node";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -20,8 +21,6 @@ const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) a
 //   (tests/bake/). Coverage instrumentation slows their ray loops about tenfold
 //   and the unit tests already cover that code, so `pnpm coverage` runs them
 //   separately, uninstrumented.
-import type { Reporter, TestCase, TestModule } from "vitest/node";
-
 export class SkipGuardReporter implements Reporter {
   onTestRunEnd(testModules: ReadonlyArray<TestModule> = []) {
     let skipCount = 0;
@@ -47,10 +46,13 @@ export class SkipGuardReporter implements Reporter {
       for (const name of skippedTests) {
         console.log(`  - ${name}`);
       }
-      if (process.env.CI || process.env.HK_FAIL_ON_SKIP) {
-        throw new Error(
+      if (process.env.CI || process.env.HK_FAIL_ON_SKIP === "1") {
+        console.error(
           `[SkipGuard] CI failure: ${skipCount} test(s) skipped where they should run.`,
         );
+        // Vitest reports reporter exceptions without failing the test process.
+        // Preserve its test results while making the required gate fail.
+        process.exitCode = 1;
       }
     }
   }
@@ -77,6 +79,21 @@ export default defineConfig({
         branches: 82,
         functions: 89,
         lines: 93,
+        // Keep the earlier core cohort's floor while adding browser-only code
+        // to the global denominator.
+        "src/{build,format,makehuman,mhclo,model,morph,presence,recipe,rig,subdiv,surface}/**/*.ts":
+          {
+            statements: 90,
+            branches: 85,
+            functions: 90,
+            lines: 90,
+          },
+        "src/editor/*.ts": {
+          statements: 90,
+          branches: 85,
+          functions: 90,
+          lines: 90,
+        },
         "src/rig/**": {
           statements: 97,
           branches: 84,

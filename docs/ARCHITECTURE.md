@@ -480,9 +480,14 @@ The test suite enforces mathematical correctness, physical energy conservation, 
 
 ### Canonical GPU Mode and Environment Skips
 
-- **Canonical GPU Mode:** Software rendering (`HK_GPU=software`, SwiftShader under `xvfb-run` on CI) is the canonical reference mode for CI verification. It guarantees deterministic floating-point outputs across operating systems and hardware configurations.
+- **Software reference:** `HK_GPU=software` uses SwiftShader under `xvfb-run` on CI. It provides the hosted-runner execution path; it does not establish hardware visual acceptance or cross-platform bit identity.
 - **Timeout Policy:** Software rendering runs shading measurements ~7× slower than native hardware GPUs (e.g., scatter parity takes ~20s under SwiftShader vs ~3s on a GPU). `vitest.config.ts` sets `testTimeout: 120_000` for software mode and `30_000` for hardware GPU modes.
 - **Environment Skip Guard:** Tests must not silently skip on CI or local verification runs. `vitest.config.ts` includes `SkipGuardReporter`, which records all test skip counts and enforces zero skips in CI environments (`process.env.CI` or `HK_FAIL_ON_SKIP=1`).
+
+Coverage includes all TypeScript source, including React, editor UI, render and
+worker files. The earlier core cohort keeps its 90% statement, function and
+line floors and its 85% branch floor. The expanded global denominator has
+separate measured floors; it does not replace the earlier cohort's gate.
 
 ## Public demo
 
