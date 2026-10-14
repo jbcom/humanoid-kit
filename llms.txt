@@ -30,6 +30,8 @@
   pack. `recipe.hair` picks scalp style and colour; `recipe.facialHair` selects
   zero or more authored beard and moustache assets with that colour. Attribution and
   source receipts accompany the pack; its explicit CC0-only profile excludes attributed assets.
+  A miniature bake can optionally preserve selected facial source cards with their embedded RGBA
+  maps; it is not a solid miniature conversion.
 - `humanoid-kit-clothing` (CC0 1.0): 87 garments bound to the base
   mesh, worn through `recipe.outfit`; separate install, refused unless built
   against the exact body pack.

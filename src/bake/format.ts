@@ -10,14 +10,14 @@
  * half), colours sRGB bytes, and indices 16-bit when the vertex set allows.
  * Encoding is deterministic: the same bake gives the same bytes.
  */
-import type { MiniatureBake, MiniatureClip } from "./miniature.ts";
+import type { MiniatureAlphaCard, MiniatureBake, MiniatureClip } from "./miniature.ts";
 
 export class MiniatureFormatError extends Error {
   override name = "MiniatureFormatError";
 }
 
 const MAGIC = [0x48, 0x4b, 0x4d, 0x42]; // "HKMB"
-export const MINIATURE_FORMAT_VERSION = 1;
+export const MINIATURE_FORMAT_VERSION = 2;
 
 interface Section {
   offset: number;
@@ -36,6 +36,19 @@ interface Header {
   colour: Section;
   channel: Section;
   positions: Section;
+  alphaCards?: HeaderAlphaCard[];
+}
+
+interface HeaderAlphaCard {
+  id: string;
+  vertexCount: number;
+  index: "u16" | "u32";
+  topology: Section;
+  uvs: Section;
+  positions: Section;
+  normals: Section;
+  texture: { width: number; height: number; rgba: Section };
+  tint: [number, number, number];
 }
 
 const F32 = new Float32Array(1);
@@ -141,6 +154,24 @@ export function encodeMiniature(bake: MiniatureBake): Uint8Array {
     }
     return { target: l.target, index, normals: add(view(oct)) };
   });
+  const alphaCards = bake.alphaCards?.map((card): HeaderAlphaCard => {
+    const wideCard = card.vertexCount > 0xffff;
+    return {
+      id: card.id,
+      vertexCount: card.vertexCount,
+      index: wideCard ? "u32" : "u16",
+      topology: add(view(wideCard ? Uint32Array.from(card.index) : Uint16Array.from(card.index))),
+      uvs: add(view(card.uvs)),
+      positions: add(view(card.positions)),
+      normals: add(view(card.normals)),
+      texture: {
+        width: card.texture.width,
+        height: card.texture.height,
+        rgba: add(view(card.texture.rgba)),
+      },
+      tint: card.tint,
+    };
+  });
   const header: Header = {
     body: bake.body,
     vertexCount: N,
@@ -153,6 +184,7 @@ export function encodeMiniature(bake: MiniatureBake): Uint8Array {
     colour,
     channel,
     positions,
+    ...(alphaCards?.length && { alphaCards }),
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
   const start = Math.ceil((12 + json.byteLength) / 4) * 4;
@@ -178,15 +210,17 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
     throw new MiniatureFormatError("not a miniature bake");
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const version = dv.getUint32(4, true);
-  if (version !== MINIATURE_FORMAT_VERSION)
+  if (version !== 1 && version !== MINIATURE_FORMAT_VERSION)
     throw new MiniatureFormatError(
-      `miniature format ${version}; this kit reads ${MINIATURE_FORMAT_VERSION}`,
+      `miniature format ${version}; this kit reads 1 and ${MINIATURE_FORMAT_VERSION}`,
     );
   const jsonLength = dv.getUint32(8, true);
   if (12 + jsonLength > bytes.byteLength) throw new MiniatureFormatError("truncated header");
   const header = JSON.parse(
     new TextDecoder().decode(bytes.subarray(12, 12 + jsonLength)),
   ) as Header;
+  if (version === 2 && header.alphaCards !== undefined && !Array.isArray(header.alphaCards))
+    throw new MiniatureFormatError("bad alpha-card header");
   const start = Math.ceil((12 + jsonLength) / 4) * 4;
   const N = header.vertexCount;
   const F = header.frameCount;
@@ -223,6 +257,51 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
       normals.set(octDecode(oct[i * 2] as number, oct[i * 2 + 1] as number), i * 3);
     return { target: l.target, index, normals };
   });
+  const alphaCards =
+    version === 1
+      ? undefined
+      : header.alphaCards?.map((card): MiniatureAlphaCard => {
+          if (
+            typeof card.id !== "string" ||
+            !whole(card.vertexCount) ||
+            card.vertexCount < 1 ||
+            (card.index !== "u16" && card.index !== "u32") ||
+            !Number.isInteger(card.texture?.width) ||
+            !Number.isInteger(card.texture?.height) ||
+            card.texture.width < 1 ||
+            card.texture.height < 1 ||
+            !Array.isArray(card.tint) ||
+            card.tint.length !== 3 ||
+            card.tint.some((value) => !Number.isFinite(value))
+          )
+            throw new MiniatureFormatError("bad alpha-card header");
+          const cardWidth = card.index === "u32" ? 4 : 2;
+          if (card.topology.byteLength % (cardWidth * 3) !== 0)
+            throw new MiniatureFormatError("an alpha-card index is not whole triangles");
+          const rawIndex = section(card.topology, card.topology.byteLength);
+          const index = Uint32Array.from(
+            cardWidth === 4 ? new Uint32Array(rawIndex.buffer) : new Uint16Array(rawIndex.buffer),
+          );
+          for (const vertex of index)
+            if (vertex >= card.vertexCount)
+              throw new MiniatureFormatError("an alpha-card index is out of range");
+          return {
+            id: card.id,
+            vertexCount: card.vertexCount,
+            index,
+            uvs: new Float32Array(section(card.uvs, card.vertexCount * 2 * 4).buffer),
+            positions: new Float32Array(
+              section(card.positions, F * card.vertexCount * 3 * 4).buffer,
+            ),
+            normals: new Float32Array(section(card.normals, F * card.vertexCount * 3 * 4).buffer),
+            texture: {
+              width: card.texture.width,
+              height: card.texture.height,
+              rgba: section(card.texture.rgba, card.texture.width * card.texture.height * 4),
+            },
+            tint: [card.tint[0], card.tint[1], card.tint[2]],
+          };
+        });
   return {
     body: header.body,
     vertexCount: N,
@@ -234,6 +313,7 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
     clips: header.clips,
     min: header.min,
     max: header.max,
+    ...(alphaCards?.length && { alphaCards }),
   };
 }
 
@@ -244,6 +324,13 @@ export function miniatureTransferables(bake: MiniatureBake): ArrayBuffer[] {
     bake.colour,
     bake.channel,
     bake.positions,
+    ...(bake.alphaCards?.flatMap((card) => [
+      card.index,
+      card.uvs,
+      card.positions,
+      card.normals,
+      card.texture.rgba,
+    ]) ?? []),
     ...bake.lods.flatMap((l) => [l.index, l.normals]),
   ])
     out.add(a.buffer as ArrayBuffer);

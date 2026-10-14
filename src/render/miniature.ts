@@ -21,8 +21,11 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  Color,
   DataTexture,
+  DoubleSide,
   DynamicDrawUsage,
+  FloatType,
   Frustum,
   Group,
   HalfFloatType,
@@ -36,12 +39,14 @@ import {
   RGBAFormat,
   RGFormat,
   Sphere,
+  SRGBColorSpace,
   UnsignedByteType,
   Vector3,
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import { octEncode, toHalf } from "../bake/format.ts";
-import type { MiniatureBake } from "../bake/miniature.ts";
+import type { MiniatureAlphaCard, MiniatureBake } from "../bake/miniature.ts";
+import { HAIR_ALPHA_CUTOFF } from "./hairMaterial.ts";
 
 /** Linear RGB. */
 export type MiniatureTint = readonly [number, number, number];
@@ -96,17 +101,13 @@ export interface MiniatureFrameStats {
 /** The widest a VAT texture is (texels); rows grow instead. 2048 fits every WebGL2 device. */
 export const VAT_WIDTH = 2048;
 
-const VERTEX_HEAD = /* glsl */ `
+const VAT_VERTEX_HEAD = /* glsl */ `
 uniform highp sampler2D hkVatPosition;
 uniform highp sampler2D hkVatNormal;
 uniform int hkVatWidth;
 uniform int hkVertexCount;
 uniform float hkTime;
 attribute vec4 aAnim;
-attribute vec3 aTint1;
-attribute vec3 aTint2;
-attribute vec3 aTint3;
-attribute float aChannel;
 ivec2 hkVat(int i) { return ivec2(i % hkVatWidth, i / hkVatWidth); }
 vec3 hkOct(vec2 e) {
   vec2 s = e * (255.0 / 127.0) - 1.0;
@@ -114,6 +115,14 @@ vec3 hkOct(vec2 e) {
   if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
   return normalize(n);
 }
+`;
+
+const VERTEX_HEAD = /* glsl */ `
+${VAT_VERTEX_HEAD}
+attribute vec3 aTint1;
+attribute vec3 aTint2;
+attribute vec3 aTint3;
+attribute float aChannel;
 vec3 hkSrgbToLinear(vec3 c) {
   return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }
@@ -180,6 +189,65 @@ class MiniatureMaterial extends MeshStandardMaterial {
   };
 }
 
+/** The source-card companion material: embedded RGBA alpha is cut out before lighting. */
+class AlphaCardMaterial extends MeshStandardMaterial {
+  readonly hkUniforms: Record<string, { value: unknown }>;
+  constructor(
+    position: DataTexture,
+    normal: DataTexture,
+    vertexCount: number,
+    card: MiniatureAlphaCard,
+  ) {
+    const map = new DataTexture(
+      card.texture.rgba,
+      card.texture.width,
+      card.texture.height,
+      RGBAFormat,
+      UnsignedByteType,
+    );
+    map.colorSpace = SRGBColorSpace;
+    map.needsUpdate = true;
+    super({
+      color: new Color(card.tint[0], card.tint[1], card.tint[2]),
+      map,
+      roughness: 0.85,
+      metalness: 0,
+      alphaTest: HAIR_ALPHA_CUTOFF,
+      side: DoubleSide,
+    });
+    this.hkUniforms = {
+      hkVatPosition: { value: position },
+      hkVatNormal: { value: normal },
+      hkVatWidth: { value: position.image.width },
+      hkVertexCount: { value: vertexCount },
+      hkTime: { value: 0 },
+    };
+  }
+  override customProgramCacheKey(): string {
+    return "hk-miniature-alpha-card";
+  }
+  override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+    Object.assign(shader.uniforms, this.hkUniforms);
+    shader.vertexShader = `${VAT_VERTEX_HEAD}${shader.vertexShader}`
+      .replace(
+        "#include <beginnormal_vertex>",
+        `${VERTEX_FRAMES}
+  vec3 objectNormal = normalize(mix(
+    texelFetch(hkVatNormal, hkVat(hkI0), 0).xyz,
+    texelFetch(hkVatNormal, hkVat(hkI1), 0).xyz, hkW));
+  #ifdef USE_TANGENT
+  vec3 objectTangent = vec3(1.0, 0.0, 0.0);
+  #endif`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `vec3 transformed = mix(
+    texelFetch(hkVatPosition, hkVat(hkI0), 0).xyz,
+    texelFetch(hkVatPosition, hkVat(hkI1), 0).xyz, hkW);`,
+      );
+  };
+}
+
 /** A texture of `texels` RGBA half floats or RG bytes, `VAT_WIDTH` wide. */
 function vatTexture(data: Uint16Array | Uint8Array, texels: number, kind: "position" | "normal") {
   const height = Math.max(1, Math.ceil(texels / VAT_WIDTH));
@@ -200,10 +268,95 @@ function vatTexture(data: Uint16Array | Uint8Array, texels: number, kind: "posit
   return t;
 }
 
+/** A source-card frame stream stays float precision, separate from opaque miniatures' compact VAT. */
+function alphaCardVatTexture(
+  values: Float32Array,
+  vertexCount: number,
+  frameCount: number,
+): DataTexture {
+  const texels = vertexCount * frameCount;
+  const height = Math.max(1, Math.ceil(texels / VAT_WIDTH));
+  const data = new Float32Array(VAT_WIDTH * height * 4);
+  for (let i = 0; i < texels; i++) data.set(values.subarray(i * 3, i * 3 + 3), i * 4);
+  const texture = new DataTexture(data, VAT_WIDTH, height, RGBAFormat, FloatType);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** One exact source facial card payload, drawn only at the finest miniature level. */
+class AlphaCardArchetype {
+  readonly mesh: InstancedMesh;
+  readonly triangles: number;
+  readonly textureBytes: number;
+  private readonly textures: DataTexture[];
+  private readonly material: AlphaCardMaterial;
+  constructor(card: MiniatureAlphaCard, frameCount: number, capacity: number) {
+    const position = alphaCardVatTexture(card.positions, card.vertexCount, frameCount);
+    const normal = alphaCardVatTexture(card.normals, card.vertexCount, frameCount);
+    this.material = new AlphaCardMaterial(position, normal, card.vertexCount, card);
+    this.textures = [position, normal, this.material.map as DataTexture];
+    this.textureBytes = this.textures.reduce(
+      (sum, texture) => sum + (texture.image.data as ArrayBufferView).byteLength,
+      0,
+    );
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(card.positions.slice(0, card.vertexCount * 3), 3),
+    );
+    geometry.setAttribute(
+      "normal",
+      new BufferAttribute(card.normals.slice(0, card.vertexCount * 3), 3),
+    );
+    geometry.setAttribute("uv", new BufferAttribute(card.uvs, 2));
+    Object.entries(instancedAttributes(capacity)).forEach(([name, attribute]) => {
+      geometry.setAttribute(name, attribute);
+    });
+    geometry.setIndex(
+      new BufferAttribute(card.vertexCount > 0xffff ? card.index : Uint16Array.from(card.index), 1),
+    );
+    this.mesh = new InstancedMesh(geometry, this.material, capacity);
+    this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    this.triangles = card.index.length / 3;
+  }
+  setTime(time: number) {
+    (this.material.hkUniforms.hkTime as { value: number }).value = time;
+  }
+  dispose() {
+    this.textures.forEach((texture) => {
+      texture.dispose();
+    });
+    this.material.dispose();
+    this.mesh.geometry.dispose();
+    this.mesh.dispose();
+  }
+}
+
+function instancedAttributes(capacity: number) {
+  return {
+    aAnim: new InstancedBufferAttribute(new Float32Array(capacity * 4), 4).setUsage(
+      DynamicDrawUsage,
+    ),
+    aTint1: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
+      DynamicDrawUsage,
+    ),
+    aTint2: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
+      DynamicDrawUsage,
+    ),
+    aTint3: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
+      DynamicDrawUsage,
+    ),
+  };
+}
+
 /** One archetype on the GPU: its textures, and a mesh per level. */
 class Archetype {
   readonly meshes: InstancedMesh[];
+  readonly alphaCards: AlphaCardArchetype[];
   readonly triangles: number[];
+  readonly alphaCardTriangles: number;
   readonly clips: Map<string, { start: number; frames: number; fps: number; loop: boolean }>;
   readonly height: number;
   readonly radius: number;
@@ -234,34 +387,16 @@ class Archetype {
       return vatTexture(oct, F * N, "normal");
     });
     this.textures = [position, ...normals];
-    this.textureBytes = this.textures.reduce(
-      (s, t) => s + (t.image.data as ArrayBufferView).byteLength,
-      0,
-    );
     // Attributes every level shares: frame 0 (bounds and three's own needs), colour, channel.
     const shared = {
       position: new BufferAttribute(bake.positions.slice(0, N * 3), 3),
       color: new BufferAttribute(bake.colour, 3, true),
       aChannel: new BufferAttribute(Float32Array.from(bake.channel), 1),
     };
-    const instanced = () => ({
-      aAnim: new InstancedBufferAttribute(new Float32Array(capacity * 4), 4).setUsage(
-        DynamicDrawUsage,
-      ),
-      aTint1: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
-        DynamicDrawUsage,
-      ),
-      aTint2: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
-        DynamicDrawUsage,
-      ),
-      aTint3: new InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
-        DynamicDrawUsage,
-      ),
-    });
     this.materials = normals.map((n) => new MiniatureMaterial(position, n, N, params));
     this.meshes = bake.lods.map((l, k) => {
       const g = new BufferGeometry();
-      for (const [name, a] of Object.entries({ ...shared, ...instanced() }))
+      for (const [name, a] of Object.entries({ ...shared, ...instancedAttributes(capacity) }))
         g.setAttribute(name, a);
       g.setIndex(new BufferAttribute(N > 0xffff ? l.index : Uint16Array.from(l.index), 1));
       const mesh = new InstancedMesh(g, this.materials[k] as MiniatureMaterial, capacity);
@@ -271,8 +406,18 @@ class Archetype {
       mesh.count = 0;
       return mesh;
     });
+    this.alphaCards = (bake.alphaCards ?? []).map(
+      (card) => new AlphaCardArchetype(card, F, capacity),
+    );
+    this.textureBytes =
+      this.textures.reduce(
+        (sum, texture) => sum + (texture.image.data as ArrayBufferView).byteLength,
+        0,
+      ) + this.alphaCards.reduce((sum, card) => sum + card.textureBytes, 0);
     this.triangles = bake.lods.map((l) => l.index.length / 3);
+    this.alphaCardTriangles = this.alphaCards.reduce((sum, card) => sum + card.triangles, 0);
     this.clips = new Map(bake.clips.map((c) => [c.name, c]));
+    // `bakeMiniature` includes every alpha-card frame in its public bounds.
     this.height = Math.max(bake.max[1], 1e-3);
     this.radius = Math.hypot(
       Math.max(-bake.min[0], bake.max[0]),
@@ -284,6 +429,9 @@ class Archetype {
   setTime(t: number) {
     // The compiled program holds these uniform objects: set their value, never replace them.
     for (const m of this.materials) (m.hkUniforms.hkTime as { value: number }).value = t;
+    this.alphaCards.forEach((card) => {
+      card.setTime(t);
+    });
   }
   dispose() {
     for (const t of this.textures) t.dispose();
@@ -293,6 +441,9 @@ class Archetype {
       // Frees the instance matrices, which only the mesh's own dispose releases.
       m.dispose();
     }
+    this.alphaCards.forEach((card) => {
+      card.dispose();
+    });
   }
 }
 
@@ -327,7 +478,10 @@ export class MiniatureCrowd {
     if (this.levelPixels.length !== levels)
       throw new RangeError(`levelPixels needs one value per level (${levels})`);
     this.archetypes = bakes.map((b) => new Archetype(b, this.capacity, options.material ?? {}));
-    for (const a of this.archetypes) for (const m of a.meshes) this.object.add(m);
+    for (const a of this.archetypes) {
+      for (const m of a.meshes) this.object.add(m);
+      for (const card of a.alphaCards) this.object.add(card.mesh);
+    }
   }
 
   /** GPU bytes of every archetype's animation textures. */
@@ -387,16 +541,22 @@ export class MiniatureCrowd {
     let triangles = 0;
     for (const i of order) {
       const a = this.archetypes[(this.figures[i] as MiniatureFigure).archetype] as Archetype;
-      triangles += a.triangles[coarsest] as number;
+      triangles += (a.triangles[coarsest] as number) + (coarsest === 0 ? a.alphaCardTriangles : 0);
     }
-    for (const a of this.archetypes) for (const m of a.meshes) m.count = 0;
+    for (const a of this.archetypes) {
+      for (const m of a.meshes) m.count = 0;
+      for (const card of a.alphaCards) card.mesh.count = 0;
+    }
     const perLevel = new Array<number>(levels).fill(0);
     for (const i of order) {
       const f = this.figures[i] as MiniatureFigure;
       const a = this.archetypes[f.archetype] as Archetype;
       let level = coarsest;
       for (let k = 0; k < coarsest; k++) {
-        const extra = (a.triangles[k] as number) - (a.triangles[coarsest] as number);
+        const extra =
+          (a.triangles[k] as number) -
+          (a.triangles[coarsest] as number) +
+          (k === 0 ? a.alphaCardTriangles : 0);
         if (
           (this.pixels[i] as number) >= (this.levelPixels[k] as number) &&
           triangles + extra <= this.budget
@@ -408,11 +568,23 @@ export class MiniatureCrowd {
       }
       perLevel[level] = (perLevel[level] as number) + 1;
       this.write(a, a.meshes[level] as InstancedMesh, f);
+      if (level === 0)
+        for (const card of a.alphaCards) {
+          this.write(a, card.mesh, f);
+        }
     }
     let drawCalls = 0;
     for (const a of this.archetypes) {
       a.setTime(time);
       for (const m of a.meshes) {
+        if (m.count === 0) continue;
+        drawCalls++;
+        m.instanceMatrix.needsUpdate = true;
+        for (const name of ["aAnim", "aTint1", "aTint2", "aTint3"])
+          (m.geometry.getAttribute(name) as InstancedBufferAttribute).needsUpdate = true;
+      }
+      for (const card of a.alphaCards) {
+        const m = card.mesh;
         if (m.count === 0) continue;
         drawCalls++;
         m.instanceMatrix.needsUpdate = true;

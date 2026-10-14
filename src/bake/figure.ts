@@ -42,6 +42,13 @@ export interface FigureOptions {
    * Default none.
    */
   attachments?: readonly string[];
+  /**
+   * Include the recipe's selected authored facial-hair attachments after the
+   * requested body-pack attachments. This is opt-in because consumers that
+   * turn a figure into an opaque mesh need to choose how to preserve the
+   * source cards' UV seams and alpha texture.
+   */
+  facialHair?: boolean;
 }
 
 /** One part of a figure at rest: the body or a garment, with what posing it needs. */
@@ -50,7 +57,7 @@ export interface FigurePartRest {
   id: string;
   /** `"body"`, the garment's category (`GARMENT_LAYERS`) or the attachment's kind. */
   kind: string;
-  role: "body" | "garment" | "attachment";
+  role: "body" | "garment" | "attachment" | "facialHair";
   /** Vertex positions at rest, model space, before any ground lift. */
   rest: Float32Array;
   restNormals: Float32Array;
@@ -164,6 +171,10 @@ export function figureAtRest(
     positions: Float32Array.from(a.positions),
     normals: Float32Array.from(a.normals),
   }));
+  const facialHairRest = ev.facialHair.map((hair) => ({
+    positions: Float32Array.from(hair.positions),
+    normals: Float32Array.from(hair.normals),
+  }));
   const masks = ev.outfit.masks;
   if (!masks) throw new Error("an evaluation without its outfit's masks");
   const outfit = model.outfit(ev.outfit.order);
@@ -251,8 +262,29 @@ export function figureAtRest(
       },
     ];
   });
+  const facialHair = options.facialHair
+    ? ev.facialHair.map((hair, i): FigurePartRest => {
+        const t = model.hairTopology(hair.id);
+        const rest = facialHairRest[i];
+        if (!rest) throw new Error(`the evaluation has no facial hair ${hair.id}`);
+        return {
+          id: hair.id,
+          kind: t.kind,
+          role: "facialHair",
+          rest: rest.positions,
+          restNormals: rest.normals,
+          index: t.index,
+          uvs: t.uvs,
+          skinIndex: t.skinIndex,
+          skinWeight: t.skinWeight,
+          bodyRegion: regionsOf(t.skinIndex, t.skinWeight, names),
+          material: t.material,
+          textureUrl: t.textureUrl,
+        };
+      })
+    : [];
   return {
-    parts: [body, ...garments, ...attachments],
+    parts: [body, ...garments, ...attachments, ...facialHair],
     body: bodyName,
     bones,
     control,

@@ -184,6 +184,16 @@ draw a different body from the full renderer.
    frame it assigns LODs nearest first while the triangle budget lasts and
    culls instances outside the frustum, so the whole table is
    archetypes times LODs draw calls.
+8. **Selected facial alpha cards (opt-in).** `bakeMiniature` keeps selected
+   `recipe.facialHair` attachments out of opaque decimation when given
+   `facialHair: "alpha-cards"`. The caller supplies each decoded RGBA source
+   image through `texture`; the resulting `alphaCards` carry source topology,
+   UV seams, posed frames, tint and embedded RGBA pixels without a runtime URL.
+   The runtime uses an alpha-tested companion mesh only at the finest LOD. It
+   adds one draw per selected source card and its exact source triangles at that
+   LOD, so this opt-in path is outside the ordinary opaque draw and triangle
+   budgets. It preserves painted cards; it does not convert them into a solid
+   miniature representation.
 
 ## What stays out
 
@@ -195,9 +205,10 @@ draw a different body from the full renderer.
 - **Teeth, tongue, brows and lashes.** Interior or under a pixel at miniature
   size; left out. The eyes stay: without them a proxy's sockets are holes, and
   a decimated face reads as a mask.
-- **Hair cards as geometry.** Alpha cards cannot be decimated into a solid
-  silhouette; hair is painted on the scalp. A volumetric hair shell for long
-  styles is a follow-up.
+- **Solid facial hair.** Source alpha cards can be preserved as an opt-in
+  companion payload at the finest LOD, but cannot be decimated into a solid
+  silhouette. A source-backed solid miniature representation for distant or
+  painted miniatures remains a follow-up.
 
 ## Stages
 

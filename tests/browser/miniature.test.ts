@@ -44,6 +44,34 @@ function squareBake(channel: number): MiniatureBake {
   };
 }
 
+function alphaCardBake(): MiniatureBake {
+  const bake = squareBake(0);
+  bake.colour.fill(0);
+  const frame = (z: number) => [-0.5, 0, z, 0.5, 0, z, 0.5, 1, z, -0.5, 1, z];
+  const normals = new Float32Array(2 * 4 * 3);
+  for (let i = 0; i < 8; i++) normals[i * 3 + 2] = 1;
+  bake.alphaCards = [
+    {
+      id: "source-card",
+      vertexCount: 4,
+      index: new Uint32Array([0, 1, 2, 0, 2, 3]),
+      uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+      positions: Float32Array.from([...frame(0.01), ...frame(0.01)]),
+      normals,
+      texture: {
+        width: 2,
+        height: 2,
+        // The left source half is transparent and the right half opaque.
+        rgba: new Uint8Array([
+          255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255,
+        ]),
+      },
+      tint: [1, 0, 0],
+    },
+  ];
+  return bake;
+}
+
 let renderer: WebGLRenderer;
 let target: WebGLRenderTarget;
 beforeAll(() => {
@@ -129,6 +157,19 @@ describe("the miniature runtime on the GPU", () => {
     expect(cb).toBeLessThan(3);
     skin.dispose();
     coat.dispose();
+  });
+
+  it("preserves a source card's transparent corner and opaque interior with an embedded alpha map", () => {
+    const crowd = new MiniatureCrowd([alphaCardBake()], { levelPixels: [0, 0] });
+    const { calls, pixels, stats } = draw(crowd, [{ archetype: 0, x: 0, z: 0 }], 0);
+    const pixel = (x: number, y: number) => pixels[(y * SIZE + x) * 4] as number;
+    // The card overlays the opaque black square: the embedded source map retains both a cut-out corner and an opaque interior.
+    const samples = [pixel(28, 32), pixel(36, 32)];
+    expect(Math.min(...samples)).toBeLessThan(8);
+    expect(Math.max(...samples)).toBeGreaterThan(20);
+    expect(stats.triangles).toBe(4);
+    expect(calls).toBe(2);
+    crowd.dispose();
   });
 
   it("issues one draw per archetype and level in use, however many figures", () => {
