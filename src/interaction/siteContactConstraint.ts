@@ -120,7 +120,11 @@ function assertOutput(source: SiteContactSource, out: BoneRotations): void {
     throw new RangeError("site contact constraint: out must match source rotations");
   // The source is the cache key and is promised immutable for its generation.
   // Writing a solved pose into it would corrupt that identity during this update.
-  if (out === source.rotations)
+  if (
+    out.buffer === source.rotations.buffer &&
+    out.byteOffset < source.rotations.byteOffset + source.rotations.byteLength &&
+    source.rotations.byteOffset < out.byteOffset + out.byteLength
+  )
     throw new Error("site contact constraint: out must not alias source rotations");
 }
 

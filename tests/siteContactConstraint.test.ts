@@ -108,6 +108,19 @@ describe("cached site-contact constraint", () => {
     );
   });
 
+  it("rejects a distinct view that shares the source bytes before solving", () => {
+    const { constraint, calls, input } = setup();
+    const source = input.source.rotations;
+    const alias = new Float32Array(source.buffer, source.byteOffset, source.length);
+    const before = Array.from(source);
+    expect(alias).not.toBe(source);
+    expect(() => constraint.update({ ...input, out: alias })).toThrow(
+      /out must not alias source rotations/,
+    );
+    expect(calls()).toBe(0);
+    expect(Array.from(source)).toEqual(before);
+  });
+
   it("rejects a mutable source pose under a retained identity", () => {
     const { constraint, calls, input } = setup();
     constraint.update(input);
