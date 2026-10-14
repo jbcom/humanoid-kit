@@ -44,8 +44,10 @@ Browser tests (the Vitest browser project and the Playwright suite) run headed
 Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on
 your native GPU by default, so they test what people see; the playground spec
 fails if a run that expects a GPU falls back to software rendering. CI has no
-GPU and selects SwiftShader explicitly under `xvfb-run`. Set `HK_GPU` to
-`auto`, `software` or `linux-hardware-vulkan` to choose.
+GPU and selects software rendering (`HK_GPU=software`, SwiftShader under `xvfb-run`)
+as the canonical reference GPU mode for deterministic rendering output and tolerances
+(documented in `docs/ARCHITECTURE.md`). Set `HK_GPU` to `auto`, `software` or
+`linux-hardware-vulkan` to choose.
 `node scripts/contact-sheet.mjs` renders recipes into a sheet for review, and
 `node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
 playground.

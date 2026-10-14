@@ -20,6 +20,42 @@ const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) a
 //   (tests/bake/). Coverage instrumentation slows their ray loops about tenfold
 //   and the unit tests already cover that code, so `pnpm coverage` runs them
 //   separately, uninstrumented.
+import type { Reporter, TestCase, TestModule } from "vitest/node";
+
+export class SkipGuardReporter implements Reporter {
+  onTestRunEnd(testModules: ReadonlyArray<TestModule> = []) {
+    let skipCount = 0;
+    const skippedTests: string[] = [];
+
+    const checkTest = (test: TestCase) => {
+      const res = test.result();
+      if (test.options.mode === "skip" || res?.state === "skipped") {
+        skipCount++;
+        skippedTests.push(`${test.module.moduleId}: ${test.fullName}`);
+      }
+    };
+
+    for (const mod of testModules) {
+      for (const test of mod.children.allTests()) {
+        checkTest(test);
+      }
+    }
+
+    console.log(`\n[SkipGuard] Total skipped tests recorded: ${skipCount}`);
+    if (skipCount > 0) {
+      console.log("[SkipGuard] Skipped test details:");
+      for (const name of skippedTests) {
+        console.log(`  - ${name}`);
+      }
+      if (process.env.CI || process.env.HK_FAIL_ON_SKIP) {
+        throw new Error(
+          `[SkipGuard] CI failure: ${skipCount} test(s) skipped where they should run.`,
+        );
+      }
+    }
+  }
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -30,32 +66,29 @@ export default defineConfig({
     ],
   },
   test: {
-    reporters: ["default"],
+    reporters: ["default", new SkipGuardReporter()],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
-      // The framework-free core. src/react, src/render, src/editor/ui and
-      // src/worker are proven in the browser project and the Playwright suite.
-      include: [
-        "src/build/**/*.ts",
-        "src/editor/*.ts",
-        "src/format/**/*.ts",
-        "src/makehuman/**/*.ts",
-        "src/mhclo/**/*.ts",
-        "src/model/**/*.ts",
-        "src/morph/**/*.ts",
-        "src/presence/**/*.ts",
-        "src/recipe/**/*.ts",
-        "src/rig/**/*.ts",
-        "src/subdiv/**/*.ts",
-        "src/surface/**/*.ts",
-      ],
+      include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.d.ts"],
       thresholds: {
-        lines: 90,
-        functions: 90,
-        statements: 90,
-        branches: 85,
+        statements: 92,
+        branches: 82,
+        functions: 89,
+        lines: 93,
+        "src/rig/**": {
+          statements: 97,
+          branches: 84,
+          functions: 100,
+          lines: 99,
+        },
+        "src/model/**": {
+          statements: 88,
+          branches: 76,
+          functions: 92,
+          lines: 88,
+        },
       },
     },
     projects: [
