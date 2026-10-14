@@ -7,6 +7,7 @@
 import { CORE_AFFORDANCES } from "../affordance/registry.ts";
 import type { AffordanceChange } from "../affordance/state.ts";
 import { type AnchorName, type FigureMeasures, MEASURE_NAMES } from "../presence/presence.ts";
+import { ADULT_ONLY_SIGNALS } from "../recipe/agePolicy.ts";
 
 /** A dotted, lower-case tag: "food.fruit.apple". */
 export type Tag = string;
@@ -99,12 +100,22 @@ export interface Coupling {
 
 export type ObjectStateValue = number | string | boolean;
 
+/** A figure's skin-state signals a beat drives, each set outright or added to: `{ blush: { add: 0.2 } }`. */
+export type SignalChange = Readonly<Record<string, number | { readonly add: number }>>;
+
 export type Effect =
   | { readonly set: RolePoint; readonly change: AffordanceChange }
   | {
       readonly object: RoleName;
       readonly state: Readonly<Record<string, ObjectStateValue | { readonly add: number }>>;
-    };
+    }
+  /**
+   * A figure role's signals (blush, exertion; for an adult, arousal), handed to
+   * the host's `applySignals`, which passes them to the figure's evaluation. One
+   * that drives an adult-only signal (`ADULT_ONLY_SIGNALS`) makes the definition
+   * adult (`audienceOf`).
+   */
+  | { readonly signal: RoleName; readonly change: SignalChange };
 
 export interface Beat {
   readonly name: string;
@@ -160,7 +171,9 @@ export const defaultAffordanceAdult = (id: string): boolean => !CORE_NOT_ADULT.h
 /**
  * A definition's audience: "adult" unless it declares "all" AND none of the
  * figure affordances its contacts, couplings, beat effects or roles name is
- * adult (age-policy points 1 and 2 in docs/INTERACTIONS.md). `affordanceAdult`
+ * adult AND no beat drives an adult-only signal (age-policy points 1 and 2 in
+ * docs/INTERACTIONS.md). The line is content, not body site: a nipple is a core
+ * all-ages site (nursing, a child's own chest), arousal is not. `affordanceAdult`
  * can only add adult ids to `defaultAffordanceAdult`; it cannot clear one.
  */
 export function audienceOf(
@@ -188,6 +201,10 @@ export function audienceOf(
     if (figureRoles.has(role) && adult(name)) return "adult";
   }
   for (const r of def.roles) for (const a of r.affordances ?? []) if (adult(a)) return "adult";
+  for (const b of def.beats ?? [])
+    for (const e of b.effects ?? [])
+      if ("signal" in e && Object.keys(e.change).some((s) => ADULT_ONLY_SIGNALS.includes(s)))
+        return "adult";
   return "all";
 }
 
@@ -271,7 +288,13 @@ export function definitionProblems(def: InteractionDefinition): string[] {
   for (const b of def.beats ?? [])
     for (const e of b.effects ?? []) {
       if ("set" in e) point(e.set, `beat ${b.name} effect`);
-      else if (role(e.object)?.takes !== "object")
+      else if ("signal" in e) {
+        if (role(e.signal)?.takes !== "figure")
+          out.push(`beat ${b.name} drives the signals of ${e.signal}, which is not a figure role`);
+        for (const [s, v] of Object.entries(e.change))
+          if (!Number.isFinite(typeof v === "number" ? v : v?.add))
+            out.push(`beat ${b.name} drives signal ${s} by a value that is not finite`);
+      } else if (role(e.object)?.takes !== "object")
         out.push(`beat ${b.name} changes ${e.object}, which is not an object role`);
     }
   if (def.repeatWhile && role(def.repeatWhile.object)?.takes !== "object")
