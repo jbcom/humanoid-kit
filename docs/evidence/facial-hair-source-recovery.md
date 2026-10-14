@@ -71,3 +71,19 @@ The archive listings narrow this source family but do not establish global sourc
 absence. The MakeHuman Community's current asset-pack index still identifies
 Bodyparts 05 and 06 as its beard/moustache mesh packs; the separate broader
 community and GitHub search remains documented on issue #14.
+
+## GitHub code-index candidates
+
+GitHub's `extension:mhclo` facial-hair results were also checked as source
+payloads, rather than accepted from their path names. Two initially distinct
+candidates are exact copies of assets the current hair pack already retains:
+
+| indexed candidate | source facts | comparison |
+| --- | --- | --- |
+| `Ismail-Bzk/Synthetic_Face_Generator` `beard1` | `elvs_beard1_longscruffy3`; Elvaerwyn; CC-BY; hm08 binding | its MHCLO is SHA-256 `6b296383dd66db90618cf658339c966d15bf7e92d9a34b4a147e9297cf957a26` and its OBJ is SHA-256 `20c392b90017f9b9493126378645107317d47564947897d169e64c1de7f6ae89`, exactly matching the current `beard-long-scruffy` source |
+| `isislab-unisa/3dify` `Full_beard` | `grinsegold`; AGPL3 source header; hm08 binding | its MHCLO is SHA-256 `a46d91b7c1762e2019cca9188ca2210cc859256e504d699631a663cfb191a8c4` and its OBJ is SHA-256 `dd7defd621f8ade07ae89159ee8c20696261786b8f308e1aad2cf69e78d83866`, exactly matching the current `beard-black-full` source |
+
+The former evaluates through its retained MHCLO binding to a 0.147262 m vertical
+span on the current body pack. This verifies that the GitHub copy is not the
+missing chest-length source; it does not reject either source's permitted
+licence profile.
