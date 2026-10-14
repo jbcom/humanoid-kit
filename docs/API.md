@@ -487,6 +487,7 @@ new HumanoidModel(assets: HumanoidAssets, options?: {
   subdivision?: 0 | 1 | 2
   skinInfluences?: 4 | 5 | 6 | 7 | 8
   runtimeOcclusionRays?: number
+  foldSolvePasses?: number
 })
 ```
 
@@ -505,8 +506,30 @@ Fewer rays reduce CPU ray-casts linearly and change only that generated
 attachment-lighting field; they do not change the packed attachment corner bakes
 or the packed body-cavity occlusion, and do not change geometry. The worker and
 `<Humanoid>` receive this setting through the `ModelOptions` supplied to their
-`HumanoidWorkerClient`. Hip and knee folds have no reduced-detail setting: they
-continue to use their full solved source fields whenever a pose needs them.
+`HumanoidWorkerClient`.
+
+`foldSolvePasses` is an integer from 1 to 60, default 60. It caps the actual
+contact-push loop in the first round of each hip and knee key, at every opening;
+settled contacts still stop early. Later rounds keep their existing 15-pass
+ceiling, and smoothing, mutual press-back, all flexion keys and openings, and
+source fields stay intact. Lower ceilings can leave more penetration and change
+displacement, normal correction and strain. This setting is copied at model
+construction and applies to that model's shape cache. Supply it through the
+`ModelOptions` of a `HumanoidWorkerClient` for the worker and `<Humanoid>` path.
+It changes CPU solve work, not skinning shader work or packed assets. Invalid
+values throw `RangeError`; 0 never disables a fold. Omitted and explicit 60
+produce identical displacement, normal and strain bytes.
+
+Two CPU observations of a source body at age 25, weight 1 and muscle 0.3 took
+7.471–8.742 s for the hip at 60 passes and 7.410–9.216 s at 5; the knee took
+1.733–2.068 s and 1.721–2.033 s. These observations establish no reliable
+speedup or GPU gain. The 5-pass hip's
+keyed displacement components differed by 0.0854 mm on average and 8.5032 mm
+at most; its normal correction and strain changed too. The knee was exact in
+this workload, and 20 passes was exact for both joints in an earlier observation.
+See [the quality measurement](evidence/fold-solve-quality.md) for scope, field
+errors and real-worker renderer checks; these observations do not make a lower
+ceiling a universal geometry guarantee.
 
 - `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
   the files its Modelling > Custom tab lists from `data/custom`. Each
@@ -1220,7 +1243,7 @@ and expressions"). Framework-free.
   joint bent far would pass one part's skin through another's, or fold the
   skin at the joint over itself, a displacement solved once per figure at a
   run of flexions (a `FoldJoint`'s keys) and read at the flexion a pose has.
-  `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves the
+  `solveHipFold(rest, control, skinIndex, skinWeight, triangles, foldSolvePasses?)` solves the
   hips' (the thigh held against the belly: per flexion from 32.5° to 140° in
   2.5° steps, closed and opened 20°, per vertex of the thigh's skin within 0.7
   of its length of the hip, and the belly's it meets), `solveKneeFold` the
@@ -1229,6 +1252,8 @@ and expressions"). Framework-free.
   of a thigh's length of the knee). `solveHipFoldSteps` and `solveKneeFoldSteps`
   are the same a flexion at a time (generators); `solveFold(…, setup)` is the
   solve both are made of, from a `FoldSetup` (`hipFoldSetup`, `kneeFoldSetup`).
+  All five solver entry points accept the optional final `foldSolvePasses`
+  integer (1–60, default 60), with the same first-round scope as `ModelOptions`.
   The results (`JointFold`, each with its `joint`: `HIP_FOLD`, `KNEE_FOLD`) are
   passed to `skinPositions` as `folds`. `foldFlexion(joint, rest, rotations)`
   reads how far a joint's two sides are flexed and opened in a pose

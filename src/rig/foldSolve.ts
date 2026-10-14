@@ -152,7 +152,15 @@ const UNCRUMPLE_STEPS = 12;
 const UNCRUMPLE = 0.5;
 /** A pass that needs no push over this (metres) is the last of its round. */
 const TOLERANCE = 0.0002;
-const PASSES = 60;
+/** Existing first-round ceiling; lower ceilings explicitly trade contact quality for CPU work. */
+export const DEFAULT_FOLD_SOLVE_PASSES = 60;
+
+/** Resolve the immutable model/solver pass ceiling, rejecting unsupported runtime input. */
+export function resolveFoldSolvePasses(passes = DEFAULT_FOLD_SOLVE_PASSES): number {
+  if (!Number.isInteger(passes) || passes < 1 || passes > DEFAULT_FOLD_SOLVE_PASSES)
+    throw new RangeError(`foldSolvePasses must be an integer from 1 to 60; got ${passes}`);
+  return passes;
+}
 /**
  * CHOICE: the passes of each round after the first, which only take up what the
  * sharing undid (a few passes where the contact settles; where
@@ -201,7 +209,9 @@ export function* solveFold(
   skinWeight: Float32Array,
   tris: Uint32Array,
   setup: FoldSetup,
+  foldSolvePasses = DEFAULT_FOLD_SOLVE_PASSES,
 ): Generator<void, JointFold> {
+  const firstRoundPasses = resolveFoldSolvePasses(foldSolvePasses);
   const n = control.length / 3;
   const { joint, taper, sides } = setup;
   const KEYS = joint.keys;
@@ -680,7 +690,7 @@ export function* solveFold(
         for (let e = 0; e < edges.length; e += 2)
           if (close[edges[e] as number] || close[edges[e + 1] as number])
             activeEdges.push(edges[e] as number, edges[e + 1] as number);
-        const passes = round === 0 ? PASSES : LATER_PASSES;
+        const passes = round === 0 ? firstRoundPasses : LATER_PASSES;
         let settled = false;
         for (let pass = 0; pass < passes; pass++) {
           let most = 0;
