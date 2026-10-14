@@ -36,37 +36,57 @@ hair colour is the only colour it takes; they carry no growth, hairline, fin or 
 Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
 hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
-The facial hair (kind `facial`) is the community pack `bodyparts05` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256
-`262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), whose record and asset pages state CC0 (the asset page is the licence, clause B of
-the licence rule). Each is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a
-strand map (luminance normalised, alpha unchanged), so the figure's hair colour is the only colour it takes.
+The facial hair (kind `facial`) is selected with the `commercial` asset-licence profile. Each selected asset
+is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a strand map (luminance
+normalised, alpha unchanged), so the figure's hair colour is the only colour it takes. `ASSET-ATTRIBUTION.md`
+carries the required credit and copyleft notices for attribution-licensed entries.
 
-- `beard-faun` from `culturalibre_faun_beard`
-- `beard-sigmund` from `grinsegold_beard_sigmund_wip`
-- `beard-viking` from `rehmanpolanski_beard_viking`
-- `moustache-viking` from `rehmanpolanski_moustache_viking`
-- `beard-scruffy` from `wdg_scruffy_beard`
+- `beard-faun` from `culturalibre_faun_beard` in `bodyparts05_cc0.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), selected as `CC0-1.0`
+- `beard-sigmund` from `grinsegold_beard_sigmund_wip` in `bodyparts05_cc0.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), selected as `CC0-1.0`
+- `beard-viking` from `rehmanpolanski_beard_viking` in `bodyparts05_cc0.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), selected as `CC0-1.0`
+- `moustache-viking` from `rehmanpolanski_moustache_viking` in `bodyparts05_cc0.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), selected as `CC0-1.0`
+- `beard-scruffy` from `wdg_scruffy_beard` in `bodyparts05_cc0.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), selected as `CC0-1.0`
+- `moustache-dal` from `culturalibre_dal_moustache` in `bodyparts06_cc-by.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip>, sha256 `09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770`), selected as `CC-BY (official bodyparts06 record); AGPL3 OBJ source header`
+- `beard-long-scruffy` from `elvs_scruffy_beard1` in `bodyparts06_cc-by.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip>, sha256 `09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770`), selected as `CC-BY (official bodyparts06 record and source file headers)`
+- `beard-black-full` from `grinsegold_full_beard` in `bodyparts06_cc-by.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip>, sha256 `09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770`), selected as `CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header`
+- `moustache-thin-black` from `grinsegold_moustache` in `bodyparts06_cc-by.zip` (<https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip>, sha256 `09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770`), selected as `CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header`
 
-- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/culturalibre_faun_beard.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
-- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
-- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
-- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/brown.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
-- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/grinsegold_beard_sigmund_wip.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
-- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
-- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
-- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/Material_Diffuse_Color1_d.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/rehmanpolanski_beard_viking.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/BeardViking.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/rehmanpolanski_moustache_viking.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/MoustacheViking.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
-- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/wdg_scruffy_beard.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
-- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
-- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
-- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/beard2_texture-SMUDGE2.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/culturalibre_faun_beard.mhclo — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.obj — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.mhmat — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/brown.png — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/grinsegold_beard_sigmund_wip.mhclo — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.obj — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.mhmat — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/Material_Diffuse_Color1_d.png — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/rehmanpolanski_beard_viking.mhclo — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.obj — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.mhmat — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/BeardViking.png — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/rehmanpolanski_moustache_viking.mhclo — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.obj — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.mhmat — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/MoustacheViking.png — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/wdg_scruffy_beard.mhclo — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.obj — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.mhmat — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/beard2_texture-SMUDGE2.png — B: page licence "CC0-1.0" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts06_cc-by.zip: clothes/culturalibre_dal_moustache/culturalibre_dal_moustache.mhclo — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 OBJ source header; official record <http://www.makehumancommunity.org/node/2872>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/culturalibre_dal_moustache/dali_moustache.obj — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 OBJ source header; official record <http://www.makehumancommunity.org/node/2872>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/culturalibre_dal_moustache/dali_moustache.mhmat — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 OBJ source header; official record <http://www.makehumancommunity.org/node/2872>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/culturalibre_dal_moustache/dali.png — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 OBJ source header; official record <http://www.makehumancommunity.org/node/2872>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/elvs_scruffy_beard1/elvs_scruffy_beard1.mhclo — External asset-licence profile: CC-BY (official bodyparts06 record and source file headers); official record <http://www.makehumancommunity.org/node/2611>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/elvs_scruffy_beard1/elvs_beard1_longscruffy3.obj — External asset-licence profile: CC-BY (official bodyparts06 record and source file headers); official record <http://www.makehumancommunity.org/node/2611>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/elvs_scruffy_beard1/elvs_beard1_longscruffy3.mhmat — External asset-licence profile: CC-BY (official bodyparts06 record and source file headers); official record <http://www.makehumancommunity.org/node/2611>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/elvs_scruffy_beard1/elvs_beard1_longscruffy3_diffuse.png — External asset-licence profile: CC-BY (official bodyparts06 record and source file headers); official record <http://www.makehumancommunity.org/node/2611>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_full_beard/grinsegold_full_beard.mhclo — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/188>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_full_beard/full_beard.obj — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/188>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_full_beard/full_beard.mhmat — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/188>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_full_beard/Full_beard_black_diff.png — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/188>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_moustache/grinsegold_moustache.mhclo — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/187>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_moustache/moustache.obj — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/187>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_moustache/moustache.mhmat — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/187>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
+- bodyparts06_cc-by.zip: clothes/grinsegold_moustache/Moustache_black_diff.png — External asset-licence profile: CC-BY (official bodyparts06 record); AGPL3 MHCLO and OBJ source header; official record <http://www.makehumancommunity.org/node/187>; pinned archive <https://files.makehumancommunity.org/asset_packs/bodyparts06/bodyparts06_cc-by.zip> sha256 09ed71439c853eac01a92f6e4463f15d0701f08b7d9ff777771d10c3e590e770
 
 ## Texture sizes
 
@@ -113,6 +133,10 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | beard-viking.webp | rehmanpolanski_beard_viking/BeardViking.png | 1024 | face | 896 | 1024 | the source |
 | moustache-viking.webp | rehmanpolanski_moustache_viking/MoustacheViking.png | 512 | face | 256 | 512 | the source |
 | beard-scruffy.webp | wdg_scruffy_beard/beard2_texture-SMUDGE2.png | 1024 | face | 128 | 1024 | the source |
+| moustache-dal.webp | ../bodyparts06/culturalibre_dal_moustache/dali.png | 1024 | face | 768 | 1024 | the source |
+| beard-long-scruffy.webp | ../bodyparts06/elvs_scruffy_beard1/elvs_beard1_longscruffy3_diffuse.png | 2048 | face | 896 | 1024 | the source, downsampled |
+| beard-black-full.webp | ../bodyparts06/grinsegold_full_beard/Full_beard_black_diff.png | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
+| moustache-thin-black.webp | ../bodyparts06/grinsegold_moustache/Moustache_black_diff.png | 1024 | face | 640 | 1024 | the source |
 
 ## Outputs
 
@@ -192,3 +216,13 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | moustache-viking.webp | `861dfc6fb1889ab41b7aeab965a77b06aa221ebea14515c0e6ca30ae478af968` |
 | beard-scruffy.bin.gz | `714960c3ba3645c54b5e1f1c5b612f51b26986a3b75b4c6b1ba48b395945d772` |
 | beard-scruffy.webp | `d7809b38dca100fdec0d788a880062ea9990f8559742c30bd563cd8f0f485e44` |
+| moustache-dal.bin.gz | `eae13c499457a0dda9fd66cd954819557507b4ab6afbba9815935138fc166a29` |
+| moustache-dal.webp | `9dc02b77e58c49f809372073ffedcf4f22eb161dd5d5ae40ff7433df5388655e` |
+| beard-long-scruffy.bin.gz | `0ae11862abe34cbdffdaf93ef2bda3c5df7560850e10e9a49be41993000e0e00` |
+| beard-long-scruffy.webp | `d6607f4c1f6c0bf5b2015517e2cffb799daa7ed7ae04cdceab16a097b450a23f` |
+| beard-black-full.bin.gz | `00c873c17be8b68e37eb2e43a7e390344d5e049efb3b2d78b3201e5ec8dc2bc0` |
+| beard-black-full.webp | `4f1a6c9d092e19e3136e88d48bcce265f57cc5771f6c0841a0c9a31fcdfef865` |
+| moustache-thin-black.bin.gz | `25c3f73768323a235ba55d6fe89384d4f217da74de5cd1f46b6dabaf3275e3e2` |
+| moustache-thin-black.webp | `1f027e6444c9be52b1e0d0012bda5665260ad3ab2db8f0165236a3732ce6d8e4` |
+| ASSET-ATTRIBUTION.md | `15bec55f56acf2ee662214e35e39471e01d107cc550c72bdd8be0c47ef5a4708` |
+| ASSET-SOURCES.md | `e321feb4aeefe12ecaff7e9491f0463f8008c38b4aee523c0d0ec23cffb7240c` |
