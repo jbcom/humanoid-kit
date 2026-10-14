@@ -16,9 +16,9 @@ repos:
       - id: check-toml
       - id: detect-private-key
       - id: end-of-file-fixer
-        # These four MakeHuman source blobs are hash-pinned in their provenance record.
-        exclude: ^vendor/makehuman-bodyparts04/(mindfront_nails_01_short/(mind_nails_01_short\.obj|mindfront_nails_01_short\.mhclo)|mindfront_nails_toes_01/(mind_nails_toes_01\.obj|mindfront_nails_toes_01\.mhclo))$
+        # Retained upstream mesh/binding bytes are hash-pinned provenance inputs.
+        exclude: &raw_asset_sources ^(packs/[^/]+/source/.*\.(obj|mhclo)|vendor/makehuman-bodyparts04/(mindfront_nails_01_short/(mind_nails_01_short\.obj|mindfront_nails_01_short\.mhclo)|mindfront_nails_toes_01/(mind_nails_toes_01\.obj|mindfront_nails_toes_01\.mhclo)))$
       - id: trailing-whitespace
-        # Preserve the same raw upstream bytes; authored files still receive whitespace hygiene.
-        exclude: ^vendor/makehuman-bodyparts04/(mindfront_nails_01_short/(mind_nails_01_short\.obj|mindfront_nails_01_short\.mhclo)|mindfront_nails_toes_01/(mind_nails_toes_01\.obj|mindfront_nails_toes_01\.mhclo))$
+        # Authored files still receive whitespace hygiene; raw assets stay byte-exact.
+        exclude: *raw_asset_sources
       - id: check-added-large-files
