@@ -3,7 +3,7 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { appliedAnatomy } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 
 /**
  * The permutation matrix (docs/research/ADULT-SCULPT-PLAN.md, "Acceptance
@@ -174,6 +174,12 @@ describe("the adult permutation matrix", { timeout: 600_000 }, () => {
 });
 
 describe("flaccid and erect", () => {
+  // The genitals alone under arousal: the pack's lip and nipple morphs (#118) are
+  // measured in arousal.test.ts, so here the whole body can be compared.
+  const organOnly = loadOrganOnlyAssets();
+  const control = new HumanoidModel(organOnly, { subdivision: 0 });
+  const surfaced = new HumanoidModel(organOnly, { subdivision: 1 });
+
   it("lengthens the organ with the state, for every gender position", () => {
     // The organ reaches further from the skin at every state than flaccid. Midway and
     // erect reach about as far: the erect shaft rises in a curve from a root that faces

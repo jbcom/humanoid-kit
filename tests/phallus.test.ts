@@ -33,7 +33,7 @@ import { flatShape, skirtOnto } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 
 /**
  * The phallic organ (scripts/lib/detail/phallus.ts): two CC0 sculpts' shafts and
@@ -44,7 +44,8 @@ import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
  * generator's shape for every variant it can ask for.
  */
 const assets = loadFixtureAssets(true);
-const model = new HumanoidModel(assets, { subdivision: 1 });
+// The organ alone under arousal: the pack's lip and nipple morphs are arousal.test.ts's.
+const model = new HumanoidModel(loadOrganOnlyAssets(), { subdivision: 1 });
 const lattice = model.adultDetailLattice(AUTHORING_FIGURE);
 if (!lattice) throw new Error("no adult surface");
 const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "phallic");
@@ -298,7 +299,14 @@ describe("the pack's organ", { timeout: 300_000 }, () => {
   });
 
   it("is read by the arousal signal and by nothing in the body's own state morphs", () => {
-    expect(adultManifest.anatomy?.stateMorphs).toEqual([]);
+    // The pack's state morphs fill the lips and nipples (#118); none drives the organ.
+    const morphed = (adultManifest.anatomy?.stateMorphs ?? []).flatMap((m) =>
+      m.targets.map((t) => t.name),
+    );
+    for (const name of morphed) {
+      expect(detail?.targets, name).not.toContain(name);
+      expect(name, name).not.toMatch(/^genitals\//);
+    }
     const erectDrives = Object.entries(detail?.drives ?? {}).filter(([, f]) =>
       f.some((x) => x.startsWith("sramp:arousal:")),
     );
