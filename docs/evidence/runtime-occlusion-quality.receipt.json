@@ -1,0 +1,94 @@
+{
+  "base": "9b9fbcb3a1b6ba888e4839b627a73cb8e050f2af",
+  "measurement": {
+    "id": "eyes/high-poly",
+    "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max, Unspecified Version)",
+    "vertices": 1076,
+    "fieldDifference": {
+      "mae": 0.034212360594795536,
+      "max": 0.1875,
+      "changed": 5616
+    },
+    "measurements": [
+      {
+        "view": "front",
+        "default32": {
+          "mae": 0,
+          "max": 0,
+          "changed": 0
+        },
+        "reduced16": {
+          "mae": 0.3925103081597222,
+          "max": 22,
+          "changed": 40350
+        },
+        "allOpen": {
+          "mae": 10.531636555989584,
+          "max": 188,
+          "changed": 47463
+        }
+      },
+      {
+        "view": "oblique",
+        "default32": {
+          "mae": 0,
+          "max": 0,
+          "changed": 0
+        },
+        "reduced16": {
+          "mae": 0.404541015625,
+          "max": 22,
+          "changed": 40629
+        },
+        "allOpen": {
+          "mae": 10.69881863064236,
+          "max": 188,
+          "changed": 47454
+        }
+      }
+    ]
+  },
+  "imageSha256": "5e062a0bcd24318f7d68bc3b524bac93aaa7b97baf3b8b3361db38f6320d993a",
+  "jobs": [
+    {
+      "job_id": "render-c093455589b24732995390e10bf0baf6",
+      "host": "_gitea_render@192.168.1.201",
+      "node_version": "v26.11.1",
+      "started_at": "2026-10-14T18:12:59.635Z",
+      "finished_at": "2026-10-14T18:13:08.705Z",
+      "exit_code": 0,
+      "control": "initial green"
+    },
+    {
+      "job_id": "render-749a4cdaeed64aff951138e297f3c4b8",
+      "host": "_gitea_render@192.168.1.201",
+      "node_version": "v26.11.1",
+      "started_at": "2026-10-14T18:13:35.481Z",
+      "finished_at": "2026-10-14T18:13:41.776Z",
+      "exit_code": 1,
+      "control": "producer ignores runtime ray option (rays forced to 32)"
+    },
+    {
+      "job_id": "render-0b17b555b9aa4e879131c0d3b3c550e3",
+      "host": "_gitea_render@192.168.1.201",
+      "node_version": "v26.11.1",
+      "started_at": "2026-10-14T18:17:32.126Z",
+      "finished_at": "2026-10-14T18:17:39.772Z",
+      "exit_code": 1,
+      "control": "AttachmentStandardMaterial does not patch occlusion"
+    },
+    {
+      "job_id": "render-a73f117681c9462a878a59886307cc2c",
+      "host": "_gitea_render@192.168.1.201",
+      "node_version": "v26.11.1",
+      "started_at": "2026-10-14T18:18:15.461Z",
+      "finished_at": "2026-10-14T18:18:22.704Z",
+      "exit_code": 0,
+      "control": "exact restored green with existing shader tests"
+    }
+  ],
+  "exactRestoredSourceSha256": {
+    "src/model/humanoidModel.ts": "6e65ba264cdba706c5d98acc8f06110d8885376bae551fdcb728ad4a72a8f323",
+    "src/render/occlusion.ts": "f5083c7196ac97807d15f39ea869c102a824617c6fbfdf09a3c4c2070566edc9"
+  }
+}
