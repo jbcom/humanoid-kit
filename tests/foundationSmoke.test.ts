@@ -1,16 +1,13 @@
-/**
- * The foundation's smoke tier (docs/FOUNDATION.md), run in every unit pass:
- * every body at rest passes every invariant, and no posed row is worse than
- * the worklist recorded in docs/evidence/foundation-smoke.json. A lane that
- * fixes a failure rewrites the worklist (`node scripts/foundation-smoke.ts`)
- * in its commit.
+/** REST acceptance and a separate numeric POSED regression budget.
+ * Known posed invariant failures are reported even when the budget passes.
+ * Baseline changes require explicit review; measurements do not promote families.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { REST_POSE } from "../src/foundation/permutations.ts";
 import { SMOKE_STRIDE, smokeModelOptions } from "../src/foundation/smoke.ts";
-import { rowPasses, runFoundation, type SuiteRow } from "../src/foundation/suite.ts";
+import { smokeReport, smokeRowKey, smokeSummary } from "../src/foundation/smokeReport.ts";
+import { runFoundation, type SuiteRow } from "../src/foundation/suite.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
 
@@ -20,9 +17,11 @@ const recorded: SuiteRow[] = JSON.parse(
     "utf8",
   ),
 );
-const key = (r: SuiteRow) => `${r.body}/${r.pose}/${r.anatomy}`;
+const key = smokeRowKey;
 
-describe("the foundation's smoke tier", { timeout: 300_000 }, () => {
+describe("foundation smoke: REST acceptance and POSED regression budget", {
+  timeout: 300_000,
+}, () => {
   const rows = runFoundation(
     new HumanoidModel(loadFixtureAssets(true), smokeModelOptions),
     "smoke",
@@ -37,19 +36,21 @@ describe("the foundation's smoke tier", { timeout: 300_000 }, () => {
     for (const r of rows) expect(r.tones, key(r)).toEqual(["tone-1", "tone-3", "tone-6"]);
   });
 
-  it("passes every invariant on every body at rest", () => {
-    for (const r of rows.filter((x) => x.pose === REST_POSE))
-      expect(rowPasses(r.measure), `${key(r)}: ${JSON.stringify(r.measure)}`).toBe(true);
+  const report = smokeReport(rows);
+  console.log(smokeSummary(rows));
+
+  it("passes every invariant in the explicitly approved pose families (REST only)", () => {
+    expect(report.hardGateFailKeys).toEqual([]);
   });
 
-  it("is no worse anywhere than the recorded worklist", () => {
+  it("stays within the recorded numeric regression budget; POSED FAIL is not acceptance", () => {
     const before = new Map(recorded.map((r) => [key(r), r.measure]));
     for (const r of rows) {
       const was = before.get(key(r));
-      expect(was, `${key(r)} is not in the worklist`).toBeDefined();
+      expect(was, `${key(r)} is not in the reviewed baseline`).toBeDefined();
       if (!was) continue;
       const m = r.measure;
-      const label = `${key(r)} (rewrite the worklist when a row improves)`;
+      const label = `${key(r)} (reviewed baseline budget)`;
       // Penetration and collapse to a sliver are judged by the skin they
       // cover (cm²); their counts are information, a finer surface having more
       // vertices and triangles over the same skin. The slack is rounding.

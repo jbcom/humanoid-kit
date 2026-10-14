@@ -3766,19 +3766,22 @@ measurements cheap enough for the smoke tier to run in every local test pass.
 
 Triangles under 10⁻⁴ mm² at rest are not measured: their shape is noise. A
 test holds each measure to a planted defect and an average body at rest to
-none. **The worklist**: `node scripts/foundation-smoke.ts` runs the smoke tier
-(24 bodies × poses, 18 s) and writes `docs/evidence/FOUNDATION-SMOKE.md` and
-its measures; the smoke test holds every body at rest to no failure and every
-row to no worse than the file, so a foundation lane that fixes a row rewrites
-it in its commit. Penetration and squashed triangles are held by the rest skin
-they cover, in cm² (a sampled vertex standing for its share of its triangles'
-area times the stride, a squashed triangle for its own), and their counts are
-recorded as information only: a finer surface has more vertices and triangles
-over the same skin, so a count rises where nothing got worse (2026-10-10).
-A lane judges its change by penetrating area counted on every vertex, not the
-worklist's stride of four, and a row may grow by a square centimetre or 1 % of its
-area, whichever is larger (ruled 2026-10-10); a growth past that is recorded here
-when it is accepted.
+none. **The current smoke policy**: `node scripts/foundation-smoke.ts` measures
+24 body/pose/anatomy rows into a new output directory by default. The smoke test
+hard-gates the explicitly approved REST family and reports a numeric POSED FAIL
+count with keys. Every row also stays within the recorded numeric regression
+budget: penetrating and squashed area allow 0.001 cm² rounding slack, inverted
+and fold counts and out-of-band joint counts may not increase, and seam gaps
+may not exceed the recorded gap or 10⁻⁶ m, whichever is larger. No invariant or
+regression threshold changes here.
+
+The recorded snapshot and review procedure are in
+[evidence/FOUNDATION-SMOKE.md](evidence/FOUNDATION-SMOKE.md). Actual maintainer
+review is required before an explicit baseline update. Its review-reference
+argument records claimed provenance, not verified approval. Regeneration cannot
+promote a pose family; that needs a separate reviewed source policy change and
+current invariant and visual acceptance evidence. The acceptance rulings below
+are historical context, not permission to loosen the current numeric budget.
 
 *Accepted, with the organ carried by its loop (2026-10-10, "Reservoir
 skinning").* m-muscular seated penetrates 44.44 → 52.33 cm² counted on every vertex

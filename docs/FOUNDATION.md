@@ -59,6 +59,13 @@ both forms), used by every unit and browser test; and the full tier, used for
 evidence before a layer is approved. `hk-sheets` files every battery request
 in both forms automatically.
 
+The current smoke gate approves **REST only**. It reports a named numeric
+**POSED FAIL** count and keys, while enforcing the recorded regression budget.
+A passing budget does not prove posed behaviour. See
+[evidence and baseline review policy](evidence/FOUNDATION-SMOKE.md). Promoting a
+pose family requires a reviewed source policy change and current invariant and
+visual acceptance evidence; measuring or regenerating a baseline cannot do it.
+
 ## What the foundation proves (its invariants)
 
 Each is a measured test over the permutations, not a look at a sheet:
