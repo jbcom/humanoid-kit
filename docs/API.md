@@ -2598,3 +2598,56 @@ it was built against the exact body pack. A figure wears garments by id in
 | `RangeError` | `subdivision` is not 0, 1 or 2 |
 
 Invalid input fails before any geometry is produced.
+
+## Retained completed CPU figure snapshots
+
+`createFigureSnapshotProducer(rest, { figureId, coordinateFrameId,
+indexSelection? })` creates an explicit CPU producer for an already evaluated
+`FigureRest`. `indexSelection` is `"render-visible"` by default, or
+`"full-topology"` to include source triangles hidden by clothing on the same
+canonical vertices and UV chart. Full topology alone certifies neither a closed
+volume nor thickness. This bridge does not observe React, read GPU geometry, or
+infer a posed mesh from `HumanoidAnimationFrame`.
+
+Call `producer.complete(posed, toWorld)` with the existing completed `PosedFigure`
+and its placement, after both are ready. It copies arrays without evaluating or
+skinning again. The snapshot identifies `figureId`, `coordinateFrameId`, and a
+monotonic `completedFrameId`; it declares metres, Euclidean coordinates, and a
+column-major 4 × 4 `Float64Array` transform. Only finite, orientation-preserving
+rigid affine transforms are accepted; scale, shear, reflection and projective
+placement are unsupported. Pose positions already contain their shared ground
+lift; the bridge does not add it again.
+
+Snapshots contain four epochs: `topology`, `geometry`, `pose`, and `transform`.
+`replaceRest(completedRest)` advances geometry and invalidates the previous
+current snapshot, advancing topology when selected or visible indices, part
+identity/order, or vertex correspondence changes. Every accepted `complete`
+advances pose and completed-frame identity, even for the same reused pose object;
+transform advances when its normalized matrix changes. Rejected completions or
+rest replacements leave prior authority and epochs unchanged.
+
+Each part retains copied rest/posed positions and normals, its own UV chart (or
+null), and the selected `Uint32Array` triangle index. Local and world AABBs are
+computed from those selected triangle vertices. Zero-triangle parts have null
+bounds; an entirely empty selected figure cannot publish a valid snapshot.
+Capabilities advertise completed CPU surface triangles and selected bounds;
+volume and thickness are unavailable, while watertightness and GPU parity remain
+unverified.
+
+These are caller-owned copies, read-only by contract: JavaScript typed-array
+contents remain mutable. `producer.current(snapshot)` checks producer-private
+stamps and exact retained payload contents, rejecting edited metadata/arrays or
+copies masquerading as a known snapshot. This check is O(snapshot size).
+`release()` is idempotent and ends current authority; copied historical data
+remains retained by the caller. This explicit CPU completion boundary is not a
+claim of live React or GPU frame synchronization.
+
+The producer keeps canonical typed-array copies once per bound rest evaluation,
+and a second private typed-array copy of every retained snapshot in addition to
+the caller's payload. These private copies are required to detect payload edits;
+metadata and bounds add further ordinary object storage. Counter transitions
+reject unsafe integers or overflow before publication. Counters are scoped to a
+producer instance, so numeric tuples alone cannot establish authority across
+producer replacement. This bridge has no hot-path, crowd-scale or GPU performance
+readiness claim; metadata-only coordination adapters should not invoke exhaustive
+`current` validation implicitly for every query.

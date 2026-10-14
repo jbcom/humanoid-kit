@@ -65,7 +65,7 @@ export interface FigurePartRest {
   index: Uint32Array;
   /** UV per vertex, or null for a part without one (a proxy body). */
   uvs: Float32Array | null;
-  /** Four bone indices and weights per vertex. */
+  /** Eight bone indices and weights per vertex (`SKIN_INFLUENCES`). */
   skinIndex: Uint8Array | Uint16Array;
   skinWeight: Float32Array;
   /** Per vertex, its body region (an index into `BODY_REGIONS`): where on the body it sits, by its dominant bone. */
