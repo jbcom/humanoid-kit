@@ -1,12 +1,29 @@
-# The foundation's smoke tier: invariant failures
+# Foundation smoke: REST acceptance and POSED regression budget
 
-Written by `node scripts/foundation-smoke.ts` from the invariant suite
-(src/foundation/invariants.ts) over the smoke tier (the cross set's six shape
-extremes, rest, seated, overhead and the deep squat). Tone changes no
-position, so each row holds for tones 1, 3 and 6. Penetration samples every
-1th welded vertex. This is the foundation lanes' worklist: the
-smoke test fails if a row gets worse, and a lane that fixes one rewrites this
-file in its commit.
+This recorded snapshot contains **REST FAIL: 0/6** and **POSED FAIL: 16/18**.
+These are recorded measurements, not a current runtime or visual acceptance
+claim. The two clean posed rows are f-slim/overhead/default and
+m-muscular/overhead/default. The failing posed keys appear in the table below
+before the clean rows.
+
+REST is the only approved hard-gated pose family, explicitly listed in
+`src/foundation/smokeReport.ts`. The smoke test also enforces the existing numeric
+regression budget on every row. A passing budget does not establish posed
+acceptance; runtime output names the POSED FAIL count and every failing key.
+
+`node scripts/foundation-smoke.ts` measures into a new temporary directory by
+default. `--output-dir <new-directory>` keeps a candidate at a chosen location.
+Neither route overwrites this document or `foundation-smoke.json`. Penetration
+samples every welded vertex; tone changes no position, so each row holds for
+tones 1, 3 and 6.
+
+Baseline updates require actual maintainer review of the measured candidate,
+its diff, geometry changes and relevant visual evidence. After that review,
+`--update-reviewed-baseline --review-reference <review-url>` explicitly records
+the candidate. The reference is claimed review provenance; the script cannot
+verify approval. Regeneration never promotes a pose family. Promotion requires
+a separate reviewed source policy change, zero invariant failures for that
+family and current visual acceptance evidence.
 
 | body | pose | anatomy | penetrating cm² (vertices, deepest mm, parts) | contacts (deepest mm) | lumen self-contact cm² (vertices) | inverted | squashed cm² (triangles) | joint volume out of band | folds (sharpest °) | seam gap (mm) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
