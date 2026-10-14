@@ -133,9 +133,9 @@ independently validated contract; it cannot be inferred from an injury class.
 
 ### Consumer ownership
 
-Curse and Prayers may interpret their local projectile or blade damage events,
+Consumers may interpret their local projectile or blade damage events,
 choose visible art, decide balance and tone, and decide what to save. Those
-choices stay in the games. The kit's future responsibility is limited to a
+choices stay in the consumer. The kit's responsibility is limited to a
 neutral, deterministic state representation and resolver. It does not classify
 damage, choose an effect, create combat outcomes, or model physiology.
 
