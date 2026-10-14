@@ -499,6 +499,14 @@ void hkDualMotion( vec4 i0, vec4 w0, vec4 i1, vec4 w1, out vec4 q, out vec3 t, o
 #endif
 `;
 
+/** GLSL selector for one of the eight skinning places held in two vec4s. */
+export const SKINNING_PLACE_FUNCTIONS = /* glsl */ `
+// Place k (0 to ${SKIN_INFLUENCES - 1}) of the eight held four in a and four in b.
+float hkPlace( vec4 a, vec4 b, int k ) {
+	return k < 4 ? a[ k ] : b[ k - 4 ];
+}
+`;
+
 /**
  * GLSL for a vertex shader's own places: the attributes holding places 4 to 7,
  * and the linear half over all eight (three's chunk reads four). It reads
@@ -508,10 +516,7 @@ const LINEAR_SKINNING_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
 attribute vec4 ${SKIN_INDEX_ATTRIBUTE_1};
 attribute vec4 ${SKIN_WEIGHT_ATTRIBUTE_1};
-// Place k (0 to ${SKIN_INFLUENCES - 1}) of the eight held four in a and four in b.
-float hkPlace( vec4 a, vec4 b, int k ) {
-	return k < 4 ? a[ k ] : b[ k - 4 ];
-}
+${SKINNING_PLACE_FUNCTIONS}
 // The vertex's bones' matrices summed by weight over all its places, in bind space as three's.
 mat4 hkLinearMatrix() {
 	mat4 m = mat4( 0.0 );
