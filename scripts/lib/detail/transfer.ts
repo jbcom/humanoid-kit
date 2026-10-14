@@ -851,6 +851,61 @@ export function projectPart(
 }
 
 /**
+ * Fair only a reservoir cap's interior against its own sampled neighbours.  A
+ * dense sculpt can be sampled onto a comparatively coarse cap without trouble,
+ * but the later skin-rest pass may pinch two adjacent sampled folds through each
+ * other.  The source is not changed: these short, fixed passes regularise the
+ * receiving cap while its outer ring stays fixed on the transferred surface.
+ */
+export function fairCap(root: ReservoirRoot, shape: RootShape): RootShape {
+  const cap = root.cap.length;
+  const neighbours = Array.from({ length: cap }, () => new Set<number>());
+  const index = (corner: { loop: number } | { cap: number }) =>
+    "loop" in corner ? cap + (root.rings - 1) * root.loop.length + corner.loop : corner.cap;
+  const join = (a: number, b: number) => {
+    if (a < cap) neighbours[a]?.add(b);
+    if (b < cap) neighbours[b]?.add(a);
+  };
+  for (const polygon of root.capPolygons)
+    for (let k = 1; k + 1 < polygon.length; k++) {
+      const a = index(polygon[0] as { loop: number } | { cap: number });
+      const b = index(polygon[k] as { loop: number } | { cap: number });
+      const c = index(polygon[k + 1] as { loop: number } | { cap: number });
+      join(a, b);
+      join(b, c);
+      join(c, a);
+    }
+  let fair = shape.map((point) => [...point] as Vec3);
+  // Calibrated choice: three 0.06 passes clear cap crossings after the skin-rest
+  // pass at every authored sac key, while retaining the transfer's lobe and raphe.
+  for (let pass = 0; pass < 3; pass++) {
+    const next = fair.map((point) => [...point] as Vec3);
+    for (let v = 0; v < cap; v++) {
+      const around = [...(neighbours[v] as Set<number>)];
+      // A disconnected cap point has no surface to fair against; preserve it exactly.
+      if (around.length === 0) continue;
+      const point = fair[v] as Vec3;
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (const neighbour of around) {
+        const other = fair[neighbour] as Vec3;
+        x += other[0] / around.length;
+        y += other[1] / around.length;
+        z += other[2] / around.length;
+      }
+      next[v] = [
+        point[0] + 0.06 * (x - point[0]),
+        point[1] + 0.06 * (y - point[1]),
+        point[2] + 0.06 * (z - point[2]),
+      ];
+    }
+    fair = next;
+  }
+  return fair;
+}
+
+/**
  * Each vertex of a reservoir at its place on a disc (`RootShape` order): the first ring
  * is the skin line itself; a later ring and the cap's vertices are read by `at` at their
  * share of the disc's area from its centre and their share round from the reference.
