@@ -86,6 +86,7 @@ describe("finger surface target", () => {
     const head = rig.bones.indexOf("head");
     source[head * 4] = 0.1;
     source[head * 4 + 3] = Math.sqrt(0.99);
+    const sourceBefore = Float32Array.from(source);
     const before: FingerSurfaceFrame = { position: [0, 0, 0], normal: [0, 0, 0] };
     pad(source, before);
     const exact = Float32Array.from(source);
@@ -125,7 +126,7 @@ describe("finger surface target", () => {
       digit: 2,
       channels: limits,
       sample: pad,
-      target: () => ({ position: target, normal: [0, 0, 1] }),
+      target: () => ({ position: target }),
       tolerance: 0.003,
       out,
     });
@@ -133,10 +134,11 @@ describe("finger surface target", () => {
     expect(result.distance).toBeLessThanOrEqual(0.003);
     expect(result.surfaceSamples).toBeGreaterThan(1);
     expect(result.surfaceSamples).toBeLessThanOrEqual(1 + 20 * (limits.length * 3 + 2));
+    expect(result.wallMilliseconds).toBeGreaterThanOrEqual(0);
     expect(distance(result.pad.position, target)).toBeLessThanOrEqual(0.003);
     expect(Math.hypot(...result.pad.normal)).toBeCloseTo(1, 5);
     expect(out[head * 4 + 3]).toBe(source[head * 4 + 3]);
-    expect(source[head * 4]).toBeCloseTo(0.1);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
     for (let bone = 0; bone < rig.bones.length; bone++) {
       const name = rig.bones[bone] as string;
       if (name.startsWith("finger2-") && name.endsWith(".R")) continue;
@@ -156,6 +158,120 @@ describe("finger surface target", () => {
       tolerance: 0.003,
     });
     expect(reordered.status, JSON.stringify(reordered)).toBe("reached");
+  });
+
+  it("reaches an actual source-rig pad target with opposing surface normals", () => {
+    const source = Float32Array.from(base);
+    const sourceBefore = Float32Array.from(source);
+    const exact = Float32Array.from(source);
+    const values: Record<string, Partial<Record<RotationChannel, number>>> = {};
+    limits.forEach((limit, index) => {
+      let joint = values[limit.joint];
+      if (!joint) {
+        joint = {};
+        values[limit.joint] = joint;
+      }
+      joint[limit.channel] = index === 0 ? 20 : limit.sourceDegrees;
+    });
+    jointChannelRotations(rig, values, exact);
+    const target: FingerSurfaceFrame = { position: [0, 0, 0], normal: [0, 0, 0] };
+    pad(exact, target);
+    const result = solveFingerSurfaceTarget({
+      rest,
+      rig,
+      rotations: source,
+      side: "R",
+      digit: 2,
+      channels: limits,
+      sample: pad,
+      target: () => ({
+        position: target.position,
+        surfaceNormal: [-target.normal[0], -target.normal[1], -target.normal[2]],
+      }),
+      tolerance: 0.003,
+      minimumNormalAlignment: 0.99,
+    });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.distance).toBeLessThanOrEqual(0.003);
+    expect(result.normalAlignment).not.toBeNull();
+    expect(result.normalAlignment as number).toBeGreaterThanOrEqual(0.99);
+    expect(result.surfaceSamples).toBe(32);
+    expect(result.wallMilliseconds).toBeGreaterThan(0);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
+
+    const scaled = solveFingerSurfaceTarget({
+      rest,
+      rig,
+      rotations: source,
+      side: "R",
+      digit: 2,
+      channels: limits,
+      sample: pad,
+      target: () => ({
+        position: target.position,
+        surfaceNormal: [-target.normal[0] * 10, -target.normal[1] * 10, -target.normal[2] * 10],
+      }),
+      tolerance: 0.003,
+      minimumNormalAlignment: 0.99,
+    });
+    expect(scaled.status).toBe(result.status);
+    expect(scaled.normalAlignment).toBeCloseTo(result.normalAlignment as number, 8);
+    expect(scaled.distance).toBeCloseTo(result.distance, 8);
+    for (let index = 0; index < scaled.rotations.length; index++)
+      expect(scaled.rotations[index]).toBeCloseTo(result.rotations[index] as number, 5);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
+  });
+
+  it("rejects a requested facing when the skinned pad sampler returns a zero normal", () => {
+    const source = Float32Array.from(base);
+    const sourceBefore = Float32Array.from(source);
+    const before: FingerSurfaceFrame = { position: [0, 0, 0], normal: [0, 0, 0] };
+    pad(source, before);
+    expect(() =>
+      solveFingerSurfaceTarget({
+        rest,
+        rig,
+        rotations: source,
+        side: "R",
+        digit: 2,
+        channels: limits,
+        sample: (rotations, out) => {
+          pad(rotations, out);
+          out.normal[0] = 0;
+          out.normal[1] = 0;
+          out.normal[2] = 0;
+          return out;
+        },
+        target: () => ({ position: before.position, desiredPadNormal: before.normal }),
+      }),
+    ).toThrow(/zero-length facing normal/);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
+  });
+
+  it("does not claim a zero-gap pad whose required facing is impossible", () => {
+    const source = Float32Array.from(base);
+    const sourceBefore = Float32Array.from(source);
+    const before: FingerSurfaceFrame = { position: [0, 0, 0], normal: [0, 0, 0] };
+    pad(source, before);
+    const frozen = limits.map((limit) => ({ ...limit, minDegrees: 0, maxDegrees: 0 }));
+    const result = solveFingerSurfaceTarget({
+      rest,
+      rig,
+      rotations: source,
+      side: "R",
+      digit: 2,
+      channels: frozen,
+      sample: pad,
+      target: () => ({ position: before.position, surfaceNormal: before.normal }),
+      tolerance: 0.000_001,
+      minimumNormalAlignment: 0.99,
+    });
+    expect(result.status).toBe("unreached");
+    expect(result.reason).toBe("limits");
+    expect(result.distance).toBeLessThanOrEqual(0.000_001);
+    expect(result.normalAlignment as number).toBeLessThan(0.99);
+    expect(result.surfaceSamples).toBeGreaterThan(1);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
   });
 
   it("reports a fixed-surface target that its declared channels cannot reach", () => {

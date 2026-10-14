@@ -21,8 +21,18 @@ export interface FingerSurfaceFrame {
 export interface FingerSurfaceContact {
   /** Nearest permitted point on the caller's fixed surface, in figure coordinates. */
   position: readonly [number, number, number];
-  /** Surface normal at `position`, when the caller needs a facing check. */
-  normal?: readonly [number, number, number];
+  /**
+   * Outward direction of the contacted partner surface. The solver normalizes
+   * and reverses it:
+   * a pad contacting that surface must face into it.
+   */
+  surfaceNormal?: readonly [number, number, number];
+  /**
+   * Explicit desired facing direction for the pad. The solver normalizes it.
+   * Use this only when the target is not
+   * an outward surface; it cannot be combined with `surfaceNormal`.
+   */
+  desiredPadNormal?: readonly [number, number, number];
 }
 
 /** One channel of the source BVH finger chain, with an explicit anatomical range. */
@@ -60,6 +70,8 @@ export interface FingerSurfaceTargetInput {
   tolerance?: number;
   /** Optional minimum dot product between pad and target normals. */
   minimumNormalAlignment?: number;
+  /** Metres-equivalent weight applied to an explicitly requested pad-facing error. */
+  normalWeight?: number;
   /** Bounded deterministic DLS iterations. */
   iterations?: number;
   /** DLS diagonal damping in square metres per square degree. */
@@ -81,12 +93,14 @@ export interface FingerSurfaceTargetResult {
   readonly contact: FingerSurfaceContact;
   /** Euclidean pad-to-surface distance in metres. */
   readonly distance: number;
-  /** Dot product of pad and target normals, or null when no target normal was supplied. */
+  /** Dot product of the pad and its requested facing, or null without a facing request. */
   readonly normalAlignment: number | null;
   /** Final source-channel values, by declared channel order. */
   readonly degrees: readonly number[];
   /** Actual CPU skinned-pad samples consumed; this solver performs no GPU work. */
   readonly surfaceSamples: number;
+  /** Synchronous CPU wall time for this solve, measured without GPU work. */
+  readonly wallMilliseconds: number;
   readonly iterations: number;
 }
 
@@ -152,6 +166,7 @@ export function solveFingerSurfaceTarget(
     target,
     tolerance = 0.002,
     minimumNormalAlignment,
+    normalWeight = 0.02,
     iterations = 20,
     damping = 1e-6,
     probeDegrees = 0.25,
@@ -176,12 +191,15 @@ export function solveFingerSurfaceTarget(
     throw new RangeError("finger target: probeDegrees must be finite and positive");
   if (!(maxStepDegrees > 0) || !Number.isFinite(maxStepDegrees))
     throw new RangeError("finger target: maxStepDegrees must be finite and positive");
+  if (!(normalWeight > 0) || !Number.isFinite(normalWeight))
+    throw new RangeError("finger target: normalWeight must be finite and positive");
 
   validateChannels(rest, rig, digit, side, channels);
   const out = input.out ?? new Float32Array(rotations.length);
   if (out.length !== rotations.length)
     throw new RangeError("finger target: out must exactly match the rotation buffer");
   assertDisjointViews("finger target", out, [rotations, rest.heads, rest.parents, rest.order]);
+  const startedAt = performance.now();
 
   const degrees = channels.map((limit) => limit.sourceDegrees);
   const values = degrees.slice();
@@ -194,11 +212,18 @@ export function solveFingerSurfaceTarget(
     return sample(pose, destination);
   };
   let state = evaluate(out, rotations, rig, channels, values, measured, target, current);
+  const residualDimensions = state.desiredPadNormal ? 6 : 3;
+  const stateResidual = new Float64Array(residualDimensions);
+  const probedResidual = new Float64Array(residualDimensions);
+  const jacobian = new Float64Array(channels.length * residualDimensions);
+  const normalMatrix = new Float64Array(channels.length * channels.length);
+  const normalRight = new Float64Array(channels.length);
   let used = 0;
   let stoppedAtLimits = allPinned(values, channels);
 
   for (; used < iterations && !satisfies(state, tolerance, minimumNormalAlignment); used++) {
-    const jacobian = new Float64Array(channels.length * 3);
+    writeResidual(state, normalWeight, stateResidual);
+    jacobian.fill(0);
     let movable = false;
     for (let i = 0; i < channels.length; i++) {
       const limit = channels[i] as FingerChannelLimit;
@@ -211,21 +236,24 @@ export function solveFingerSurfaceTarget(
       values[i] = next;
       const after = evaluate(out, rotations, rig, channels, values, measured, target, probed);
       const divisor = next - here;
-      jacobian[i * 3] = (after.pad.position[0] - state.pad.position[0]) / divisor;
-      jacobian[i * 3 + 1] = (after.pad.position[1] - state.pad.position[1]) / divisor;
-      jacobian[i * 3 + 2] = (after.pad.position[2] - state.pad.position[2]) / divisor;
+      writeResidual(after, normalWeight, probedResidual);
+      for (let row = 0; row < residualDimensions; row++)
+        jacobian[i * residualDimensions + row] =
+          ((probedResidual[row] as number) - (stateResidual[row] as number)) / divisor;
       values[i] = here;
     }
     if (!movable) {
       stoppedAtLimits = true;
       break;
     }
-    const error: [number, number, number] = [
-      state.contact.position[0] - state.pad.position[0],
-      state.contact.position[1] - state.pad.position[1],
-      state.contact.position[2] - state.pad.position[2],
-    ];
-    const step = dlsStep(jacobian, channels.length, error, damping);
+    const step = dlsStep(
+      jacobian,
+      channels.length,
+      stateResidual,
+      damping,
+      normalMatrix,
+      normalRight,
+    );
     let changed = false;
     for (let i = 0; i < channels.length; i++) {
       const limit = channels[i] as FingerChannelLimit;
@@ -240,7 +268,7 @@ export function solveFingerSurfaceTarget(
     const proposed = changed
       ? evaluate(out, rotations, rig, channels, values, measured, target, current)
       : state;
-    if (proposed.distance + 1e-9 < state.distance) {
+    if (objective(proposed, normalWeight) + 1e-12 < objective(state, normalWeight)) {
       state = proposed;
       accepted.splice(0, accepted.length, ...values);
     } else {
@@ -248,7 +276,7 @@ export function solveFingerSurfaceTarget(
       // A finger pad's skinned response is not linear over a broad curl. Keep
       // DLS as the primary step, then make one deterministic bounded coordinate
       // sweep so a valid one-channel source motion is not discarded merely
-      // because the local 3x3 approximation crossed a curled segment.
+      // because the local finite-difference approximation crossed a curled segment.
       let best = state;
       const bestValues = accepted.slice();
       for (let i = 0; i < channels.length; i++) {
@@ -271,7 +299,7 @@ export function solveFingerSurfaceTarget(
             target,
             probed,
           );
-          if (candidate.distance + 1e-9 < best.distance) {
+          if (objective(candidate, normalWeight) + 1e-12 < objective(best, normalWeight)) {
             best = candidate;
             bestValues.splice(0, bestValues.length, ...values);
           }
@@ -302,6 +330,7 @@ export function solveFingerSurfaceTarget(
     normalAlignment: state.normalAlignment,
     degrees: values,
     surfaceSamples,
+    wallMilliseconds: performance.now() - startedAt,
     iterations: used,
   };
 }
@@ -311,6 +340,8 @@ interface EvaluationState {
   readonly contact: FingerSurfaceContact;
   readonly distance: number;
   readonly normalAlignment: number | null;
+  readonly desiredPadNormal: readonly [number, number, number] | null;
+  readonly padFacingNormal: readonly [number, number, number] | null;
 }
 
 function evaluate(
@@ -339,6 +370,10 @@ function evaluate(
   assertFrame("finger target: sample", measured);
   const contact = target(measured);
   assertContact(contact);
+  const desiredPadNormal = desiredNormal(contact);
+  const padFacingNormal = desiredPadNormal
+    ? unitNormal(measured.normal, "finger target: sample returned a zero-length facing normal")
+    : null;
   const distance = Math.hypot(
     contact.position[0] - measured.position[0],
     contact.position[1] - measured.position[1],
@@ -348,7 +383,10 @@ function evaluate(
     pad: copyFrame(measured),
     contact: copyContact(contact),
     distance,
-    normalAlignment: contact.normal ? dotUnit(measured.normal, contact.normal) : null,
+    normalAlignment:
+      desiredPadNormal && padFacingNormal ? dotUnit(padFacingNormal, desiredPadNormal) : null,
+    desiredPadNormal,
+    padFacingNormal,
   };
 }
 
@@ -423,74 +461,75 @@ const layoutOf = (rig: RigData) => {
 function dlsStep(
   jacobian: Float64Array,
   channels: number,
-  error: readonly [number, number, number],
+  residual: Float64Array,
   damping: number,
+  matrix: Float64Array,
+  right: Float64Array,
 ): Float64Array {
-  const a = new Float64Array(9);
+  const dimensions = residual.length;
+  matrix.fill(0);
+  right.fill(0);
   for (let i = 0; i < channels; i++) {
-    const x = jacobian[i * 3] as number;
-    const y = jacobian[i * 3 + 1] as number;
-    const z = jacobian[i * 3 + 2] as number;
-    a[0] = (a[0] as number) + x * x;
-    a[1] = (a[1] as number) + x * y;
-    a[2] = (a[2] as number) + x * z;
-    a[4] = (a[4] as number) + y * y;
-    a[5] = (a[5] as number) + y * z;
-    a[8] = (a[8] as number) + z * z;
+    for (let row = 0; row < dimensions; row++)
+      right[i] =
+        (right[i] as number) +
+        (jacobian[i * dimensions + row] as number) * -(residual[row] as number);
+    for (let j = 0; j < channels; j++) {
+      let value = 0;
+      for (let row = 0; row < dimensions; row++)
+        value +=
+          (jacobian[i * dimensions + row] as number) * (jacobian[j * dimensions + row] as number);
+      matrix[i * channels + j] = value;
+    }
+    matrix[i * channels + i] = (matrix[i * channels + i] as number) + damping;
   }
-  a[3] = a[1] as number;
-  a[6] = a[2] as number;
-  a[7] = a[5] as number;
-  a[0] = (a[0] as number) + damping;
-  a[4] = (a[4] as number) + damping;
-  a[8] = (a[8] as number) + damping;
-  const inverse = inverse3(a);
-  if (!inverse) return new Float64Array(channels);
-  const solved: [number, number, number] = [
-    (inverse[0] as number) * error[0] +
-      (inverse[1] as number) * error[1] +
-      (inverse[2] as number) * error[2],
-    (inverse[3] as number) * error[0] +
-      (inverse[4] as number) * error[1] +
-      (inverse[5] as number) * error[2],
-    (inverse[6] as number) * error[0] +
-      (inverse[7] as number) * error[1] +
-      (inverse[8] as number) * error[2],
-  ];
-  const out = new Float64Array(channels);
-  for (let i = 0; i < channels; i++)
-    out[i] =
-      (jacobian[i * 3] as number) * solved[0] +
-      (jacobian[i * 3 + 1] as number) * solved[1] +
-      (jacobian[i * 3 + 2] as number) * solved[2];
-  return out;
+  return solveLinearSystem(matrix, right, channels) ?? right.fill(0);
 }
 
-function inverse3(a: Float64Array): Float64Array | null {
-  const a00 = a[0] as number;
-  const a01 = a[1] as number;
-  const a02 = a[2] as number;
-  const a10 = a[3] as number;
-  const a11 = a[4] as number;
-  const a12 = a[5] as number;
-  const a20 = a[6] as number;
-  const a21 = a[7] as number;
-  const a22 = a[8] as number;
-  const c00 = a11 * a22 - a12 * a21;
-  const c01 = a02 * a21 - a01 * a22;
-  const c02 = a01 * a12 - a02 * a11;
-  const c10 = a12 * a20 - a10 * a22;
-  const c11 = a00 * a22 - a02 * a20;
-  const c12 = a02 * a10 - a00 * a12;
-  const c20 = a10 * a21 - a11 * a20;
-  const c21 = a01 * a20 - a00 * a21;
-  const c22 = a00 * a11 - a01 * a10;
-  const determinant = a00 * c00 + a01 * c10 + a02 * c20;
-  if (Math.abs(determinant) < 1e-16) return null;
-  return Float64Array.from(
-    [c00, c01, c02, c10, c11, c12, c20, c21, c22],
-    (value) => value / determinant,
-  );
+function solveLinearSystem(
+  matrix: Float64Array,
+  right: Float64Array,
+  size: number,
+): Float64Array | null {
+  for (let pivot = 0; pivot < size; pivot++) {
+    let best = pivot;
+    for (let row = pivot + 1; row < size; row++)
+      if (
+        Math.abs(matrix[row * size + pivot] as number) >
+        Math.abs(matrix[best * size + pivot] as number)
+      )
+        best = row;
+    const pivotValue = matrix[best * size + pivot] as number;
+    if (Math.abs(pivotValue) < 1e-16) return null;
+    if (best !== pivot) {
+      for (let column = pivot; column < size; column++) {
+        const index = pivot * size + column;
+        const other = best * size + column;
+        const temporary = matrix[index] as number;
+        matrix[index] = matrix[other] as number;
+        matrix[other] = temporary;
+      }
+      const temporary = right[pivot] as number;
+      right[pivot] = right[best] as number;
+      right[best] = temporary;
+    }
+    for (let row = pivot + 1; row < size; row++) {
+      const factor = (matrix[row * size + pivot] as number) / pivotValue;
+      if (factor === 0) continue;
+      for (let column = pivot; column < size; column++)
+        matrix[row * size + column] =
+          (matrix[row * size + column] as number) -
+          factor * (matrix[pivot * size + column] as number);
+      right[row] = (right[row] as number) - factor * (right[pivot] as number);
+    }
+  }
+  for (let row = size - 1; row >= 0; row--) {
+    let total = right[row] as number;
+    for (let column = row + 1; column < size; column++)
+      total -= (matrix[row * size + column] as number) * (right[column] as number);
+    right[row] = total / (matrix[row * size + row] as number);
+  }
+  return right;
 }
 
 const allPinned = (values: readonly number[], channels: readonly FingerChannelLimit[]) =>
@@ -503,14 +542,75 @@ const allPinned = (values: readonly number[], channels: readonly FingerChannelLi
 const satisfies = (state: EvaluationState, tolerance: number, normal: number | undefined) =>
   state.distance <= tolerance && (normal === undefined || (state.normalAlignment ?? -1) >= normal);
 
+function writeResidual(state: EvaluationState, normalWeight: number, out: Float64Array): void {
+  out[0] = state.contact.position[0] - state.pad.position[0];
+  out[1] = state.contact.position[1] - state.pad.position[1];
+  out[2] = state.contact.position[2] - state.pad.position[2];
+  if (out.length === 3) {
+    if (state.desiredPadNormal)
+      throw new RangeError("finger target: target facing changed during solve");
+    return;
+  }
+  if (!state.desiredPadNormal || !state.padFacingNormal)
+    throw new RangeError("finger target: target facing changed during solve");
+  out[3] = normalWeight * (state.desiredPadNormal[0] - state.padFacingNormal[0]);
+  out[4] = normalWeight * (state.desiredPadNormal[1] - state.padFacingNormal[1]);
+  out[5] = normalWeight * (state.desiredPadNormal[2] - state.padFacingNormal[2]);
+}
+
+function objective(state: EvaluationState, normalWeight: number): number {
+  const error = state.distance ** 2;
+  if (!state.desiredPadNormal || !state.padFacingNormal) return error;
+  const x = normalWeight * (state.desiredPadNormal[0] - state.padFacingNormal[0]);
+  const y = normalWeight * (state.desiredPadNormal[1] - state.padFacingNormal[1]);
+  const z = normalWeight * (state.desiredPadNormal[2] - state.padFacingNormal[2]);
+  return error + x * x + y * y + z * z;
+}
+
 function assertFrame(name: string, value: FingerSurfaceFrame): void {
   if (![...value.position, ...value.normal].every(Number.isFinite))
     throw new RangeError(`${name} returned a non-finite frame`);
 }
 
 function assertContact(value: FingerSurfaceContact): void {
-  if (![...value.position, ...(value.normal ?? [])].every(Number.isFinite))
+  if (
+    ![...value.position, ...(value.surfaceNormal ?? []), ...(value.desiredPadNormal ?? [])].every(
+      Number.isFinite,
+    )
+  )
     throw new RangeError("finger target: target returned a non-finite contact");
+  if (value.surfaceNormal && value.desiredPadNormal)
+    throw new RangeError(
+      "finger target: target cannot provide both surfaceNormal and desiredPadNormal",
+    );
+  if (
+    (value.surfaceNormal && Math.hypot(...value.surfaceNormal) === 0) ||
+    (value.desiredPadNormal && Math.hypot(...value.desiredPadNormal) === 0)
+  )
+    throw new RangeError("finger target: target returned a zero-length facing normal");
+}
+
+function desiredNormal(contact: FingerSurfaceContact): readonly [number, number, number] | null {
+  if (contact.desiredPadNormal)
+    return unitNormal(
+      contact.desiredPadNormal,
+      "finger target: target returned a zero-length facing normal",
+    );
+  if (contact.surfaceNormal)
+    return unitNormal(
+      [-contact.surfaceNormal[0], -contact.surfaceNormal[1], -contact.surfaceNormal[2]],
+      "finger target: target returned a zero-length facing normal",
+    );
+  return null;
+}
+
+function unitNormal(
+  value: readonly [number, number, number],
+  zeroMessage: string,
+): [number, number, number] {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (length === 0) throw new RangeError(zeroMessage);
+  return [value[0] / length, value[1] / length, value[2] / length];
 }
 
 const dotUnit = (a: readonly number[], b: readonly number[]) => {
@@ -532,5 +632,10 @@ const copyFrame = (value: FingerSurfaceFrame): FingerSurfaceFrame => ({
 
 const copyContact = (value: FingerSurfaceContact): FingerSurfaceContact => ({
   position: [...value.position] as [number, number, number],
-  ...(value.normal && { normal: [...value.normal] as [number, number, number] }),
+  ...(value.surfaceNormal && {
+    surfaceNormal: [...value.surfaceNormal] as [number, number, number],
+  }),
+  ...(value.desiredPadNormal && {
+    desiredPadNormal: [...value.desiredPadNormal] as [number, number, number],
+  }),
 });
