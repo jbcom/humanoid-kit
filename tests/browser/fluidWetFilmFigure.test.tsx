@@ -35,8 +35,10 @@ import { SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 300_000 };
-/** A source-body review PNG is requested explicitly; isolation assertions always run. */
-const CAPTURE_WET_FILM = import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true";
+/** A source-body review PNG is requested explicitly; remote execution selects this profile by argv. */
+const CAPTURE_WET_FILM =
+  import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true" ||
+  import.meta.env.MODE === "fluid-wet-film-capture";
 const recipe = createRecipe({ macros: { age: 25 } });
 const client = inlineWorkerClient({ subdivision: 1 });
 
