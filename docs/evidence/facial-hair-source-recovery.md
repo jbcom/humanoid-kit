@@ -87,3 +87,20 @@ The former evaluates through its retained MHCLO binding to a 0.147262 m vertical
 span on the current body pack. This verifies that the GitHub copy is not the
 missing chest-length source; it does not reject either source's permitted
 licence profile.
+
+## Bounded chest-length source gap
+
+The official [asset-pack catalogue](https://static.makehumancommunity.org/assets/assetpacks.html)
+lists Bodyparts 05 and Bodyparts 06 as the community mesh packs for beards and
+moustaches. The direct GitHub `beard extension:mhclo` index yielded 15 paths:
+the relevant facial-hair paths resolve to those Bodyparts 05/06 assets or to
+byte-identical copies described above; the remaining matches are moustaches or
+non-facial files whose descriptors mention a beard. No additional chest-length
+MakeHuman attachment was found in that bounded catalogue and code-index corpus.
+
+This is not a claim that no such asset exists anywhere. The verified authored
+options remain usable facial-hair sources, including the Hair Editor curve
+source. The missing requirement is specifically a source-authored,
+MakeHuman-compatible chest-length beard with a reproducible face/jaw attachment
+contract. It is tracked separately so that external source acquisition does not
+block the accepted facial-hair layer.
