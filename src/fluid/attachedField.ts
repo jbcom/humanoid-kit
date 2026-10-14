@@ -145,7 +145,7 @@ export class AttachedFluidField {
     this.assertSynchronized();
     finitePositive(massKg, "massKg");
     const registered = this.state.snapshot().sources.find((source) => source.id === sourceId);
-    if (!registered || registered.anchor.kind !== "surface")
+    if (registered?.anchor.kind !== "surface")
       throw new FluidStateError(
         `attached field source ${sourceId} is not a registered surface source`,
       );
