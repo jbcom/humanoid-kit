@@ -7,7 +7,7 @@ import { bodyPack } from "humanoid-kit-body";
 import { Component, type ReactNode, useEffect } from "react";
 import {
   MeshBasicMaterial,
-  type PerspectiveCamera,
+  PerspectiveCamera,
   type Scene,
   type SkinnedMesh,
   SphereGeometry,
@@ -32,11 +32,14 @@ import { createRecipe } from "../../src/recipe/recipe.ts";
 import { bindFluidWetFilmCoverage } from "../../src/render/fluidCoverage.ts";
 import { FluidParticleRenderer } from "../../src/render/fluidParticles.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import { centreHeight, edgeNeighbours, lowestNeighbour } from "../posedFluidTransportProof.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 300_000 };
-/** A source-body review PNG is requested explicitly; isolation assertions always run. */
-const CAPTURE_WET_FILM = import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true";
+/** A source-body review PNG is requested explicitly; remote execution selects this profile by argv. */
+const CAPTURE_WET_FILM =
+  import.meta.env.HK_FLUID_WET_FILM_CAPTURE === "true" ||
+  import.meta.env.MODE === "fluid-wet-film-capture";
 const recipe = createRecipe({ macros: { age: 25 } });
 const client = inlineWorkerClient({ subdivision: 1 });
 
@@ -50,6 +53,12 @@ type Proof = {
   releasedKg: number;
   spawnedParticles: readonly DetachedFluidParticle[];
   movedParticles: readonly DetachedFluidParticle[];
+  flow: {
+    before: FluidCoverageSnapshot;
+    after: FluidCoverageSnapshot;
+    movedKg: number;
+    downhillTransfers: number;
+  };
 };
 
 type SupportMetadata = {
@@ -123,22 +132,28 @@ function triangleCentre(frame: ReturnType<typeof fluidFrameFromPose>, triangle: 
   return centre.multiplyScalar(1 / 3);
 }
 
-/** A visible front-torso triangle, found from the actual posed source frame. */
-function frontTorsoTriangle(frame: ReturnType<typeof fluidFrameFromPose>): number {
+/** A visible central front source triangle, found from the actual posed source frame. */
+function frontSourceTriangle(frame: ReturnType<typeof fluidFrameFromPose>): number {
+  const centres = Array.from({ length: frame.index.length / 3 }, (_, triangle) =>
+    triangleCentre(frame, triangle),
+  );
+  const minY = Math.min(...centres.map((centre) => centre.y));
+  const maxY = Math.max(...centres.map((centre) => centre.y));
+  const targetY = minY + (maxY - minY) * 0.53;
   let selected = -1;
   let score = -Infinity;
-  for (let triangle = 0; triangle < frame.index.length / 3; triangle++) {
-    const centre = triangleCentre(frame, triangle);
+  for (const [triangle, centre] of centres.entries()) {
     const normal = triangleNormal(frame, triangle);
-    // The camera looks from +z; favour the central upper torso without naming body geometry.
-    const candidate = 5 * normal.z - 2.4 * Math.abs(centre.x) - 5 * Math.abs(centre.y - 1.18);
+    // The camera looks from +z; choose a central, visible source patch from the posed frame.
+    const candidate =
+      5 * normal.z - 2.4 * Math.abs(centre.x) - (5 * Math.abs(centre.y - targetY)) / (maxY - minY);
     if (candidate > score) {
       score = candidate;
       selected = triangle;
     }
   }
   if (selected < 0)
-    throw new Error("fluid wet-film figure proof could not select a source triangle");
+    throw new Error("fluid wet-film figure proof could not select a visible source triangle");
   return selected;
 }
 
@@ -258,6 +273,72 @@ function worldParticles(
   });
 }
 
+function configureCloseupCamera(
+  camera: PerspectiveCamera,
+  anchor: Vector3,
+  particles: readonly Pick<DetachedFluidParticle, "positionM">[],
+  aspect: number,
+): void {
+  const points = [anchor, ...particles.map((particle) => new Vector3(...particle.positionM))];
+  const min = points.reduce(
+    (bounds, point) => bounds.min(point),
+    new Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY),
+  );
+  const max = points.reduce(
+    (bounds, point) => bounds.max(point),
+    new Vector3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY),
+  );
+  const centre = min.clone().add(max).multiplyScalar(0.5);
+  const span = Math.max(0.1, (max.x - min.x) / aspect, max.y - min.y);
+  const distance = Math.max(0.32, (1.2 * span) / (2 * Math.tan((camera.fov * Math.PI) / 360)));
+  camera.aspect = aspect;
+  camera.position.set(centre.x, centre.y, max.z + distance);
+  camera.lookAt(centre);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  for (const point of points) {
+    const projected = point.clone().project(camera);
+    expect(Math.abs(projected.x), "source and particle bounds fit the close-up width").toBeLessThan(
+      0.85,
+    );
+    expect(
+      Math.abs(projected.y),
+      "source and particle bounds fit the close-up height",
+    ).toBeLessThan(0.85);
+    expect(
+      projected.z,
+      "source and particle bounds are in front of the near plane",
+    ).toBeGreaterThan(-1);
+    expect(projected.z, "source and particle bounds are inside the far plane").toBeLessThan(1);
+  }
+}
+
+function renderCloseupPanel(
+  state: RootState,
+  camera: PerspectiveCamera,
+  wetSkin: SkinMaterial,
+  wetBody: SkinnedMesh,
+  source: Proof,
+  particleRenderer: FluidParticleRenderer,
+  snapshot: FluidCoverageSnapshot,
+  particles: readonly DetachedFluidParticle[],
+): void {
+  const renderer = state.gl;
+  const canvas = renderer.domElement;
+  bindFluidWetFilmCoverage(wetSkin, wetBody.geometry, snapshot);
+  particleRenderer.update(particles);
+  configureCloseupCamera(
+    camera,
+    wetBody.localToWorld(new Vector3(...source.focus)),
+    particles,
+    canvas.width / canvas.height,
+  );
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, canvas.width, canvas.height);
+  renderer.clear(true, true, true);
+  renderer.render(state.scene, camera);
+}
+
 async function proof(): Promise<Proof> {
   const assets = await loadHumanoidAssets({ body: bodyPack });
   const model = new HumanoidModel(assets, { subdivision: 1 });
@@ -275,7 +356,7 @@ async function proof(): Promise<Proof> {
   });
   const restFrame = fluidFrameFromPose(state, model, recipe, REST_POSE);
   const flexedFrame = fluidFrameFromPose(state, model, recipe, "flexed");
-  const triangles = triangleNeighbours(flexedFrame.index, frontTorsoTriangle(flexedFrame), 90);
+  const triangles = triangleNeighbours(flexedFrame.index, frontSourceTriangle(flexedFrame), 90);
   const field = new AttachedFluidField(state, restFrame, {
     maxCells: triangles.length,
     mobilityPerSecond: 0,
@@ -321,6 +402,58 @@ async function proof(): Promise<Proof> {
   particles.stepFixed(4);
   const movedParticles = particles.frame();
   particles.dispose();
+  const flowState = new FluidState({
+    figureId: "posed-flow-proof",
+    seed: 32,
+    fixedStepSeconds: 1 / 60,
+    topology: state.topology,
+    recipe,
+    assets,
+  });
+  const flowing = new AttachedFluidField(flowState, restFrame, {
+    maxCells: triangles.length * 2,
+    mobilityPerSecond: 1,
+    gravity: [0, -1, 0],
+  });
+  const neighbours = edgeNeighbours(flexedFrame.index);
+  const expectedMass = new Map<number, number>();
+  let downhillTransfers = 0;
+  for (const triangle of triangles.slice(0, 45)) {
+    const anchor: FluidSurfaceAnchor = {
+      kind: "surface",
+      topology: bodyManifest.topology,
+      bodySha256: bodyManifest.body.sha256,
+      triangle,
+      barycentric: [1 / 3, 1 / 3, 1 / 3],
+    };
+    const id = `flow-${triangle}`;
+    flowState.registerSource({ id, materialId: "water", anchor, rateKgPerSecond: 0 });
+    flowing.inject(id, anchor, "water", 0.0005);
+    const destination = lowestNeighbour(flexedFrame, neighbours, triangle);
+    if (destination === undefined) {
+      expectedMass.set(triangle, (expectedMass.get(triangle) ?? 0) + 0.0005);
+    } else {
+      expect(centreHeight(flexedFrame, destination)).toBeLessThan(
+        centreHeight(flexedFrame, triangle),
+      );
+      expectedMass.set(triangle, (expectedMass.get(triangle) ?? 0) + 0.00025);
+      expectedMass.set(destination, (expectedMass.get(destination) ?? 0) + 0.00025);
+      downhillTransfers++;
+    }
+  }
+  const flowBefore = flowing.coverageSnapshot(flexedFrame);
+  const stateBefore = flowState.snapshot();
+  flowing.step(flexedFrame, 0.5);
+  const flowAfter = flowing.coverageSnapshot(flexedFrame);
+  expect(downhillTransfers).toBeGreaterThan(0);
+  expect(flowAfter.cells.length).toBe(expectedMass.size);
+  for (const cell of flowAfter.cells)
+    expect(cell.massKg).toBeCloseTo(expectedMass.get(cell.triangle) as number, 15);
+  expect(flowAfter.attachedKg).toBeCloseTo(flowBefore.attachedKg, 15);
+  expect(
+    flowState.snapshot(),
+    "transport neither creates ledger mass nor advances the shared clock",
+  ).toEqual(stateBefore);
   return {
     rest,
     flexed,
@@ -335,6 +468,12 @@ async function proof(): Promise<Proof> {
     releasedKg: released.reduce((total, release) => total + release.massKg, 0),
     spawnedParticles,
     movedParticles,
+    flow: {
+      before: flowBefore,
+      after: flowAfter,
+      movedKg: downhillTransfers * 0.00025,
+      downhillTransfers,
+    },
   };
 }
 
@@ -399,6 +538,126 @@ function scene(
 }
 
 describe("posed source-body wet-film coverage", () => {
+  it("frames positive-offset bounds in a narrow viewport without mutating the minimum", () => {
+    const camera = new PerspectiveCamera(28, 0.5, 0.1, 100);
+    const anchor = new Vector3(10, 20, 30);
+    const particle = { positionM: [10.4, 20.3, 30] as const };
+    configureCloseupCamera(camera, anchor, [particle], 0.5);
+    expect(anchor.toArray()).toEqual([10, 20, 30]);
+    expect(camera.position.x).toBeCloseTo(10.2);
+    expect(camera.position.y).toBeCloseTo(20.15);
+    expect(camera.position.z - 30).toBeCloseTo((1.2 * 0.8) / (2 * Math.tan((28 * Math.PI) / 360)));
+  });
+  it(
+    "renders actual posed downhill transport with conserved kilograms and identical dry neighbour pixels",
+    async () => {
+      const source = await proof();
+      let get: (() => RootState) | null = null;
+      let settled = 0;
+      const screen = await render(
+        scene(
+          "flexed",
+          (next) => (get = next),
+          () => settled++,
+          "posed downhill transport",
+        ),
+      );
+      await expect
+        .poll(
+          () =>
+            screen.container.querySelector("[data-fluid-wet-film-error]")?.textContent ??
+            (settled >= 2 ? "settled" : null),
+          LOAD,
+        )
+        .toBe("settled");
+      const state = get as unknown as () => RootState;
+      await expect.poll(() => bodies(state().scene).length, LOAD).toBe(2);
+      const [dryBody, wetBody] = bodyPair(state().scene);
+      const drySkin = skinOf(dryBody);
+      const wetSkin = skinOf(wetBody);
+      const atlas = drySkin.hkUniforms.hkLayerAtlas.value;
+      expect(wetSkin.hkUniforms.hkLayerAtlas.value).toBe(atlas);
+      const camera = state().camera as PerspectiveCamera;
+      const focus = new Vector3(...source.focus);
+      camera.position.set(0, focus.y + 0.04, focus.z + 4.4);
+      camera.lookAt(0, focus.y, focus.z);
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+      state().setFrameloop("never");
+      const canvas = state().gl.domElement;
+      const dryPixels = () => {
+        wetBody.visible = false;
+        const pixels = renderedPixels(state());
+        wetBody.visible = true;
+        return pixels;
+      };
+      try {
+        bindFluidWetFilmCoverage(wetSkin, wetBody.geometry, source.flow.before);
+        const beforeDry = dryPixels();
+        const beforeWet = renderedPixels(state());
+        const beforeTexture = new Uint8Array(
+          (wetSkin.hkUniforms.hkFluidCoverage.value as { image: { data: Uint8Array } }).image.data,
+        );
+        bindFluidWetFilmCoverage(wetSkin, wetBody.geometry, source.flow.after);
+        const afterDry = dryPixels();
+        const afterWet = renderedPixels(state());
+        const afterTexture = (
+          wetSkin.hkUniforms.hkFluidCoverage.value as { image: { data: Uint8Array } }
+        ).image.data;
+        expect(
+          changedPixels(beforeDry, afterDry),
+          "dry source figure renders identically through transport",
+        ).toBe(0);
+        expect(
+          changedPixels(beforeWet, afterWet),
+          "transport updates actual source-body GPU pixels",
+        ).toBeGreaterThan(0);
+        expect(afterTexture.some((value, index) => value !== beforeTexture[index])).toBe(true);
+        expect(drySkin.hkUniforms.hkFluidCoverage.value).toBeNull();
+        expect(drySkin.hkUniforms.hkLayerAtlas.value).toBe(atlas);
+        console.info(
+          "posed-fluid-transport",
+          JSON.stringify({
+            pose: "flexed",
+            seconds: 0.5,
+            downhillTransfers: source.flow.downhillTransfers,
+            movedKg: source.flow.movedKg,
+            attachedBeforeKg: source.flow.before.attachedKg,
+            attachedAfterKg: source.flow.after.attachedKg,
+            occupiedBefore: source.flow.before.cells.length,
+            occupiedAfter: source.flow.after.cells.length,
+            wetChangedPixels: changedPixels(beforeWet, afterWet),
+            dryChangedPixels: changedPixels(beforeDry, afterDry),
+          }),
+        );
+        dryBody.visible = false;
+        const anchor = wetBody.localToWorld(new Vector3(...source.focus));
+        const bounds = source.flow.after.cells.map((cell) => ({
+          positionM: wetBody.localToWorld(new Vector3(...cell.positionM)).toArray(),
+        }));
+        configureCloseupCamera(camera, anchor, bounds, canvas.width / canvas.height);
+        for (const [name, snapshot] of [
+          ["posed-flow-before", source.flow.before],
+          ["posed-flow-after", source.flow.after],
+        ] as const) {
+          bindFluidWetFilmCoverage(wetSkin, wetBody.geometry, snapshot);
+          state().gl.render(state().scene, camera);
+          if (CAPTURE_WET_FILM)
+            await page.screenshot({
+              element: canvas,
+              path: `../../test-results/fluid-wet-film-figure/${name}.png`,
+            });
+        }
+        const receipt = `flexed posed transport: ${source.flow.downhillTransfers} shared-edge downhill transfers over 0.5 s\n${source.flow.movedKg.toFixed(5)} kg transferred; ${source.flow.before.attachedKg.toFixed(5)} kg conserved; dry neighbour pixels identical\ncoverage is support occupancy; no water appearance claim`;
+        screen.container.querySelector("[data-fluid-wet-film-receipt]")?.replaceChildren(receipt);
+      } finally {
+        dryBody.visible = true;
+        wetBody.visible = true;
+        state().setFrameloop("always");
+      }
+    },
+    LOAD.timeout + 30_000,
+  );
   it(
     "updates one flexed figure's localized water support without changing its dry atlas-sharing neighbour",
     async () => {
@@ -480,7 +739,7 @@ describe("posed source-body wet-film coverage", () => {
       const detachedPixels = renderedPixels(state());
       expect(detachedTexels).toBeLessThan(fullTexels);
       expect(changedPixels(fullPixels, detachedPixels)).toBeGreaterThan(0);
-      const particleGeometry = new SphereGeometry(0.012, 8, 6);
+      const particleGeometry = new SphereGeometry(0.003, 8, 6);
       const particleMaterial = new MeshBasicMaterial({ color: 0x9bdcff });
       const particleRenderer = new FluidParticleRenderer({
         capacity: source.movedParticles.length,
@@ -494,22 +753,60 @@ describe("posed source-body wet-film coverage", () => {
       const movedPixels = renderedPixels(state());
       expect(changedPixels(detachedPixels, spawnedPixels)).toBeGreaterThan(0);
       expect(changedPixels(spawnedPixels, movedPixels)).toBeGreaterThan(0);
+      const canvas = state().gl.domElement;
+      state().setFrameloop("never");
+      dryFlexed.visible = false;
+      try {
+        const captures = [
+          {
+            name: "attached-film",
+            snapshot: source.flexed,
+            particles: [] as readonly DetachedFluidParticle[],
+          },
+          {
+            name: "detached-spawn",
+            snapshot: source.detached,
+            particles: worldParticles(wetFlexed, source.spawnedParticles),
+          },
+          {
+            name: "detached-four-steps",
+            snapshot: source.detached,
+            particles: worldParticles(wetFlexed, source.movedParticles),
+          },
+        ];
+        for (const capture of captures) {
+          renderCloseupPanel(
+            state(),
+            camera,
+            wetFlexedSkin,
+            wetFlexed,
+            source,
+            particleRenderer,
+            capture.snapshot,
+            capture.particles,
+          );
+          if (CAPTURE_WET_FILM)
+            await page.screenshot({
+              element: canvas,
+              path: `../../test-results/fluid-wet-film-figure/${capture.name}.png`,
+            });
+        }
+      } finally {
+        dryFlexed.visible = true;
+        state().setFrameloop("always");
+      }
       const receipt = [
-        "POSE: flexed — left dry / right partially detached water support",
-        "shared static LayerAtlas: same texture object",
+        "POSE: flexed — close-up bounds from actual source releases and their four-step positions",
+        "captures: attached localized film / detached at spawn / same 45 drops after four fixed steps",
         `water: ${source.detached.cells.length}/${source.updated.occupiedTriangles} attached triangles after ${source.releasedKg.toFixed(4)} kg detached`,
         `detached particles: ${source.movedParticles.length}, mass ${source.releasedKg.toFixed(4)} kg; caller velocity and gravity advance four fixed steps`,
+        "cyan spheres are opaque QA position markers, not a water-material appearance claim",
         `vertex interpolation reaches ${source.updated.interpolatedFanTriangles} incident triangles (+${source.updated.interpolatedFanTriangles - source.updated.occupiedTriangles} support expansion)`,
         `attached mass: ${source.flexed.attachedKg.toFixed(4)} kg; coverage is support occupancy, not optical alpha or thickness`,
       ].join("\n");
       const receiptNode = screen.container.querySelector("[data-fluid-wet-film-receipt]");
       receiptNode?.replaceChildren(receipt);
       state().gl.render(state().scene, camera);
-      if (CAPTURE_WET_FILM)
-        await page.screenshot({
-          element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
-          path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
-        });
       particleRenderer.dispose();
       particleGeometry.dispose();
       particleMaterial.dispose();
