@@ -501,29 +501,40 @@ drawn states stay, so the morph between neighbours is short and the shaft swings
 rather than cutting the corner.
 
 **What stays modelled.** The skin thickness in the sac's labelled width; where the
-smallest keys sit on the size axis. The clitoral key stays drawn until the female
-sculpts are transferred, which is next.
+smallest keys sit on the size axis. There is no drawn key: under the smallest
+sculpted key each reservoir grows out of itself laid flat on the skin (section 6f,
+"The small sizes").
 
 ## 6f. Decision 9: the female form (2026-10-10)
 
 **Recovery status (2026-10-11).** The labial skin transfer and canal reservoirs
 exist, but this decision is not complete. The retained pack sources contain the
 2020 vulva cut; they contain no NIH hood/glans cuts or their landmark fit.
-The smallest phallic key still uses `phallusGeometry`, so the default female
-hood/glans transfer described below remains planned. Fresh silent close-ups
-still reject its raised rim and the closure's pinched seams. The closure's
+Fresh silent close-ups still reject the closure's pinched seams. The closure's
 mathematical and visibility tests pass, but thirteen posed foundation checks
 regress against the recorded worklist. Do not treat the source list or transfer
 design below as evidence that the female form has been accepted.
 
-**Interim default (2026-10-13).** The #22 permutation matrix showed that any
-share of the drawn smallest key raises a plate with a hard rim and a nub on the
-mons, at sizes from 0.02 to 0.12. The female end of the default `phallus-size`
-curve is therefore 0 (`"0.35,0;0.65,0.65"`), the reservoir at rest, until the
-sculpted hood and glans fill that key. Explicit sizes under 0.25, and the
-default's ramp just above gender 0.35, still reach the drawn key (#75). The
-pack is CC0 only; whether the NIH model below may be used waits on an owner
-ruling (#22).
+**The clitoris is the skin's (2026-10-13, #75).** The #22 permutation matrix showed
+that any share of the drawn smallest phallic key raised a plate with a hard rim and a
+nub on the mons, at sizes from 0.02 to 0.12. Measured on the authoring figure, the
+2020 sheet's hood and glans lie in the cleft 8 to 9 cm forward of the root's head,
+and the vulva's transfer already carries them onto the skin; the phallic loop lies on
+the mons in front of them (9.2 to 10.8 cm), past the vulva's front, and the vulva
+target moves it by at most 0.53 mm. A clitoral key on the phallic reservoir therefore
+drew a second organ on the mons. The drawn key (`phallusGeometry`, `tube.ts`) is
+removed, and the female end of the default `phallus-size` curve is 0
+(`"0.35,0;0.65,0.65"`) by design: the reservoir at rest, the vulva's own clitoris. The
+hood and glans bullet below is superseded.
+
+**The small sizes (2026-10-13, #75).** A size under a reservoir's smallest sculpted key
+grows out of the reservoir laid flat on the skin it covers (`flatShape`, key 0 at
+`FLAT_SIZE` 0.01), each ring and cap vertex at the disc place `projectPart` reads it at
+on the part. Grown out of rest, every ring left its loop vertex together and the cap
+was carried out flat: a cylinder as wide as the loop with a flat end (the phallus) or
+a stack of ridges (the sac). From the flat shape the organ rises from the middle and
+narrows as it rises (`tests/phallus.test.ts`, the taper gate). Open: at the smallest
+shares (gender 0.36 to 0.40 by default) both reservoirs still show concentric ribs.
 
 The default woman drew the phallic reservoir's small key: a raised square plate with
 a nub and a frayed rim, nothing like a vulva.
@@ -559,9 +570,9 @@ cm). So:
   a pair of folds that runs its length. Rejected: the labioscrotal reservoir as the
   majora (homologous, but the wrong footprint), and a reservoir per labium (a fold
   attached along its length is a displacement of the skin, not a tube out of it).
-- *The clitoral hood and glans are the phallic reservoir's female form*: a sculpt
-  projected onto it as the shaft is (`transfer.ts`), the glans from the NIH model and
-  the hood from the 2020 proxy, blended with the shaft's keys by the size axis.
+- *(Superseded 2026-10-13, see "The clitoris is the skin's" above.)* The clitoral
+  hood and glans as the phallic reservoir's female form, a sculpt projected onto it
+  as the shaft is: the phallic loop lies in front of the vulva's own hood and glans.
 - *The vestibule and vaginal canal are a new reservoir*, drawn inward: its loop round
   the vestibule behind the sac's disc (about 0 to 5 cm), its rings the canal, its cap
   the canal's top. The anal canal is another, behind the vulva, on every adult.

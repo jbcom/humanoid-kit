@@ -1660,6 +1660,7 @@ export class HumanoidModel {
             adult.topology,
             adult.skinning,
             rootShares(adult.skinning, pushed, body.positions),
+            this.closedShares(detail),
           )
         : null;
     const attachments = this.attached.map((a) =>
@@ -1929,6 +1930,25 @@ export class HumanoidModel {
       ),
       ...(ofSkin.skin && { skin: skinUnderOrgans(ofSkin.skin, displaced, carried.carriages) }),
     };
+  }
+
+  /**
+   * How far `detail` closes each reservoir's canal opening (`closureShare` of its
+   * closure target's weight), in the pack's reservoir order, 0 for a reservoir with
+   * no closure: what the skin the closure draws together is skinned by
+   * (`evaluatedSkin`). Null when no canal is closed at all.
+   */
+  private closedShares(detail: readonly Contribution[]): number[] | null {
+    const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
+    const shares = specs.map((r) => {
+      const target = r.canal?.closure?.target;
+      if (!target) return 0;
+      let w = 0;
+      for (const c of detail)
+        if (c.target === target && typeof c.weight === "number") w += c.weight;
+      return closureShare(w);
+    });
+    return shares.some((s) => s > 0) ? shares : null;
   }
 
   /**
@@ -2232,7 +2252,14 @@ export class HumanoidModel {
       const drawn = this.evaluatePart(adult.part, control, displacement, pushed);
       shares = rootShares(adult.skinning, pushed, drawn.positions);
     }
-    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares) : null;
+    const skin = adult
+      ? evaluatedSkin(
+          adult.topology,
+          adult.skinning,
+          shares,
+          displacement ? this.closedShares(detail) : null,
+        )
+      : null;
     const folds = solved.map((fold) => {
       // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
       // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
@@ -2282,7 +2309,10 @@ export class HumanoidModel {
       faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible),
       faceTriangles,
     );
-    const skinning = reservoirSkinningOf(mesh);
+    const skinning = reservoirSkinningOf(
+      mesh,
+      this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [],
+    );
     this.adultBody = {
       part: part(mesh),
       edges: triangleEdges(mesh.index),

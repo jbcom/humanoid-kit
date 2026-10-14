@@ -35,9 +35,10 @@
  * organ) keeps its topology's weights, the very arrays.
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
-import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
+import { type CanalClosureSpec, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { fromHalf, toHalf } from "../rig/half.ts";
 import { rowTexels, type SurfaceFold } from "../rig/jointFold.ts";
+import { applyStencil } from "../subdiv/catmullClark.ts";
 
 /** A surface's skin weights: `SKIN_INFLUENCES` bones and weights per render vertex. */
 export interface SkinWeights {
@@ -84,6 +85,14 @@ export interface ReservoirSkinning {
     start: Uint32Array;
     next: Uint32Array;
   };
+  /**
+   * The skin a canal's closure draws together (`CanalClosureSpec`): per render vertex
+   * outside every reservoir, the canal whose opening it closes (-1 for none) and how
+   * far it follows the closed opening, 1 on the loop falling to 0 across the zone
+   * (the zone's harmonic weights on the loop, summed, through the lattice's stencil).
+   * Absent on a surface without closures.
+   */
+  closure?: { canal: Int16Array; follows: Float32Array };
 }
 
 /** A built surface's canals (`AdultSurfaceTopology.canals`): each render vertex's canal reservoir or -1, and the gaps. */
@@ -97,8 +106,58 @@ export function canalsOf(
   return { of, gap };
 }
 
-/** A built surface's reservoirs as `evaluatedSkin` reads them; none without a lattice. */
-export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
+/**
+ * The skin each canal's closure draws together (`ReservoirSkinning.closure`), from
+ * the pack's closures (`specs`, in the lattice's reservoir order): on the lattice, 1
+ * at the loop and each zone vertex's harmonic weights on the loop summed (how much
+ * of the loop's displacement it takes), carried to the surface by the stencil the
+ * detail is (`SurfaceLattice.linear`). A vertex in two zones follows the one it
+ * follows more. Reservoir vertices have their own rule (`rootShares`) and take none.
+ * Undefined when no canal has a closure.
+ */
+function closureSkinning(
+  mesh: SurfaceMesh,
+  owner: Int16Array,
+  specs: readonly { canal?: { closure?: CanalClosureSpec } }[],
+): ReservoirSkinning["closure"] {
+  const lattice = mesh.lattice;
+  if (!lattice || !specs.some((s) => s.canal?.closure)) return undefined;
+  const canal = new Int16Array(owner.length).fill(-1);
+  const follows = new Float32Array(owner.length);
+  const field = new Float32Array(lattice.vertexCount * 3);
+  const surface = new Float32Array(mesh.topology.vertexCount * 3);
+  specs.forEach((spec, s) => {
+    const closure = spec.canal?.closure;
+    if (!closure) return;
+    field.fill(0);
+    for (const i of closure.loopRegion) field[(lattice.region[i] as number) * 3] = 1;
+    closure.zone.forEach((i, z) => {
+      let sum = 0;
+      for (let k = closure.zoneStart[z] as number; k < (closure.zoneStart[z + 1] as number); k++)
+        sum += closure.zoneWeight[k] as number;
+      field[(lattice.region[i] as number) * 3] = Math.min(1, sum);
+    });
+    const onSurface = lattice.linear ? applyStencil(lattice.linear, field, surface) : field;
+    mesh.renderToSurface.forEach((v, r) => {
+      if ((owner[r] as number) >= 0) return;
+      const f = onSurface[v * 3] as number;
+      if (f > (follows[r] as number)) {
+        follows[r] = f;
+        canal[r] = s;
+      }
+    });
+  });
+  return { canal, follows };
+}
+
+/**
+ * A built surface's reservoirs as `evaluatedSkin` reads them; none without a
+ * lattice. `specs` are the pack's reservoirs, for their canals' closures.
+ */
+export function reservoirSkinningOf(
+  mesh: SurfaceMesh,
+  specs: readonly { canal?: { closure?: CanalClosureSpec } }[] = [],
+): ReservoirSkinning {
   const reservoirs = mesh.lattice?.reservoirs ?? [];
   const bySurface = new Int16Array(mesh.topology.vertexCount).fill(-1);
   const loopOf = new Int16Array(mesh.topology.vertexCount).fill(-1);
@@ -116,12 +175,14 @@ export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
     return Uint32Array.from(loop);
   });
   const roots = loops.map((loop) => rootSkin(mesh, loop));
+  const closure = closureSkinning(mesh, owner, specs);
   return {
     owner,
     roots,
     loops,
     openings: reservoirs.map((r) => r.canal?.opening ?? null),
     graph: reservoirGraph(mesh.index, mesh.renderToSurface, bySurface, loopOf),
+    ...(closure && { closure }),
   };
 }
 
@@ -447,23 +508,34 @@ function strongestOf(
 /**
  * The surface's weights for an evaluation whose reservoir vertices take `shares` of
  * their roots' (`rootShares`, per render vertex): each blended toward its root's
- * weights by its share. Null when none takes any, so the surface keeps its
- * topology's weights exactly.
+ * weights by its share. The skin a canal's closure draws together
+ * (`ReservoirSkinning.closure`) is blended toward that canal's root as far as it
+ * follows the opening, times how far the evaluation closes it (`closed`, per
+ * reservoir, `closureShare`): the closure meets the opening's lips on one
+ * centreline at rest, and lips that kept their own sides' weights (each its own
+ * thigh's share) parted as the hips spread, showing the canal's walls. Null when
+ * no vertex takes any, so the surface keeps its topology's weights exactly.
  */
 export function evaluatedSkin(
   skin: SkinWeights,
   skinning: ReservoirSkinning,
   shares: Float32Array | null,
+  closed?: ArrayLike<number> | null,
 ): SkinWeights | null {
-  if (!shares) return null;
+  const closure = closed && skinning.closure;
+  if (!shares && !closure) return null;
   let out: SkinWeights | null = null;
   const bones: number[] = [];
   const weights: number[] = [];
   const { owner, roots } = skinning;
   for (let v = 0; v < owner.length; v++) {
-    const s = owner[v] as number;
-    if (s < 0) continue;
-    const e = shares[v] as number;
+    let s = owner[v] as number;
+    let e: number;
+    if (s >= 0) e = shares ? (shares[v] as number) : 0;
+    else if (closure && closed) {
+      s = closure.canal[v] as number;
+      e = s < 0 ? 0 : (closure.follows[v] as number) * ((closed[s] as number | undefined) ?? 0);
+    } else continue;
     if (e <= 0) continue;
     out ??= {
       skinIndex: Uint16Array.from(skin.skinIndex),
