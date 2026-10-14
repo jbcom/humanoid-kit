@@ -19,7 +19,14 @@ const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
 // reports cannot distinguish selection from an environmental skip.
 const skipLedgerEnabled =
   !partialCoverageShard &&
-  !process.argv.some((arg) => arg === "-t" || arg.startsWith("--testNamePattern"));
+  !process.argv.some(
+    (arg) =>
+      arg === "-t" ||
+      arg === "--testNamePattern" ||
+      arg.startsWith("--testNamePattern=") ||
+      arg === "--test-name-pattern" ||
+      arg.startsWith("--test-name-pattern="),
+  );
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -35,6 +42,14 @@ const skipLedgerEnabled =
 //   separately, uninstrumented.
 export class SkipLedgerReporter implements Reporter {
   private readonly skipped: Array<{ moduleId: string; fullName: string }> = [];
+  private previousExitCode: typeof process.exitCode;
+  private setExitCode = false;
+
+  onTestRunStart() {
+    this.skipped.length = 0;
+    if (this.setExitCode && process.exitCode === 1) process.exitCode = this.previousExitCode;
+    this.setExitCode = false;
+  }
 
   onTestCaseResult(test: TestCase) {
     if (test.options.mode === "skip" || test.result()?.state === "skipped")
@@ -47,7 +62,11 @@ export class SkipLedgerReporter implements Reporter {
     console.log(`\nVitest skips: ${counts.length ? counts.join("; ") : "none"}`);
     if (ledger.failures.length) {
       console.error(ledger.failures.map((failure) => `::error::${failure}`).join("\n"));
-      if (process.env.CI || process.env.HK_FAIL_ON_SKIP === "1") process.exitCode = 1;
+      if (process.env.CI || process.env.HK_FAIL_ON_SKIP === "1") {
+        this.previousExitCode = process.exitCode;
+        process.exitCode = 1;
+        this.setExitCode = true;
+      }
     }
   }
 }
