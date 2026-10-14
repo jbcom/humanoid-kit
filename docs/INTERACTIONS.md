@@ -632,8 +632,8 @@ later slices.
   pack's `introitus`, makes the definition adult. The solver applies the same
   rule itself: a `SiteContactFigure` whose `adult` is not `true` is refused,
   with `AgePolicyError`, any site that `defaultAffordanceAdult` calls adult
-  (today `pubic-point`, `upper-lip`, the palms and the joint landmarks, until
-  one is registered). The effector is a finger pad, a palm or a hand's grip
+  (today `pubic-point` and the joint landmarks, until one is registered; the
+  lips and the palms are all-ages contact sites). The effector is a finger pad, a palm or a hand's grip
   (`finger-pad-N.X`, `palm.X`, `hand.X`), and nothing else.
 
 ### Stimuli and reactions
