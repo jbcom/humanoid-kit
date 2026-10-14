@@ -1,12 +1,46 @@
 import { describe, expect, it } from "vitest";
 import type { CanalClosureSpec } from "../src/format/assetFormat.ts";
 import {
+  CANAL_DARK,
   CLOSED_FROM,
+  CLOSED_LIP_SHADE_POWER,
   closedLipNormals,
+  closedLipShade,
   closedLoop,
   closureDisplacement,
   closureShare,
 } from "../src/model/canalClosure.ts";
+
+describe("the light a closed canal keeps out (#77)", () => {
+  it("is the lips' loss on the lips, falls off fast across the zone, and none on an open canal", () => {
+    const closure = {
+      canal: Int16Array.from([0, 0, 0, 1, -1]),
+      follows: Float32Array.from([1, 0.5, 0, 1, 0]),
+    };
+    const none = new Int16Array(5).fill(-1);
+    const shade = closedLipShade(closure, none, [1, 0], new Float32Array(5));
+    expect(shade[0]).toBeCloseTo(CANAL_DARK.lips, 6);
+    expect(shade[1]).toBeCloseTo(CANAL_DARK.lips * 0.5 ** CLOSED_LIP_SHADE_POWER, 6);
+    expect(shade[1] as number).toBeLessThan(0.1);
+    expect(shade[2]).toBe(0);
+    // Canal 1 is not closed (not drawn): its lips are skin, unshaded.
+    expect(shade[3]).toBe(0);
+    expect(shade[4]).toBe(0);
+    const half = closedLipShade(closure, none, [0.5, 0], new Float32Array(5));
+    expect(half[0]).toBeCloseTo(CANAL_DARK.lips * 0.5, 6);
+  });
+
+  it("darkens a closed canal's own walls more than its lips, an open one's not at all", () => {
+    const closure = { canal: new Int16Array(4).fill(-1), follows: new Float32Array(4) };
+    // Vertices 0 and 1 are canal 0's walls, 2 canal 1's, 3 skin.
+    const walls = Int16Array.from([0, 0, 1, -1]);
+    const shade = closedLipShade(closure, walls, [0.8, 0], new Float32Array(4));
+    expect(shade[0]).toBeCloseTo(CANAL_DARK.walls * 0.8, 6);
+    expect(shade[1]).toBeCloseTo(CANAL_DARK.walls * 0.8, 6);
+    expect([shade[2], shade[3]]).toEqual([0, 0]);
+    expect(CANAL_DARK.walls).toBeGreaterThan(CANAL_DARK.lips);
+  });
+});
 
 type V = readonly [number, number, number];
 

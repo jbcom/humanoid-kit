@@ -86,7 +86,12 @@ import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
-import { closedLipNormals, closureDisplacement, closureShare } from "./canalClosure.ts";
+import {
+  closedLipNormals,
+  closedLipShade,
+  closureDisplacement,
+  closureShare,
+} from "./canalClosure.ts";
 import {
   carriedDetail,
   latticePositions,
@@ -443,6 +448,11 @@ export interface Evaluation extends SurfaceEvaluation {
   areolaScale: number;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
+  /**
+   * Per body render vertex: how much of a closed canal's crease darkness it takes
+   * (`closedLipShade`), 0 to 1; all 0 on the base surface and where no canal is closed.
+   */
+  canalShade: Float32Array;
   /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
   boneHeads: Float32Array;
   /** The recipe's body art placed on this shape (`placeBodyArt`), or null when it has none. */
@@ -1655,8 +1665,11 @@ export class HumanoidModel {
       pushed,
     );
     const closed = adult && pushed ? this.closedShares(detail) : null;
-    if (adult?.skinning.closure && closed)
+    const canalShade = new Float32Array(body.positions.length / 3);
+    if (adult?.skinning.closure && closed) {
       closedLipNormals(adult.skinning.closure, closed, body.positions, body.normals);
+      closedLipShade(adult.skinning.closure, adult.topology.canals.of, closed, canalShade);
+    }
     const skin =
       adult && pushed
         ? evaluatedSkin(
@@ -1739,6 +1752,7 @@ export class HumanoidModel {
       control,
       areolaScale: areolaStretch(this.assets, control),
       curvature,
+      canalShade,
       boneHeads,
       bodyArt: recipe.bodyArt
         ? placeBodyArt(

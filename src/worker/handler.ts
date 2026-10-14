@@ -253,6 +253,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.normals.buffer,
         evaluation.control.buffer,
         evaluation.curvature.buffer,
+        evaluation.canalShade.buffer,
         evaluation.boneHeads.buffer,
       ];
       // A figure's own skin weights are made for it (`evaluatedSkin`), never the topology's arrays.

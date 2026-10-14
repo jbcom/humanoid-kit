@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { creasedOcclusion } from "../src/render/occlusion.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { bakeOcclusion, hemisphereDirections } from "../src/surface/occlusion.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -122,5 +123,22 @@ describe("attachment occlusion on the figure", () => {
     const occlusion = corner(topology.attachments.find((a) => a.kind === "eyes")?.occlusion, 0);
     const open = [...occlusion].filter((v) => v > 0.5).length / occlusion.length;
     expect(open).toBeGreaterThan(0.3);
+  });
+});
+
+describe("a figure's closed canal creases in the body's occlusion (#77)", () => {
+  it("takes the light a vertex loses from every corner, in proportion, and leaves the rest", () => {
+    // Two vertices, three corners each: the first loses 0.6 of its light, the second none.
+    const occlusion = Uint8Array.from([200, 100, 50, 200, 100, 50]);
+    const out = creasedOcclusion(occlusion, Float32Array.from([0.6, 0]));
+    expect([...out.subarray(0, 3)]).toEqual([200, 100, 50].map((v) => Math.round(v * 0.4)));
+    expect([...out.subarray(3)]).toEqual([200, 100, 50]);
+    // The source bytes are the topology's, shared: never written.
+    expect([...occlusion]).toEqual([200, 100, 50, 200, 100, 50]);
+    expect(creasedOcclusion(occlusion, Float32Array.from([2, 0]))[0]).toBe(0);
+  });
+
+  it("refuses a shade that is not one value per vertex", () => {
+    expect(() => creasedOcclusion(new Uint8Array(7), new Float32Array(2))).toThrow();
   });
 });

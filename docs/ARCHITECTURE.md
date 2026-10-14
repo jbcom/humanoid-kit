@@ -2591,7 +2591,30 @@ sides, as the closure places them. The width is the loop's mean spacing along
 one side. This mean is taken as far as the canal is closed (`closedLipNormals`,
 applied to the evaluated adult surface, whose normals a pose skins).
 Neighbouring lips now lie within about 10 degrees of each other
-(`tests/canalSeam.test.ts`).
+(`tests/canalSeam.test.ts`). Posed, the lips split again, as each keeps its
+own side's hip fold. The posed rows of that test are red until the fold
+treatment holds them.
+
+**The light a closed canal keeps out (2026-10-13, #77).** With one normal along
+it, the closed slit shaded as a uniform pale line, where a real one is a thin
+dark line. Each figure's evaluation now carries `canalShade`, the share of its
+light each render vertex loses (`closedLipShade`):
+
+- **Lips.** `CANAL_DARK.lips` (0.6) on the lips, falling off across the
+  closure's zone as how far each vertex follows the closed opening, to the 4th
+  power. The dark stays a line.
+- **Walls.** `CANAL_DARK.walls` (0.92) on the canal's own walls. They were baked
+  with the canal collapsed on the skin, so they were lit as open skin: a pale
+  strip down the slit at rest, and a pale slot where lithotomy parts it.
+- **Undrawn canals** lose none.
+
+The skin shader has no vertex attribute to spare; one more failed every page
+with "too many attributes". So `<Humanoid>` folds the loss into the body's
+occlusion bytes per figure (`creasedOcclusion`). Occlusion is the light the
+skin cannot see, and it already reaches every lighting term. In lithotomy the
+openings now read as a dark recess and a dark pucker. The zone skin that
+abduction still pulls into the vaginal opening is lit, because that is #77's
+geometry, not shading.
 
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below
