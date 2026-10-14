@@ -64,6 +64,7 @@ import { groundOffsetOf, posedControl } from "../presence/posed.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy, withAnatomyDefaults } from "../recipe/anatomy.ts";
+import { facialHairColour } from "../recipe/facialHairColour.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
   applyGarmentWear,
@@ -2013,7 +2014,7 @@ export function Humanoid({
                 topology={facial.topology}
                 geometry={facial.geometry}
                 skeleton={rig.skeleton}
-                colour={wornColour}
+                colour={facialHairColour(recipe, facial.topology.id)}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

@@ -2009,6 +2009,13 @@ export class HumanoidModel {
       id,
       h: this.hairPart(id, "facial"),
     }));
+    for (const id of Object.keys(recipe.facialHairColour ?? {})) {
+      const entry = this.hairEntry(id, "facial");
+      if (!entry.tags.includes("beard") && !entry.tags.includes("moustache"))
+        throw new RecipeError(
+          `facialHairColour names ${id}, but it is not a beard or moustache style`,
+        );
+    }
     const facialHairLength = recipe.facialHairLength ?? {};
     const facialHairGrowth = recipe.facialHairGrowth ?? {};
     for (const [id, factor] of Object.entries(facialHairLength)) {

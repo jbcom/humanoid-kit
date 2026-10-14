@@ -159,6 +159,7 @@ createRecipe(init?: {
     lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
   };
   facialHair?: readonly string[]; // authored facial style ids; absent = none
+  facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
   facialHairLength?: Readonly<Record<string, number>>; // selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // selected beard id -> source-proxy growth fraction [0, 1]
   bodyHair?: BodyHairRecipe;
@@ -184,6 +185,7 @@ interface Recipe {
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
+  facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
   facialHairLength?: Readonly<Record<string, number>>; // optional selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // optional selected beard id -> source-proxy growth [0, 1]
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
@@ -604,7 +606,15 @@ ceiling a universal geometry guarantee.
   lists every worn style not yet loaded. The worker's `evaluated` reply sends
   each newly needed brow, lash, or facial topology once through
   `decalTopologies`; the React binding draws facial assets through
-  `HairMaterial`, with the recipe's hair colour. A brow is lifted `DECAL_LIFT`
+  `HairMaterial`. Each selected beard or moustache may set its own complete
+  `HairColour` in `recipe.facialHairColour`; unselected or wrong-kind ids are
+  rejected. Missing entries retain the scalp colour exactly. Both paths use
+  `agedHairColour(colour, age, "scalp")` and `hairTint`: age is a grey floor,
+  while a linear-RGB `override` replaces the pigment model. This is uniform
+  colour only, and leaves scalp, brows, lashes and body coat unchanged. The
+  same resolved tint is stored per source card by `bakeMiniature`; changing it
+  requires another archetype bake, not per-instance recolouring.
+  A brow is lifted `DECAL_LIFT`
   (2 mm) off the skin along its normal, since the smooth body surface can
   swallow a decal bound to the coarse mesh at the brow ridge.
   `recipe.facialHairLength` may opt a selected beard into a multiplier at least
@@ -2516,8 +2526,11 @@ refuses any other.
 
 The pack also lists authored CC0 facial-hair assets (kind `facial`): beard
 and moustache meshes bound to the base body, selected independently through
-`recipe.facialHair` and drawn with the same tint and strand material as scalp
-hair.
+`recipe.facialHair` and drawn with the same strand material as scalp hair.
+`recipe.facialHairColour` optionally gives a selected beard or moustache its
+own uniform pigments, grey fraction or linear-RGB replacement; absent entries
+keep the scalp colour and its ageing. Source texture alpha and geometry remain
+unchanged. `FacialHairColourRecipe` is `Readonly<Record<string, HairColour>>`.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),

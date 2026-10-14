@@ -28,7 +28,10 @@
   4 eyelashes and 9 authored facial-hair assets) bound to the base body; separate install,
   an entry's files load when worn, refused unless built against the exact body
   pack. `recipe.hair` picks scalp style and colour; `recipe.facialHair` selects
-  zero or more authored beard and moustache assets with that colour. Attribution and
+  zero or more authored beard and moustache assets. Optional `recipe.facialHairColour`
+  maps selected ids to independent uniform `HairColour` values; absent entries keep the
+  scalp colour and ageing. The same resolved tint is baked per miniature source card.
+  Attribution and
   source receipts accompany the pack; its explicit CC0-only profile excludes attributed assets.
   A miniature bake can optionally preserve selected facial source cards with their embedded RGBA
   maps; it is not a solid miniature conversion.
