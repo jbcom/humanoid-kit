@@ -191,6 +191,16 @@ This requirement extends the multi-party contract in decision 5 and
 `docs/PRESENCE.md`; it is a delivery requirement, not a claim that choreography,
 partner discovery or fifty-participant coordination is already implemented.
 
+## 12. Asset intake is confirmed once; delivery focuses on working capabilities
+
+Owner direction, 2026-10-13: unpack, confirm once, commit, and use Git LFS if
+needed. Commit the optimized asset outputs rather than the larger original
+distribution. Decide storage from the actual output sizes. Do not make repeated
+packaging checks or expanding data-validation matrices a substitute for building
+the API. Revisit intake only when the source or transformation changes or a
+concrete defect requires it. Tests and visual checks focus on actual runtime,
+animation, communication and rendering behavior.
+
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
