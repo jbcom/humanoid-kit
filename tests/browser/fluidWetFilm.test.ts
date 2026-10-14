@@ -23,7 +23,10 @@ import { createTestRenderer, releaseTestRenderer } from "./gl.ts";
 
 const SIZE = 256;
 
-function coverage(values: readonly number[]): FluidCoverageSnapshot {
+function coverage(
+  values: readonly number[],
+  sourceVertices: readonly [number, number, number],
+): FluidCoverageSnapshot {
   return Object.freeze({
     version: 1,
     topology: "body",
@@ -34,6 +37,7 @@ function coverage(values: readonly number[]): FluidCoverageSnapshot {
     cells: Object.freeze([
       Object.freeze({
         triangle: 0,
+        sourceVertices: Object.freeze([...sourceVertices]) as readonly [number, number, number],
         materialId: "water",
         massKg: 0.01,
         supportAreaM2: 1,
@@ -52,6 +56,12 @@ function coverage(values: readonly number[]): FluidCoverageSnapshot {
       }),
     ]),
   });
+}
+
+function sourceTriangle(geometry: PlaneGeometry): [number, number, number] {
+  const index = geometry.getIndex();
+  if (!index) throw new Error("wet-film plane must be indexed");
+  return [index.getX(0), index.getX(1), index.getX(2)];
 }
 
 function surface(): PlaneGeometry {
@@ -112,7 +122,11 @@ describe("the water/sweat wet-film bridge in SkinMaterial", () => {
     const clearedMaterial = material();
     const wetMaterial = material();
     bindFluidWetFilmCoverage(clearedMaterial, clearedGeometry, null);
-    bindFluidWetFilmCoverage(wetMaterial, wetGeometry, coverage([1, 1, 1, 1]));
+    bindFluidWetFilmCoverage(
+      wetMaterial,
+      wetGeometry,
+      coverage([1, 1, 1, 1], sourceTriangle(wetGeometry)),
+    );
     const dry = sceneFor(new Mesh(dryGeometry, dryMaterial));
     const cleared = sceneFor(new Mesh(clearedGeometry, clearedMaterial));
     const wet = sceneFor(new Mesh(wetGeometry, wetMaterial));
@@ -132,7 +146,11 @@ describe("the water/sweat wet-film bridge in SkinMaterial", () => {
     dryMesh.position.x = -0.58;
     const wetCaptureGeometry = surface();
     const wetCaptureMaterial = material();
-    bindFluidWetFilmCoverage(wetCaptureMaterial, wetCaptureGeometry, coverage([1, 1, 1, 1]));
+    bindFluidWetFilmCoverage(
+      wetCaptureMaterial,
+      wetCaptureGeometry,
+      coverage([1, 1, 1, 1], sourceTriangle(wetCaptureGeometry)),
+    );
     const wetMesh = new Mesh(wetCaptureGeometry, wetCaptureMaterial);
     wetMesh.position.x = 0.58;
     comparison.add(dryMesh, wetMesh);

@@ -75,6 +75,7 @@ describe("AttachedFluidField coverage snapshots", () => {
     expect(snapshot.cells).toEqual([
       {
         triangle: 0,
+        sourceVertices: [0, 1, 2],
         materialId: "water",
         massKg: 0.006,
         supportAreaM2: 0.5,
@@ -85,6 +86,7 @@ describe("AttachedFluidField coverage snapshots", () => {
       },
       {
         triangle: 1,
+        sourceVertices: [1, 3, 2],
         materialId: "oil",
         massKg: 0.003,
         supportAreaM2: 0.5,
@@ -101,6 +103,7 @@ describe("AttachedFluidField coverage snapshots", () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.cells)).toBe(true);
     expect(Object.isFrozen(snapshot.cells[0])).toBe(true);
+    expect(Object.isFrozen(snapshot.cells[0]?.sourceVertices)).toBe(true);
     expect(Object.isFrozen(snapshot.materials)).toBe(true);
     expect(Object.isFrozen(snapshot.materials[0]?.vertexCoverage)).toBe(true);
   });

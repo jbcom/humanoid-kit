@@ -8,11 +8,11 @@ import {
   RedFormat,
   UnsignedByteType,
 } from "three";
-import type { FluidCoverageSnapshot } from "../fluid/attachedField.ts";
+import type { FluidCoverageCell, FluidCoverageSnapshot } from "../fluid/attachedField.ts";
 import { SWEAT_ROUGHNESS, SWEAT_SPECULAR } from "../surface/regions/states.ts";
 import type { FluidWetFilmProfile, SkinMaterial } from "./skinMaterial.ts";
 
-/** Per-side texels in a figure's exact UV support mask. */
+/** Per-side texels in a figure's binary UV support mask. */
 export const FLUID_COVERAGE_TEXTURE_SIZE = 1024;
 
 /** Water and sweat use the existing documented sweat-film roughness/specular choices. */
@@ -22,10 +22,19 @@ export const WATER_SWEAT_WET_FILM: Readonly<FluidWetFilmProfile> = Object.freeze
 });
 
 type CoverageTexture = { data: Uint8Array; texture: DataTexture };
+type UvPoint = readonly [number, number];
+type UvTriangle = {
+  readonly triangle: number;
+  readonly vertices: readonly [number, number, number];
+  readonly points: readonly [UvPoint, UvPoint, UvPoint];
+};
 
 const materialGeometry = new WeakMap<SkinMaterial, BufferGeometry>();
 const geometryMaterial = new WeakMap<BufferGeometry, SkinMaterial>();
 const materialCoverage = new WeakMap<SkinMaterial, CoverageTexture>();
+const uvTopologies = new WeakMap<BufferGeometry, readonly UvTriangle[]>();
+const trackedMaterials = new WeakSet<SkinMaterial>();
+const trackedGeometries = new WeakSet<BufferGeometry>();
 
 function assertUnits(snapshot: FluidCoverageSnapshot): void {
   const { units } = snapshot;
@@ -40,11 +49,21 @@ function assertUnits(snapshot: FluidCoverageSnapshot): void {
 
 function claimFigureMaterial(material: SkinMaterial, geometry: BufferGeometry): void {
   const bound = materialGeometry.get(material);
-  if (bound && bound !== geometry)
-    throw new RangeError("fluid wet-film coverage requires a distinct SkinMaterial per figure");
+  if (bound && bound !== geometry) releaseFluidWetFilmCoverage(material);
   const owner = geometryMaterial.get(geometry);
-  if (owner && owner !== material)
-    throw new RangeError("fluid wet-film coverage requires a distinct geometry per figure");
+  if (owner && owner !== material) releaseFluidWetFilmCoverage(owner);
+  if (!trackedMaterials.has(material)) {
+    trackedMaterials.add(material);
+    material.addEventListener("dispose", () => releaseFluidWetFilmCoverage(material));
+  }
+  if (!trackedGeometries.has(geometry)) {
+    trackedGeometries.add(geometry);
+    geometry.addEventListener("dispose", () => {
+      uvTopologies.delete(geometry);
+      const boundMaterial = geometryMaterial.get(geometry);
+      if (boundMaterial) releaseFluidWetFilmCoverage(boundMaterial);
+    });
+  }
   materialGeometry.set(material, geometry);
   geometryMaterial.set(geometry, material);
 }
@@ -70,30 +89,142 @@ function coverageTexture(material: SkinMaterial): CoverageTexture {
   return { data, texture };
 }
 
-function rasterTriangle(data: Uint8Array, geometry: BufferGeometry, triangle: number): void {
+function topology(geometry: BufferGeometry): readonly UvTriangle[] {
+  const cached = uvTopologies.get(geometry);
+  if (cached) return cached;
   const uvs = geometry.getAttribute("uv");
   const index = geometry.getIndex();
   if (!uvs || !index) throw new RangeError("fluid wet-film coverage requires indexed UV geometry");
-  const at = triangle * 3;
-  if (at + 2 >= index.count)
-    throw new RangeError(`fluid wet-film triangle ${triangle} is outside geometry`);
-  const vertices = [index.getX(at), index.getX(at + 1), index.getX(at + 2)] as const;
-  const points = vertices.map((vertex) => [uvs.getX(vertex), uvs.getY(vertex)] as const);
-  if (points.some(([u, v]) => !Number.isFinite(u) || !Number.isFinite(v)))
-    throw new RangeError("fluid wet-film coverage UVs must be finite");
-  const scale = FLUID_COVERAGE_TEXTURE_SIZE - 1;
-  const [[u0, v0], [u1, v1], [u2, v2]] = points.map(([u, v]) => [u * scale, v * scale]) as [
-    [number, number],
-    [number, number],
-    [number, number],
+  const out: UvTriangle[] = [];
+  for (let triangle = 0; triangle < index.count / 3; triangle++) {
+    const at = triangle * 3;
+    const vertices = [index.getX(at), index.getX(at + 1), index.getX(at + 2)] as const;
+    out.push({
+      triangle,
+      vertices,
+      points: vertices.map((vertex) => [uvs.getX(vertex), uvs.getY(vertex)] as const) as [
+        UvPoint,
+        UvPoint,
+        UvPoint,
+      ],
+    });
+  }
+  const immutable = Object.freeze(out);
+  uvTopologies.set(geometry, immutable);
+  return immutable;
+}
+
+const signed = (ax: number, ay: number, bx: number, by: number, x: number, y: number) =>
+  (x - ax) * (by - ay) - (y - ay) * (bx - ax);
+
+function signedArea([a, b, c]: readonly [UvPoint, UvPoint, UvPoint]): number {
+  return signed(a[0], a[1], b[0], b[1], c[0], c[1]);
+}
+
+function pointInTriangle(point: UvPoint, [a, b, c]: readonly [UvPoint, UvPoint, UvPoint]): boolean {
+  const ab = signed(a[0], a[1], b[0], b[1], point[0], point[1]);
+  const bc = signed(b[0], b[1], c[0], c[1], point[0], point[1]);
+  const ca = signed(c[0], c[1], a[0], a[1], point[0], point[1]);
+  const epsilon = 1e-10;
+  return (
+    (ab >= -epsilon && bc >= -epsilon && ca >= -epsilon) ||
+    (ab <= epsilon && bc <= epsilon && ca <= epsilon)
+  );
+}
+
+function properCross(a: UvPoint, b: UvPoint, c: UvPoint, d: UvPoint): boolean {
+  const abC = signed(a[0], a[1], b[0], b[1], c[0], c[1]);
+  const abD = signed(a[0], a[1], b[0], b[1], d[0], d[1]);
+  const cdA = signed(c[0], c[1], d[0], d[1], a[0], a[1]);
+  const cdB = signed(c[0], c[1], d[0], d[1], b[0], b[1]);
+  return abC * abD < 0 && cdA * cdB < 0;
+}
+
+function overlapsInterior(a: UvTriangle, b: UvTriangle): boolean {
+  const aBounds = {
+    minU: Math.min(...a.points.map(([u]) => u)),
+    maxU: Math.max(...a.points.map(([u]) => u)),
+    minV: Math.min(...a.points.map(([, v]) => v)),
+    maxV: Math.max(...a.points.map(([, v]) => v)),
+  };
+  const bBounds = {
+    minU: Math.min(...b.points.map(([u]) => u)),
+    maxU: Math.max(...b.points.map(([u]) => u)),
+    minV: Math.min(...b.points.map(([, v]) => v)),
+    maxV: Math.max(...b.points.map(([, v]) => v)),
+  };
+  if (
+    aBounds.maxU < bBounds.minU ||
+    bBounds.maxU < aBounds.minU ||
+    aBounds.maxV < bBounds.minV ||
+    bBounds.maxV < aBounds.minV
+  )
+    return false;
+  const centroid = (points: readonly [UvPoint, UvPoint, UvPoint]): UvPoint => [
+    (points[0][0] + points[1][0] + points[2][0]) / 3,
+    (points[0][1] + points[1][1] + points[2][1]) / 3,
   ];
-  const signed = (ax: number, ay: number, bx: number, by: number, x: number, y: number) =>
-    (x - ax) * (by - ay) - (y - ay) * (bx - ax);
-  if (Math.abs(signed(u0, v0, u1, v1, u2, v2)) < Number.EPSILON) return;
+  if (
+    pointInTriangle(centroid(a.points), b.points) ||
+    pointInTriangle(centroid(b.points), a.points)
+  )
+    return true;
+  return a.points.some((point, edge) =>
+    b.points.some((other, otherEdge) =>
+      properCross(
+        point,
+        a.points[(edge + 1) % 3] as UvPoint,
+        other,
+        b.points[(otherEdge + 1) % 3] as UvPoint,
+      ),
+    ),
+  );
+}
+
+function validateSupport(
+  geometry: BufferGeometry,
+  cells: readonly FluidCoverageCell[],
+): UvTriangle[] {
+  const all = topology(geometry);
+  const selected = cells.map((cell) => {
+    const triangle = all[cell.triangle];
+    if (!triangle)
+      throw new RangeError(`fluid wet-film triangle ${cell.triangle} is outside geometry`);
+    if (triangle.vertices.some((vertex, corner) => vertex !== cell.sourceVertices[corner]))
+      throw new RangeError("fluid wet-film source triangle does not match render geometry");
+    if (
+      triangle.points.some(
+        ([u, v]) => !Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1,
+      )
+    )
+      throw new RangeError("fluid wet-film occupied triangle UVs must be finite in 0..1");
+    if (Math.abs(signedArea(triangle.points)) < Number.EPSILON)
+      throw new RangeError("fluid wet-film occupied triangle has degenerate UV support");
+    return triangle;
+  });
+  for (const triangle of selected)
+    for (const other of all)
+      if (
+        other.triangle !== triangle.triangle &&
+        Math.abs(signedArea(other.points)) >= Number.EPSILON &&
+        overlapsInterior(triangle, other)
+      )
+        throw new RangeError(
+          "fluid wet-film occupied triangle overlaps another triangle in UV space",
+        );
+  return selected;
+}
+
+function rasterTriangle(data: Uint8Array, triangle: UvTriangle): void {
+  const [[u0, v0], [u1, v1], [u2, v2]] = triangle.points.map(([u, v]) => [
+    u * FLUID_COVERAGE_TEXTURE_SIZE,
+    v * FLUID_COVERAGE_TEXTURE_SIZE,
+  ]) as [[number, number], [number, number], [number, number]];
+  const side = FLUID_COVERAGE_TEXTURE_SIZE - 1;
   const minX = Math.max(0, Math.ceil(Math.min(u0, u1, u2) - 0.5));
-  const maxX = Math.min(scale, Math.floor(Math.max(u0, u1, u2) - 0.5));
+  const maxX = Math.min(side, Math.floor(Math.max(u0, u1, u2) - 0.5));
   const minY = Math.max(0, Math.ceil(Math.min(v0, v1, v2) - 0.5));
-  const maxY = Math.min(scale, Math.floor(Math.max(v0, v1, v2) - 0.5));
+  const maxY = Math.min(side, Math.floor(Math.max(v0, v1, v2) - 0.5));
   for (let y = minY; y <= maxY; y++)
     for (let x = minX; x <= maxX; x++) {
       const positive =
@@ -108,10 +239,21 @@ function rasterTriangle(data: Uint8Array, geometry: BufferGeometry, triangle: nu
     }
 }
 
+/** Releases a figure-local coverage texture before changing that figure's body geometry or material. */
+export function releaseFluidWetFilmCoverage(material: SkinMaterial): void {
+  const coverage = materialCoverage.get(material);
+  coverage?.texture.dispose();
+  materialCoverage.delete(material);
+  const geometry = materialGeometry.get(material);
+  materialGeometry.delete(material);
+  if (geometry && geometryMaterial.get(geometry) === material) geometryMaterial.delete(geometry);
+  material.setFluidWetFilm(null);
+}
+
 /**
- * Writes one water/sweat UV support mask for one figure. The mask is an exact
- * rasterization of occupied snapshot triangles, not an optical alpha or film
- * thickness, and never mutates the shared layer atlas.
+ * Writes one water/sweat UV support mask for one figure. Its texel-centre
+ * rasterization quantizes occupied snapshot triangles; it is neither an optical
+ * alpha nor film thickness, and never mutates the shared layer atlas.
  */
 export function bindFluidWetFilmCoverage(
   material: SkinMaterial,
@@ -119,15 +261,14 @@ export function bindFluidWetFilmCoverage(
   snapshot: FluidCoverageSnapshot | null,
   materialId: "water" | "sweat" = "water",
 ): void {
-  claimFigureMaterial(material, geometry);
   if (!snapshot) {
-    material.setFluidWetFilm(null);
+    releaseFluidWetFilmCoverage(material);
     return;
   }
   assertUnits(snapshot);
   const cells = snapshot.cells.filter((cell) => cell.materialId === materialId);
   if (cells.length === 0) {
-    material.setFluidWetFilm(null);
+    releaseFluidWetFilmCoverage(material);
     return;
   }
   const coverage = snapshot.materials.find((entry) => entry.materialId === materialId);
@@ -135,9 +276,11 @@ export function bindFluidWetFilmCoverage(
     throw new RangeError("fluid wet-film coverage vertex count does not match geometry");
   if (coverage.vertexCoverage.some((value) => !Number.isFinite(value) || value < 0 || value > 1))
     throw new RangeError("fluid wet-film coverage must be finite in 0..1");
+  const support = validateSupport(geometry, cells);
+  claimFigureMaterial(material, geometry);
   const field = coverageTexture(material);
   field.data.fill(0);
-  for (const cell of cells) rasterTriangle(field.data, geometry, cell.triangle);
+  for (const triangle of support) rasterTriangle(field.data, triangle);
   field.texture.needsUpdate = true;
   material.setFluidWetFilm(WATER_SWEAT_WET_FILM, field.texture);
 }

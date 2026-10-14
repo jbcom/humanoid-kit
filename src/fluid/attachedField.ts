@@ -28,6 +28,8 @@ export interface AttachedFluidCell {
  */
 export interface FluidCoverageCell {
   readonly triangle: number;
+  /** Stable source-frame vertex IDs for `triangle`, in winding order. */
+  readonly sourceVertices: readonly [number, number, number];
   readonly materialId: string;
   /** Conserved attached mass, in kilograms. */
   readonly massKg: number;
@@ -363,8 +365,14 @@ export class AttachedFluidField {
       const at = cell.triangle * 3;
       for (let corner = 0; corner < 3; corner++)
         material.vertexCoverage[frame.index[at + corner] as number] = 1;
+      const sourceVertices = [
+        frame.index[at] as number,
+        frame.index[at + 1] as number,
+        frame.index[at + 2] as number,
+      ] as const;
       return Object.freeze({
         triangle: cell.triangle,
+        sourceVertices: Object.freeze([...sourceVertices]) as readonly [number, number, number],
         materialId: cell.materialId,
         massKg: cell.massKg,
         supportAreaM2,
