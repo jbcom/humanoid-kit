@@ -76,6 +76,7 @@ import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { type BreastRegionalTraitValues, createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { resolveFoldSolvePasses } from "../rig/foldSolve.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
 import { type JointFold, type SurfaceFold, surfaceFold } from "../rig/jointFold.ts";
 import { solveKneeFoldSteps } from "../rig/kneeFoldSolve.ts";
@@ -162,6 +163,14 @@ export interface ModelOptions {
    * set the pack did not bake; packed attachment and body occlusion stay exact.
    */
   runtimeOcclusionRays?: number;
+  /**
+   * First-round contact passes per hip/knee key and opening (integer 1–60).
+   * Default 60 preserves the existing solve. Lower values may leave more
+   * penetration and change displacement, normals and strain. Later rounds,
+   * smoothing, all keys/openings and source fields retain their full detail.
+   * Fixed for this model, including its shape cache; this is a CPU tradeoff.
+   */
+  foldSolvePasses?: number;
 }
 
 /** Static render data: sent once, reused for every evaluation. */
@@ -669,6 +678,8 @@ export class HumanoidModel {
   private readonly skinInfluences: SkinInfluences;
   /** Rays used only while baking a worn attachment set whose pack has no corner bake. */
   private readonly runtimeOcclusionRays: number;
+  /** Immutable first-round ceiling for the folds cached by this model. */
+  private readonly foldSolvePasses: number;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** Shared, immutable source topology for every age's chest calculation. */
@@ -695,6 +706,7 @@ export class HumanoidModel {
 
   constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
     this.assets = assets;
+    this.foldSolvePasses = resolveFoldSolvePasses(options.foldSolvePasses);
     this.skinInfluences = options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES;
     this.runtimeOcclusionRays = options.runtimeOcclusionRays ?? DEFAULT_RUNTIME_OCCLUSION_RAYS;
     if (!Number.isInteger(this.runtimeOcclusionRays) || this.runtimeOcclusionRays < 1)
@@ -2690,8 +2702,8 @@ export class HumanoidModel {
       const { skinIndex, skinWeight } = this.skin;
       const tris = this.bodyControlTriangles;
       solved = [
-        yield* solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris),
-        yield* solveKneeFoldSteps(rest, control, skinIndex, skinWeight, tris),
+        yield* solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris, this.foldSolvePasses),
+        yield* solveKneeFoldSteps(rest, control, skinIndex, skinWeight, tris, this.foldSolvePasses),
       ];
     }
     this.solvedFolds.set(key, solved);

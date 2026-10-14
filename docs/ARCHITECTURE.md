@@ -1602,6 +1602,17 @@ raise. The before and after sheets are in `docs/evidence/skinning.md`.
 
 ### The hip fold (2026-10-09)
 
+**Runtime quality ceiling.** `ModelOptions.foldSolvePasses` copies an integer
+from 1 to 60 into the model when it is constructed. At every hip and knee key
+and opening it caps only the first round's actual contact-push loop. The default
+60 preserves the previous operation order and all displacement, normal and
+strain bytes. Later rounds retain 15 passes, and the sampling keys, openings,
+smoothing and mutual press-back remain unchanged. A lower ceiling changes how
+far contacts can settle and can increase penetration; it does not discard solved
+rows or reduce source field detail. Worker initialization forwards the same
+option, and the renderer consumes every resulting fold row as before. Cached
+folds remain local to the model and its fixed quality setting.
+
 **The fault.** A thigh flexed past a right angle swings the skin at the front of
 the hip into the belly and through it, and the groin collapses into a slit. It
 is not skinning's blend: linear, dual quaternion and the shipped mix put every

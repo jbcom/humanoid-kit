@@ -1,5 +1,11 @@
 import type { RestBones } from "./bones.ts";
-import { type FoldSetup, runSolve, solveFold } from "./foldSolve.ts";
+import {
+  DEFAULT_FOLD_SOLVE_PASSES,
+  type FoldSetup,
+  resolveFoldSolvePasses,
+  runSolve,
+  solveFold,
+} from "./foldSolve.ts";
 import { jointRotations } from "./folds.ts";
 import {
   FOLD_BODIES,
@@ -86,8 +92,9 @@ export function solveHipFold(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   tris: Uint32Array,
+  foldSolvePasses = DEFAULT_FOLD_SOLVE_PASSES,
 ): JointFold {
-  return runSolve(solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris));
+  return runSolve(solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris, foldSolvePasses));
 }
 
 /** `solveHipFold` a flexion at a time: it yields after each, so that a caller can let other work in between. */
@@ -97,8 +104,10 @@ export function* solveHipFoldSteps(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   tris: Uint32Array,
+  foldSolvePasses = DEFAULT_FOLD_SOLVE_PASSES,
 ): Generator<void, JointFold> {
+  resolveFoldSolvePasses(foldSolvePasses);
   const setup = hipFoldSetup(rest, control, skinIndex, skinWeight, tris);
   if (!setup) return noFold(control.length / 3, HIP_FOLD);
-  return yield* solveFold(rest, control, skinIndex, skinWeight, tris, setup);
+  return yield* solveFold(rest, control, skinIndex, skinWeight, tris, setup, foldSolvePasses);
 }
