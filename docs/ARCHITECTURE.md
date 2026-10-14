@@ -259,6 +259,19 @@ only the selected source tissue. The library's reach is the union of the source
 target reach and the fixed source support. There is no replacement mesh, drawn
 morph, or masked whole-body gender transfer.
 
+The full-presence transfer binds the source geometry through a biharmonic
+extension of the destination boundary displacement, using the canonical source
+edge lengths. Its interior is `k * sourceRequested + B(control - k * sourceAverage)`,
+where `k` is the helper-joint half-span ratio and `B` fixes every vertex outside
+the existing support. This replaces the destination's interior relief as the
+source tissue is added, avoiding a second chest shape beneath the source minimum.
+Presence blends from the measured no-tissue baseline to this bound source.
+The source target deltas beyond the support still apply exactly; inactive sides
+and vertices outside the source reach keep their ordinary control positions.
+Source references use the ordinary recipe contribution order and weight precision
+so the canonical average has exactly zero binding displacement, including at
+fractional ages.
+
 A recipe without `breastPresence` retains the exact legacy MakeHuman path. A
 recipe that names it waits for every reference target needed to construct that
 age's source library; staged loading fails closed rather than silently using the

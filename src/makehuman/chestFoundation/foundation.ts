@@ -4,8 +4,9 @@
  * The library is evaluated from the loaded MakeHuman targets: a canonical
  * average-tissue control, its no-tissue counterpart, and the upstream size ×
  * firmness grid. It contains no drawn or inferred anatomy. At runtime the
- * caller gives the already-evaluated control mesh; the foundation removes only
- * its measured carried source tissue and adds the selected source tissue.
+ * caller gives the already-evaluated control mesh; the foundation blends from
+ * its measured no-tissue baseline to the source geometry bound by a smooth
+ * extension of that control's boundary displacement.
  */
 import type { BodyManifest } from "../../format/assetFormat.ts";
 import { type ChestAnchors, type ChestSide, chestAnchors } from "./anchors.ts";
@@ -142,8 +143,19 @@ export function applyChestFoundation(
 ): ChestFoundationResult {
   const free = Array.from(ctx.support.free);
   const fill = biharmonicFill(ctx.mesh, control, free);
+  // Bind source detail with one source-rest linear operator. Adding its
+  // displacement to the destination's existing relief superposes two chest
+  // shapes; at the source minimum their opposing slopes produce an annular rim.
+  // The fixed operator instead extends the destination boundary displacement:
+  // scale * sourceRequested + B(control - scale * sourceAverage).
   const anchors = chestAnchors(ctx.manifest, control);
   const scale = anchors.halfSpan / foundation.halfSpan;
+  const displacement = Float32Array.from(
+    control,
+    (value, index) => value - scale * (foundation.cell[index] as number),
+  );
+  const sourceBinding = biharmonicFill(ctx.mesh, displacement, free, foundation.cell);
+  const freeSet = new Set(free);
   const average = foundation.grid.get(key(0.5, 0.5));
   if (!average) throw new Error("chest foundation missing source average");
   const flat = new Float32Array(control);
@@ -200,9 +212,19 @@ export function applyChestFoundation(
         let value = 0;
         for (const [sample, weight] of weights(size, firmness))
           value += weight * ((foundation.grid.get(sample) as Float32Array)[index] as number);
-        value *= scale * presence;
-        tissue[index] = value;
-        positions[index] = (flat[index] as number) + value;
+        tissue[index] = value * scale * presence;
+        const baseline = flat[index] as number;
+        // Presence zero retains the measured no-tissue baseline. As source
+        // tissue replaces it, also replace its interior frame relief. Fixed
+        // boundary vertices and the source targets beyond the fill stay exact.
+        if (freeSet.has(vertex)) {
+          // Subtract the average in displacement space before adding the source
+          // position, so its own average is exact even in Float32 arithmetic.
+          const bound =
+            scale * ((foundation.cell[index] as number) + (value - (average[index] as number))) +
+            (sourceBinding[index] as number);
+          positions[index] = presence === 1 ? bound : baseline + presence * (bound - baseline);
+        } else positions[index] = baseline + value * scale * presence;
       }
     }
   }
