@@ -2580,6 +2580,19 @@ toward the root's as well closed it, but regressed the foundation's seated and
 squatting rows (penetration and fold counts on the heavy and elderly bodies),
 and is not done; `canalPosed` stays red until a fold treatment holds both.
 
+**The lips' shading (2026-10-13, #77).** Closed, the two lips lie on one line,
+but each lip vertex took its normal from its own side's faces alone, which face
+across the slit. Along the slit the normals alternated side to side, as much as
+175 degrees between a lip and the one beside it. Every lit and matte sheet of a
+woman showed a beaded rope of glints down the vulva. Sinking the meeting line
+under the skin did not help: an 8 mm recess shortened the rope but left it.
+Each lip's normal is now the Gaussian-weighted mean of the lips round it on both
+sides, as the closure places them. The width is the loop's mean spacing along
+one side. This mean is taken as far as the canal is closed (`closedLipNormals`,
+applied to the evaluated adult surface, whose normals a pose skins).
+Neighbouring lips now lie within about 10 degrees of each other
+(`tests/canalSeam.test.ts`).
+
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below
 and front-low across six adult body variants. These checks complement the

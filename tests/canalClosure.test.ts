@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CanalClosureSpec } from "../src/format/assetFormat.ts";
 import {
   CLOSED_FROM,
+  closedLipNormals,
   closedLoop,
   closureDisplacement,
   closureShare,
@@ -62,6 +63,62 @@ describe("a canal's closure at the skin", () => {
       expect(left[2]).toBeCloseTo(right[2], 9);
       expect(left[1]).toBeCloseTo(0.001 * (left[2] / 0.012) ** 2, 9);
     }
+  });
+
+  it("shades a closed slit's lips together, as far as the canal is closed (#77)", () => {
+    // Two lips facing across the slit and away from each other's sides, side by side
+    // along it, with a vertex of skin that is not a lip, and a lip of a canal not drawn.
+    const tilt = Math.SQRT1_2;
+    const positions = Float32Array.from([
+      0, 0, 0, 0, 0, 0.001, 0, 0, 0.002, 0, 0, 0.003, 0.05, 0, 0, 0.09, 0, 0,
+    ]);
+    const facing = [
+      tilt,
+      -tilt,
+      0,
+      -tilt,
+      -tilt,
+      0,
+      tilt,
+      -tilt,
+      0,
+      -tilt,
+      -tilt,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+    ];
+    const closure = {
+      canal: Int16Array.from([0, 0, 0, 0, -1, 1]),
+      follows: Float32Array.from([1, 1, 1, 1, 0, 1]),
+    };
+    const normals = Float32Array.from(facing);
+    closedLipNormals(closure, [1, 0], positions, normals);
+    const deg = (a: number, b: readonly number[]) =>
+      (Math.acos(
+        Math.min(
+          1,
+          [0, 1, 2].reduce((s, k) => s + (normals[a * 3 + k] as number) * (b[k] as number), 0),
+        ),
+      ) *
+        180) /
+      Math.PI;
+    for (let v = 0; v < 4; v++) {
+      // Across mostly cancels: each lip faces out of the skin, near the normal both share,
+      // 90 degrees from the other lip's beside it before.
+      expect(deg(v, [0, -1, 0])).toBeLessThan(30);
+      if (v > 0) expect(deg(v, [...normals.subarray((v - 1) * 3, v * 3)])).toBeLessThan(30);
+      expect(Math.hypot(...normals.subarray(v * 3, v * 3 + 3))).toBeCloseTo(1, 6);
+    }
+    // Neither the skin round it nor an open canal's lips.
+    expect([...normals.subarray(12)]).toEqual(facing.slice(12));
+    const open = Float32Array.from(facing);
+    closedLipNormals(closure, [0, 0], positions, open);
+    expect([...open]).toEqual([...Float32Array.from(facing)]);
   });
 
   it("does not lengthen a loop when the requested slit is longer than the opening", () => {
