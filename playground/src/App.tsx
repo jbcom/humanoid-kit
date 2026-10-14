@@ -14,6 +14,7 @@ import {
   loadEyeLibrary,
   type Recipe,
   SKIN_INFLUENCES,
+  type SkinInfluences,
 } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
@@ -78,6 +79,12 @@ async function createClient(): Promise<HumanoidWorkerClient> {
   // `?wear=teeth/base,eyes/high-poly` wears only those attachments: a set the
   // pack did not bake, whose occlusion is baked at rest at load and posed after.
   const wear = params.get("wear")?.split(",").filter(Boolean);
+  // Review-only runtime quality selection for contact sheets. The public API
+  // still defaults to eight source influences when this query is absent.
+  const qualityParam = params.get("skinInfluences");
+  const quality = qualityParam === null ? undefined : Number(qualityParam);
+  if (quality !== undefined && (!Number.isInteger(quality) || quality < 4 || quality > 8))
+    throw new RangeError(`skinInfluences must be an integer from 4 to 8; got ${qualityParam}`);
   // The first figure's own targets load first; the rest stream in behind it.
   return new HumanoidWorkerClient(
     {
@@ -88,7 +95,11 @@ async function createClient(): Promise<HumanoidWorkerClient> {
       ...(clothing && { clothing }),
       firstFigureAge: initialRecipe().macros.age,
     },
-    { subdivision: 1, ...(wear && { attachments: wear }) },
+    {
+      subdivision: 1,
+      ...(wear && { attachments: wear }),
+      ...(quality !== undefined && { skinInfluences: quality as SkinInfluences }),
+    },
     worker,
   );
 }

@@ -51,6 +51,17 @@ function openSphere(r: number, segments = 24, bands = 12, open = 0.6): GraftPart
   return { positions, triangles };
 }
 
+const maxPositiveInfluences = (skinWeight: Float32Array) => {
+  let max = 0;
+  for (let v = 0; v < skinWeight.length / SKIN_INFLUENCES; v++) {
+    let positive = 0;
+    for (let k = 0; k < SKIN_INFLUENCES; k++)
+      if ((skinWeight[v * SKIN_INFLUENCES + k] as number) > 0) positive++;
+    max = Math.max(max, positive);
+  }
+  return max;
+};
+
 /** Boundary edges (each undirected edge in exactly one triangle) of a welded triangle list. */
 function openEdges(index: ArrayLike<number>, weld: ArrayLike<number>): number {
   const count = new Map<string, number>();
@@ -185,6 +196,16 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
   const head = openSphere(11);
   const graft = model.graft({ at: "neck", part: head });
   const topology = graft.topology();
+
+  it("reprojects blended graft rows to the model's runtime influence cap", () => {
+    const quality = 4;
+    const reduced = new HumanoidModel(loadFixtureAssets(), {
+      subdivision: 1,
+      skinInfluences: quality,
+    });
+    const reducedGraft = reduced.graft({ at: "neck", part: head }).topology();
+    expect(maxPositiveInfluences(reducedGraft.skinWeight)).toBeLessThanOrEqual(quality);
+  });
 
   it("names its sites", () => {
     expect(Object.keys(CUT_SITES).sort()).toEqual(

@@ -6,6 +6,11 @@
 import { evaluateSurface, type SurfaceMesh } from "../build/surfaceMesh.ts";
 import { type HumanoidAssets, jointPosition, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import type { Evaluation } from "../model/humanoidModel.ts";
+import {
+  DEFAULT_SKIN_INFLUENCES,
+  projectSkinInfluences,
+  type SkinInfluences,
+} from "../model/skinQuality.ts";
 import { restBones } from "../rig/pose.ts";
 import { type ControlMesh, type ResolvedCut, resolveFaceCut, resolvePlaneCut } from "./cut.ts";
 import { buildGraft, type Graft, type GraftCutInput } from "./graft.ts";
@@ -30,6 +35,8 @@ export interface ModelSurface {
 /** What a model gives a graft: its assets, its body faces, its surfaces and what it wears. */
 export interface ModelGraftInput {
   assets: HumanoidAssets;
+  /** Runtime cap reapplied after graft blending mixes skin rows. */
+  skinInfluences?: SkinInfluences;
   bodyFaces: Uint32Array;
   base: ModelSurface;
   /** The adult surface, when the model has one. */
@@ -172,6 +179,11 @@ export function graftOnModel(input: ModelGraftInput, spec: GraftSpec): ModelGraf
       part,
       options,
     );
+    const skin = projectSkinInfluences(g.topology, input.skinInfluences ?? DEFAULT_SKIN_INFLUENCES);
+    if (skin.skinIndex !== g.topology.skinIndex) {
+      g.topology.skinIndex = skin.skinIndex;
+      g.topology.skinWeight = skin.skinWeight;
+    }
     built.set(surface, g);
     return g;
   };

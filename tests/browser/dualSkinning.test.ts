@@ -28,6 +28,7 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 import { SKIN_INFLUENCES } from "../../src/format/assetFormat.ts";
+import { projectSkinInfluences } from "../../src/model/skinQuality.ts";
 import * as pkg from "../../src/react/index.ts";
 import {
   applyDualSkinning,
@@ -547,12 +548,16 @@ function tube() {
 const TUBE = tube();
 
 /** A skinned tube posed by three's bones (set from `rotations`), with `material`. */
-function skinned(material: MeshNormalMaterial, rotations: BoneRotations): SkinnedMesh {
+function skinned(
+  material: MeshNormalMaterial,
+  rotations: BoneRotations,
+  source: typeof TUBE = TUBE,
+): SkinnedMesh {
   const geometry = new BufferGeometry();
-  geometry.setIndex(TUBE.index);
-  geometry.setAttribute("position", new BufferAttribute(TUBE.positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(TUBE.normals, 3));
-  setSkinAttributes(geometry, TUBE.skinIndex, TUBE.skinWeight);
+  geometry.setIndex(source.index);
+  geometry.setAttribute("position", new BufferAttribute(source.positions, 3));
+  geometry.setAttribute("normal", new BufferAttribute(source.normals, 3));
+  setSkinAttributes(geometry, source.skinIndex, source.skinWeight);
   const bones = NAMES.map(() => new Bone());
   const scene = new Scene();
   NAMES.forEach((_, b) => {
@@ -615,19 +620,19 @@ function compare(a: Uint8Array, b: Uint8Array): { mean: number; off: number; cov
 }
 
 /** The same tube, posed on the CPU by the reference and drawn unskinned. */
-function posedOnCpu(rotations: BoneRotations, share: number[]): Mesh {
+function posedOnCpu(rotations: BoneRotations, share: number[], source: typeof TUBE = TUBE): Mesh {
   const geometry = new BufferGeometry();
-  geometry.setIndex(TUBE.index);
-  const n = TUBE.positions.length / 3;
+  geometry.setIndex(source.index);
+  const n = source.positions.length / 3;
   geometry.setAttribute(
     "position",
     new BufferAttribute(
       skinPositionsBlended(
         rest,
         rotations,
-        TUBE.positions,
-        TUBE.skinIndex,
-        TUBE.skinWeight,
+        source.positions,
+        source.skinIndex,
+        source.skinWeight,
         new Float32Array(n * 3),
         share,
       ),
@@ -640,9 +645,9 @@ function posedOnCpu(rotations: BoneRotations, share: number[]): Mesh {
       skinNormalsBlended(
         rest,
         rotations,
-        TUBE.normals,
-        TUBE.skinIndex,
-        TUBE.skinWeight,
+        source.normals,
+        source.skinIndex,
+        source.skinWeight,
         new Float32Array(n * 3),
         share,
       ),
@@ -690,6 +695,36 @@ describe("a skinned mesh drawn by the patched shader", () => {
     expect(compare(patched, plain).off).toBe(0);
     expect(compare(patched, plain).mean).toBeLessThan(0.25);
     bones.dispose();
+  });
+
+  it("matches its CPU pose at every runtime influence quality", () => {
+    const rotations = (POSES[1] as [string, BoneRotations])[1];
+    const weighted = {
+      ...TUBE,
+      skinWeight: Float32Array.from({ length: TUBE.skinWeight.length }, (_, i) => {
+        const place = i % SKIN_INFLUENCES;
+        return [0.35, 0.2, 0.14, 0.1, 0.08, 0.06, 0.04, 0.03][place] as number;
+      }),
+      skinIndex: Uint16Array.from({ length: TUBE.skinIndex.length }, (_, i) => {
+        const vertex = Math.floor(i / SKIN_INFLUENCES);
+        return (vertex + i) % NAMES.length;
+      }),
+    };
+    for (const quality of [4, 5, 6, 7, 8] as const) {
+      const projected = projectSkinInfluences(weighted, quality);
+      const source = { ...weighted, ...projected } as typeof TUBE;
+      const material = new MeshNormalMaterial();
+      const bones = new DualBones(NAMES.length, SHARE);
+      bones.update(rest, rotations);
+      applyDualSkinning(material, bones);
+      const gpu = draw(skinned(material, rotations, source));
+      const cpu = draw(posedOnCpu(rotations, SHARE, source));
+      const { mean, off, covered } = compare(gpu, cpu);
+      expect(covered, `${quality} influences`).toBeGreaterThan(0.05);
+      expect(mean, `${quality} influences`).toBeLessThan(1.5);
+      expect(off, `${quality} influences`).toBeLessThan(0.004);
+      bones.dispose();
+    }
   });
 
   it("differs from three's linear skinning where bones do ask: a twisted joint does not collapse", () => {

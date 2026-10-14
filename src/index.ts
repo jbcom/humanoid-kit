@@ -58,6 +58,7 @@ export * from "./model/humanoidModel.ts";
 export * from "./model/outfit.ts";
 export * from "./model/proxy.ts";
 export * from "./model/rigidFit.ts";
+export * from "./model/skinQuality.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";
