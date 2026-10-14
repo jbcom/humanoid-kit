@@ -251,8 +251,10 @@ describe("the organ's shape against the literature", { timeout: 300_000 }, () =>
     }
   });
 
-  it("lays the flat reservoir on the skin it covers, as rest does", () => {
-    // Every vertex of the flat shape on the cap's surface, the skin at rest.
+  it("lays the flat reservoir on the skin it covers, as rest does, on its smooth form", () => {
+    // Every vertex of the flat shape on the skin at rest: within a fraction of a millimetre
+    // of the cap's polygons, which it smooths over rather than lies on (on them, the
+    // surface's subdivision drew their edges as creases radiating from the middle).
     const cap = capSurface(root);
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(Float32Array.from(cap.positions), 3));
@@ -260,11 +262,15 @@ describe("the organ's shape against the literature", { timeout: 300_000 }, () =>
     const bvh = new MeshBVH(geometry);
     const hit = { point: new Vector3(), distance: 0, faceIndex: 0 };
     let far = 0;
+    let off = 0;
     for (const p of flatShape(root, DORSAL)) {
       bvh.closestPointToPoint(new Vector3(p[0], p[1], p[2]), hit);
       far = Math.max(far, hit.distance);
+      off += hit.distance > 1e-5 ? 1 : 0;
     }
-    expect(far).toBeLessThan(1e-5);
+    // Measured: 1454 vertices off the facets, by at most 0.46 mm.
+    expect(off).toBeGreaterThan(0);
+    expect(far).toBeLessThan(1e-3);
     expect(FLAT_SIZE).toBeGreaterThan(0);
     expect(FLAT_SIZE).toBeLessThan((PHALLUS_KEYS[0] as { size: number }).size / 10);
   });

@@ -912,11 +912,83 @@ export function flatShape(root: ReservoirRoot, reference: Vec3): RootShape {
   // The line lies just inside the loop, so the disc inside it is the cap's but for the
   // band between them: read the cap within the line's own share of its area.
   const inner = Math.min(1, ...line.map((p) => discRadius(capMesh, capUv, p)));
-  return placedOnDisc(root, line, lineParam, (share, t) => {
+  // On the skin's smooth form, not its facets: the cap's polygons are flat, and many
+  // vertices laid on each kept its planes, which the surface's subdivision then drew as
+  // creases radiating from the middle. Each point keeps its place across the root and
+  // takes its height from a quadric fitted to the loop and the cap.
+  const smooth = smoothHeight(root);
+  return placedOnDisc(root, line.map(smooth), lineParam, (share, t) => {
     const r = capArea.radiusAt(share * capArea.shareAt(inner));
     const angle = 2 * Math.PI * t;
-    return lookup.point(r * Math.cos(angle), r * Math.sin(angle));
+    return smooth(lookup.point(r * Math.cos(angle), r * Math.sin(angle)));
   });
+}
+
+/**
+ * The skin over a root as a smooth surface: the height along the root's normal, as a
+ * quadric of the place across it, fitted by least squares to the loop and the cap at
+ * rest. Returns the point moved along the normal onto it.
+ */
+function smoothHeight(root: ReservoirRoot): (p: Vec3) => Vec3 {
+  const N = root.normal;
+  const helper: Vec3 = Math.abs(N[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const U = cross(N, helper);
+  const ul = len(U);
+  const u: Vec3 = [U[0] / ul, U[1] / ul, U[2] / ul];
+  const v = cross(N, u);
+  const c = root.centre;
+  const local = (p: Vec3) => {
+    const d = sub(p, c);
+    return { x: dot(d, u), y: dot(d, v), h: dot(d, N) };
+  };
+  const basis = (x: number, y: number) => [1, x, y, x * x, x * y, y * y];
+  // Normal equations of the six coefficients.
+  const A = Array.from({ length: 6 }, () => new Array<number>(6).fill(0));
+  const b = new Array<number>(6).fill(0);
+  for (const p of [...root.loop, ...root.cap.map((q) => q.position)]) {
+    const { x, y, h } = local(p);
+    const f = basis(x, y);
+    for (let i = 0; i < 6; i++) {
+      b[i] = (b[i] as number) + (f[i] as number) * h;
+      for (let j = 0; j < 6; j++)
+        (A[i] as number[])[j] =
+          ((A[i] as number[])[j] as number) + (f[i] as number) * (f[j] as number);
+    }
+  }
+  const k = solveSmall(A, b);
+  return (p) => {
+    const { x, y, h } = local(p);
+    const f = basis(x, y);
+    const want = f.reduce((s, fi, i) => s + fi * (k[i] as number), 0);
+    const d = want - h;
+    return [p[0] + N[0] * d, p[1] + N[1] * d, p[2] + N[2] * d];
+  };
+}
+
+/** Solves a small dense system by Gaussian elimination with partial pivoting. */
+function solveSmall(A: number[][], b: number[]): number[] {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i] as number]);
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r++)
+      if (
+        Math.abs((M[r] as number[])[col] as number) >
+        Math.abs((M[pivot] as number[])[col] as number)
+      )
+        pivot = r;
+    [M[col], M[pivot]] = [M[pivot] as number[], M[col] as number[]];
+    const p = (M[col] as number[])[col] as number;
+    if (Math.abs(p) < 1e-18) throw new Error("transfer: the skin's quadric is degenerate");
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const f = ((M[r] as number[])[col] as number) / p;
+      for (let c2 = col; c2 <= n; c2++)
+        (M[r] as number[])[c2] =
+          ((M[r] as number[])[c2] as number) - f * ((M[col] as number[])[c2] as number);
+    }
+  }
+  return M.map((row, i) => (row[n] as number) / (row[i] as number));
 }
 
 /**
