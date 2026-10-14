@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
+import VitestSkipReporter from "./scripts/ci/vitestSkipReporter.ts";
 import { browserRun } from "./scripts/lib/browserRun.ts";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -13,6 +14,16 @@ const constrainedCi = Boolean(process.env.CI);
 // A shard covers only a subset of test files. Coverage thresholds are meaningful
 // only after the required CI merge job combines every labelled shard.
 const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
+// A name filter marks every non-selected test as skipped. Shards select files,
+// so their selected files still report real environmental skips to the ledger.
+const skipLedgerEnabled = !process.argv.some(
+  (arg) =>
+    arg === "-t" ||
+    arg === "--testNamePattern" ||
+    arg.startsWith("--testNamePattern=") ||
+    arg === "--test-name-pattern" ||
+    arg.startsWith("--test-name-pattern="),
+);
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -36,36 +47,44 @@ export default defineConfig({
     ],
   },
   test: {
-    reporters: ["default"],
+    reporters: ["default", ...(skipLedgerEnabled ? [new VitestSkipReporter()] : [])],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
-      // The framework-free core. src/react, src/render, src/editor/ui and
-      // src/worker are proven in the browser project and the Playwright suite.
-      include: [
-        "src/bake/**/*.ts",
-        "src/build/**/*.ts",
-        "src/editor/*.ts",
-        "src/format/**/*.ts",
-        "src/makehuman/**/*.ts",
-        "src/mhclo/**/*.ts",
-        "src/model/**/*.ts",
-        "src/morph/**/*.ts",
-        "src/presence/**/*.ts",
-        "src/recipe/**/*.ts",
-        "src/rig/**/*.ts",
-        "src/subdiv/**/*.ts",
-        "src/surface/**/*.ts",
-      ],
+      include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.d.ts"],
       ...(partialCoverageShard
         ? {}
         : {
             thresholds: {
-              lines: 90,
-              functions: 90,
-              statements: 90,
-              branches: 85,
+              statements: 92,
+              branches: 82,
+              functions: 89,
+              lines: 93,
+              "src/{bake,build,format,makehuman,mhclo,morph,presence,recipe,subdiv,surface}/**": {
+                statements: 90,
+                branches: 85,
+                functions: 90,
+                lines: 90,
+              },
+              "src/editor/*.ts": {
+                statements: 90,
+                branches: 85,
+                functions: 90,
+                lines: 90,
+              },
+              "src/rig/**": {
+                statements: 97,
+                branches: 84,
+                functions: 100,
+                lines: 99,
+              },
+              "src/model/**": {
+                statements: 86,
+                branches: 69,
+                functions: 91,
+                lines: 87,
+              },
             },
           }),
     },

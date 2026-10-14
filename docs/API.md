@@ -484,6 +484,7 @@ interface BodyArtRecipe {
 new HumanoidModel(assets: HumanoidAssets, options?: {
   subdivision?: 0 | 1 | 2
   skinInfluences?: 4 | 5 | 6 | 7 | 8
+  runtimeOcclusionRays?: number
 })
 ```
 
@@ -494,6 +495,16 @@ weights, renormalise them and zero the remaining places in the same eight-wide
 layout. The setting therefore reaches topology, attachment and garment binding,
 worker rig data, folds, grounding, occlusion and the GPU attributes together; it
 does not repack or mutate source assets.
+
+`runtimeOcclusionRays` is a positive integer for a runtime bake of an attachment
+set the loaded pack did not bake. It defaults to 32, the previous fixed runtime
+count. This differs from the standalone `bakeOcclusion` utility's 48-ray default.
+Fewer rays reduce CPU ray-casts linearly and change only that generated
+attachment-lighting field; they do not change the packed attachment corner bakes
+or the packed body-cavity occlusion, and do not change geometry. The worker and
+`<Humanoid>` receive this setting through the `ModelOptions` supplied to their
+`HumanoidWorkerClient`. Hip and knee folds have no reduced-detail setting: they
+continue to use their full solved source fields whenever a pose needs them.
 
 - `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
   the files its Modelling > Custom tab lists from `data/custom`. Each
@@ -1376,6 +1387,19 @@ slices 1 and 2 of its build plan.
   measured final hand frame to the target in metres; `target` and `hand` are
   world points. `handContactSide(definition, contact, role)` reads which hand
   a contact asks of a role, or null.
+- `solveSiteContact(input)`: closes a skinned point of one hand on a named
+  landmark of the same figure. It is framework-free and takes the evaluated
+  `SiteContactFigure` (including the evaluated render `index`), source rotations,
+  an `effector`, a `site`, an optional `shape` (`point`, `pinch`, `flat`, `cup`, `claw` or `fist`) and `out`. It
+  returns its measured `SiteContactReport`; use its `gap`, `collision`, `status` and
+  `orientationError` as the result, never a bone-centre approximation. For broad
+  `flat`/`cup` palm contact, `contact` is explicit `volar-palm-support`: it
+  reports the selected primary-metacarpal source render `vertex`, its final
+  `position` and `normal`, the stable `palm.X` `centreVertex`, and the
+  `centreToContact` offset. `palm.X` remains the centre landmark; it is not
+  silently redefined as the broad contact.
+  `handShapeRotations` can also apply any `HAND_SHAPES` entry separately to a
+  pose buffer. The caller chooses the gesture appropriate to its action.
 - `InteractionEvent` is delivered through `on(participant, listener)` to both
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,
@@ -1797,6 +1821,9 @@ const hands = useHumanoidAffordances();
 - `frame(id, space?, out?)`, `landmark(id, space?, out?)` and `vertex(v,
   space?, out?)`: frames on the figure as the GPU draws it, in `"figure"` or
   `"world"` space; null until it is drawn.
+  Surface landmark ids include `kneecap.L` and `kneecap.R`, the forward-facing
+  patella skin; `knee.L` and `knee.R` remain joint-centre landmarks rather than
+  contact surfaces.
 - `channel(id)`: an aperture's channel in the figure's space, a curved path of
   `CHANNEL_SECTIONS` sections (`Channel.sections`: centre, plane normal, axes,
   half-sizes, depth along the path). `place(id, worldPoint)`: how far along it

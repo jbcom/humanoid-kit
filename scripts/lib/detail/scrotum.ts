@@ -24,7 +24,7 @@ import { type Form, formOf, solveFactor, sweep } from "./form.ts";
 import { FLAT_SIZE, sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
 import type { SculptPart } from "./sculpt.ts";
-import { flatShape, projectPart } from "./transfer.ts";
+import { fairCap, flatShape, projectPart } from "./transfer.ts";
 
 /** The size modifier: a virtual, one-sided one, 0 (none) to 1. */
 export const TESTES_SIZE = "genitals/testes-size";
@@ -176,7 +176,7 @@ export class SculptedScrotum {
 
   /** The sac grown or shrunk by `f`, resting on the skin round its root. */
   private drawn(f: number): RootShape {
-    return this.skin.rest(this.root, this.sized(f));
+    return fairCap(this.root, this.skin.rest(this.root, this.sized(f)));
   }
 
   /** The sac at a key, resting on the skin round its root. */

@@ -61,8 +61,8 @@ const FINGER_PADS: readonly Affordance[] = (["L", "R"] as const).flatMap((side) 
 
 /**
  * The body's own sites a figure of any age may touch with its own hand
- * (docs/SELF-CONTACT.md, R10): idle fidgets such as picking the nose or
- * tugging an ear lobe. Each is a core affordance that says it is
+ * (docs/SELF-CONTACT.md, R10): idle fidgets such as picking the nose,
+ * tugging an ear lobe or hugging the knees. Each is a core affordance that says it is
  * not the adult anatomy's, which is what keeps a child's fidget naming it for
  * all audiences (`audienceOf` treats an id the core does not know as adult).
  * The nipples are among them: a child touches its own chest, and nursing puts
@@ -80,6 +80,8 @@ export const SELF_CONTACT_SITES = [
   "nipple.L",
   "nipple.R",
   "navel",
+  "kneecap.L",
+  "kneecap.R",
 ] as const satisfies readonly LandmarkId[];
 
 /** The core's affordances. */
@@ -111,6 +113,8 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("lower-lip", "contact", { landmark: "lower-lip" }),
   core("palm.L", "contact", { landmark: "palm.L" }),
   core("palm.R", "contact", { landmark: "palm.R" }),
+  core("kneecap.L", "contact", { landmark: "kneecap.L" }),
+  core("kneecap.R", "contact", { landmark: "kneecap.R" }),
   ...FINGER_PADS,
 ];
 

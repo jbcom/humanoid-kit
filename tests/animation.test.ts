@@ -18,7 +18,6 @@ import {
 } from "../scripts/lib/packAnimations.ts";
 import { QUATERNIUS_LIBRARIES, retargetTarget } from "../scripts/lib/packQuaternius.ts";
 import { retarget } from "../scripts/lib/retarget.ts";
-import { readZip } from "../scripts/lib/zip.ts";
 import { Animator, DEFAULT_FADE } from "../src/animation/animator.ts";
 import { CLEARANCE_TOLERANCE, overlaps } from "../src/animation/clearance.ts";
 import {
@@ -632,17 +631,11 @@ describe("clearance: no part of the body through another", () => {
 });
 
 describe("the retarget", () => {
-  const vendored = path.join(
-    process.env.HOME ?? "",
-    "src/reference-codebases/vendored-cc0/quaternius",
-  );
-  const have = QUATERNIUS_LIBRARIES.every((l) => fs.existsSync(path.join(vendored, l.archive)));
-
-  // The libraries' own T-pose, put through the retarget, is the target's own: every bone, mapped or not.
-  it.skipIf(!have)("takes a source in its T-pose to the target in its own", () => {
-    const lib = QUATERNIUS_LIBRARIES[0] as (typeof QUATERNIUS_LIBRARIES)[number];
-    const zip = readZip(fs.readFileSync(path.join(vendored, lib.archive)));
-    const rig = readRig(zip.read(lib.glb));
+  // The vendored fixture retains UAL1's source skeleton and A_TPose only; see its provenance.
+  it("takes a source in its T-pose to the target in its own", () => {
+    const rig = readRig(
+      fs.readFileSync(path.join(import.meta.dirname, "fixtures/quaternius-ual1-tpose.glb")),
+    );
     const tpose = rig.animations.find((a) => a.name === "A_TPose");
     if (!tpose) throw new Error("no A_TPose");
     const target = retargetTarget(path.resolve(import.meta.dirname, "../packs/body/data"));
