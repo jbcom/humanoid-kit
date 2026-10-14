@@ -4,7 +4,10 @@
 weights per runtime vertex. The body pack remains eight-wide and unchanged. At a
 lower setting the runtime retains the heaviest weights, renormalises them and
 zeros the remaining places; all CPU and GPU consumers still receive eight-wide
-arrays.
+arrays. Subdivision, attachment bindings, adult reservoir evaluation and graft
+blending can each combine rows, so the runtime reapplies that same projection
+to their final derived skins. Every exposed runtime row therefore retains at
+most the chosen count.
 
 The default is 8. It returns the source skin-array views unchanged and is the
 only fidelity setting with zero error against the MakeHuman source weights.

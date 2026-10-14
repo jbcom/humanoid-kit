@@ -2,11 +2,24 @@ import { describe, expect, it } from "vitest";
 import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { HumanoidModel, type ModelOptions } from "../src/model/humanoidModel.ts";
 import { projectSkinInfluences, type SkinInfluences } from "../src/model/skinQuality.ts";
-import { loadFixtureAssets } from "./fixtures.ts";
+import { createRecipe } from "../src/recipe/recipe.ts";
+import { loadClothedAssets, loadFixtureAssets } from "./fixtures.ts";
+import { loadHairFixtureAssets } from "./hairFixtures.ts";
 
 const source = {
   skinIndex: Uint8Array.from([4, 9, 3, 7, 1, 8, 5, 6]),
   skinWeight: Float32Array.from([0.03, 0.31, 0.02, 0.21, 0.09, 0.19, 0.15, 0]),
+};
+
+const maxPositiveInfluences = (skin: { skinWeight: Float32Array }) => {
+  let max = 0;
+  for (let v = 0; v < skin.skinWeight.length / SKIN_INFLUENCES; v++) {
+    let positive = 0;
+    for (let k = 0; k < SKIN_INFLUENCES; k++)
+      if ((skin.skinWeight[v * SKIN_INFLUENCES + k] as number) > 0) positive++;
+    max = Math.max(max, positive);
+  }
+  return max;
 };
 
 describe("runtime skin influence quality", () => {
@@ -70,4 +83,48 @@ describe("runtime skin influence quality", () => {
       expect(retained).toBeLessThanOrEqual(4);
     }
   });
+
+  it("reprojects every subdivided and bound runtime surface after row mixing", () => {
+    // A source-only projection passed this test before the final derived-skin
+    // projection: Catmull-Clark and bindings reintroduced fifth through eighth
+    // positive weights on their render rows.
+    const quality = 4;
+    const body = new HumanoidModel(loadFixtureAssets(), {
+      subdivision: 1,
+      skinInfluences: quality,
+    });
+    expect(maxPositiveInfluences(body.topology().body)).toBeLessThanOrEqual(quality);
+    for (const attachment of body.topology().attachments)
+      expect(maxPositiveInfluences(attachment)).toBeLessThanOrEqual(quality);
+
+    const hair = new HumanoidModel(loadHairFixtureAssets(), {
+      subdivision: 1,
+      skinInfluences: quality,
+    });
+    expect(maxPositiveInfluences(hair.hairTopology("short02"))).toBeLessThanOrEqual(quality);
+
+    const clothed = new HumanoidModel(loadClothedAssets(), {
+      subdivision: 1,
+      skinInfluences: quality,
+    });
+    expect(maxPositiveInfluences(clothed.garmentTopology("shoes/shoes03"))).toBeLessThanOrEqual(
+      quality,
+    );
+
+    const adult = new HumanoidModel(loadFixtureAssets(true), {
+      subdivision: 1,
+      skinInfluences: quality,
+    });
+    const topology = adult.adultSurface();
+    if (!topology) throw new Error("adult fixture has no surface");
+    expect(maxPositiveInfluences(topology)).toBeLessThanOrEqual(quality);
+    const evaluated = adult.evaluate(
+      createRecipe({
+        macros: { age: 30, gender: 1 },
+        modifiers: { "genitals/anal-canal": 0 },
+      }),
+    );
+    if (!evaluated.skin) throw new Error("adult fixture did not evaluate reservoir skin");
+    expect(maxPositiveInfluences(evaluated.skin)).toBeLessThanOrEqual(quality);
+  }, 180_000);
 });

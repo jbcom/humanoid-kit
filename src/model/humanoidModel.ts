@@ -647,6 +647,8 @@ export class HumanoidModel {
   private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
   /** Runtime projection of the pack skin; its arrays remain eight-wide for every consumer. */
   private readonly skin: RuntimeSkinWeights<Uint8Array>;
+  /** Runtime influence cap, reapplied after any operation that combines skin rows. */
+  private readonly skinInfluences: SkinInfluences;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** Shared, immutable source topology for every age's chest calculation. */
@@ -673,9 +675,10 @@ export class HumanoidModel {
 
   constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
     this.assets = assets;
+    this.skinInfluences = options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES;
     this.skin = projectSkinInfluences(
       { skinIndex: assets.skinIndex, skinWeight: assets.skinWeight },
-      options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES,
+      this.skinInfluences,
     );
     this.chestMesh = bodyMesh(assets, assets.manifest);
     this.chestTrunk = trunkMask(assets, assets.manifest);
@@ -729,15 +732,17 @@ export class HumanoidModel {
     for (const a of wearing) for (const v of a.deleteVerts) this.mountedVisible[v] = 0;
     this.level = level;
     this.body = part(
-      buildSurfaceMesh(
-        {
-          ...assets,
-          vertexCount: assets.manifest.vertexCount,
-          skinIndex: this.skin.skinIndex,
-          skinWeight: this.skin.skinWeight,
-        },
-        bodyFaces,
-        level,
+      this.projectSurfaceSkin(
+        buildSurfaceMesh(
+          {
+            ...assets,
+            vertexCount: assets.manifest.vertexCount,
+            skinIndex: this.skin.skinIndex,
+            skinWeight: this.skin.skinWeight,
+          },
+          bodyFaces,
+          level,
+        ),
       ),
     );
     this.bodyTrianglesPerFace = 2 * 4 ** level;
@@ -942,18 +947,36 @@ export class HumanoidModel {
     level: number,
     skin = bindingSkin(asset, this.skin.skinIndex, this.skin.skinWeight),
   ): SurfaceMesh {
-    return buildSurfaceMesh(
-      {
-        vertexCount: asset.entry.vertexCount,
-        faceVerts: asset.faceVerts,
-        faceUvs: asset.faceUvs,
-        uvs: asset.uvs,
-        skinIndex: skin.index,
-        skinWeight: skin.weight,
-      },
-      null,
-      level,
+    return this.projectSurfaceSkin(
+      buildSurfaceMesh(
+        {
+          vertexCount: asset.entry.vertexCount,
+          faceVerts: asset.faceVerts,
+          faceUvs: asset.faceUvs,
+          uvs: asset.uvs,
+          skinIndex: skin.index,
+          skinWeight: skin.weight,
+        },
+        null,
+        level,
+      ),
     );
+  }
+
+  /**
+   * Reasserts the runtime influence policy after subdivision or a binding has
+   * mixed neighbouring rows. Full quality returns the exact derived arrays.
+   */
+  private projectSurfaceSkin(mesh: SurfaceMesh): SurfaceMesh {
+    const skin = projectSkinInfluences(mesh, this.skinInfluences);
+    return skin.skinIndex === mesh.skinIndex ? mesh : { ...mesh, ...skin };
+  }
+
+  /** Reasserts the runtime policy for a dynamically evaluated reservoir skin. */
+  private projectEvaluatedSkin<T extends Uint16Array>(skin: RuntimeSkinWeights<T> | null) {
+    if (!skin) return null;
+    const projected = projectSkinInfluences(skin, this.skinInfluences);
+    return projected.skinIndex === skin.skinIndex ? skin : projected;
   }
 
   /**
@@ -1851,7 +1874,7 @@ export class HumanoidModel {
       closedLipNormals(adult.skinning.closure, closed, body.positions, body.normals);
       closedLipShade(adult.skinning.closure, adult.topology.canals.of, closed, canalShade);
     }
-    const skin =
+    const skin = this.projectEvaluatedSkin(
       adult && pushed
         ? evaluatedSkin(
             adult.topology,
@@ -1859,7 +1882,8 @@ export class HumanoidModel {
             rootShares(adult.skinning, pushed, body.positions),
             closed,
           )
-        : null;
+        : null,
+    );
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -2314,6 +2338,7 @@ export class HumanoidModel {
     const visible = faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible);
     return {
       assets: { ...this.assets, ...this.skin },
+      skinInfluences: this.skinInfluences,
       bodyFaces: this.bodyFaces,
       base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
       adult: () => {
@@ -2466,7 +2491,9 @@ export class HumanoidModel {
       shares = rootShares(adult.skinning, pushed, drawn.positions);
     }
     const closed = adult && displacement ? this.closedShares(detail) : null;
-    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares, closed) : null;
+    const skin = this.projectEvaluatedSkin(
+      adult ? evaluatedSkin(adult.topology, adult.skinning, shares, closed) : null,
+    );
     const folds = solved.map((fold) => {
       // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
       // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
@@ -2496,12 +2523,19 @@ export class HumanoidModel {
     // Built from every body face like the base surface, so what a worn thing
     // hides is a mask over its triangles here too (`adultBodyIndex`), and the
     // lattice's numbering is the same whatever is worn.
-    const mesh = buildRefinedSurfaceMesh(
-      { ...this.assets, vertexCount: this.assets.manifest.vertexCount },
-      this.bodyFaces,
-      spec,
-      this.level,
-      this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [],
+    const mesh = this.projectSurfaceSkin(
+      buildRefinedSurfaceMesh(
+        {
+          ...this.assets,
+          vertexCount: this.assets.manifest.vertexCount,
+          skinIndex: this.skin.skinIndex,
+          skinWeight: this.skin.skinWeight,
+        },
+        this.bodyFaces,
+        spec,
+        this.level,
+        this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [],
+      ),
     );
     this.checkDetail(mesh);
     const n = this.assets.manifest.vertexCount;
