@@ -5,12 +5,23 @@
 import { Canvas, type RootState, useThree } from "@react-three/fiber";
 import { bodyPack } from "humanoid-kit-body";
 import { Component, type ReactNode, useEffect } from "react";
-import { type PerspectiveCamera, type Scene, type SkinnedMesh, Vector3 } from "three";
+import {
+  MeshBasicMaterial,
+  type PerspectiveCamera,
+  type Scene,
+  type SkinnedMesh,
+  SphereGeometry,
+  Vector3,
+} from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import bodyManifest from "../../packs/body/data/manifest.json";
 import { AttachedFluidField, type FluidCoverageSnapshot } from "../../src/fluid/attachedField.ts";
+import {
+  type DetachedFluidParticle,
+  DetachedFluidParticles,
+} from "../../src/fluid/detachedParticles.ts";
 import { fluidFrameFromPose } from "../../src/fluid/posedSurfaceFrame.ts";
 import { FluidState, type FluidSurfaceAnchor } from "../../src/fluid/state.ts";
 import { loadHumanoidAssets } from "../../src/format/assetFormat.ts";
@@ -19,6 +30,7 @@ import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { Humanoid, HumanoidProvider, StudioStage } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import { bindFluidWetFilmCoverage } from "../../src/render/fluidCoverage.ts";
+import { FluidParticleRenderer } from "../../src/render/fluidParticles.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
@@ -36,6 +48,8 @@ type Proof = {
   initial: SupportMetadata;
   updated: SupportMetadata;
   releasedKg: number;
+  spawnedParticles: readonly DetachedFluidParticle[];
+  movedParticles: readonly DetachedFluidParticle[];
 };
 
 type SupportMetadata = {
@@ -229,6 +243,21 @@ function changedPixels(before: Uint8Array, after: Uint8Array): number {
   return changed;
 }
 
+function worldParticles(
+  body: SkinnedMesh,
+  particles: readonly DetachedFluidParticle[],
+): readonly DetachedFluidParticle[] {
+  body.updateWorldMatrix(true, false);
+  return particles.map((particle) => {
+    const positionM = body.localToWorld(new Vector3(...particle.positionM)).toArray() as [
+      number,
+      number,
+      number,
+    ];
+    return { ...particle, positionM };
+  });
+}
+
 async function proof(): Promise<Proof> {
   const assets = await loadHumanoidAssets({ body: bodyPack });
   const model = new HumanoidModel(assets, { subdivision: 1 });
@@ -282,6 +311,15 @@ async function proof(): Promise<Proof> {
     })),
   );
   const detached = field.coverageSnapshot(flexedFrame);
+  const particles = new DetachedFluidParticles(state, {
+    maxParticles: released.length,
+    gravityMps2: [0, -1, 0],
+  });
+  const spawnedParticles = particles.spawn(
+    released.map((release) => ({ release, velocityMps: [0.18, 0.1, 0] as const })),
+  );
+  particles.stepFixed(4);
+  const movedParticles = particles.frame();
   return {
     rest,
     flexed,
@@ -294,6 +332,8 @@ async function proof(): Promise<Proof> {
     initial: supportMetadata(restFrame, rest),
     updated: supportMetadata(flexedFrame, flexed),
     releasedKg: released.reduce((total, release) => total + release.massKg, 0),
+    spawnedParticles,
+    movedParticles,
   };
 }
 
@@ -439,10 +479,25 @@ describe("posed source-body wet-film coverage", () => {
       const detachedPixels = renderedPixels(state());
       expect(detachedTexels).toBeLessThan(fullTexels);
       expect(changedPixels(fullPixels, detachedPixels)).toBeGreaterThan(0);
+      const particleGeometry = new SphereGeometry(0.012, 8, 6);
+      const particleMaterial = new MeshBasicMaterial({ color: 0x9bdcff });
+      const particleRenderer = new FluidParticleRenderer({
+        capacity: source.movedParticles.length,
+        geometry: particleGeometry,
+        material: particleMaterial,
+      });
+      state().scene.add(particleRenderer.mesh);
+      particleRenderer.update(worldParticles(wetFlexed, source.spawnedParticles));
+      const spawnedPixels = renderedPixels(state());
+      particleRenderer.update(worldParticles(wetFlexed, source.movedParticles));
+      const movedPixels = renderedPixels(state());
+      expect(changedPixels(detachedPixels, spawnedPixels)).toBeGreaterThan(0);
+      expect(changedPixels(spawnedPixels, movedPixels)).toBeGreaterThan(0);
       const receipt = [
         "POSE: flexed — left dry / right partially detached water support",
         "shared static LayerAtlas: same texture object",
         `water: ${source.detached.cells.length}/${source.updated.occupiedTriangles} attached triangles after ${source.releasedKg.toFixed(4)} kg detached`,
+        `detached particles: ${source.movedParticles.length}, mass ${source.releasedKg.toFixed(4)} kg; caller velocity and gravity advance four fixed steps`,
         `vertex interpolation reaches ${source.updated.interpolatedFanTriangles} incident triangles (+${source.updated.interpolatedFanTriangles - source.updated.occupiedTriangles} support expansion)`,
         `attached mass: ${source.flexed.attachedKg.toFixed(4)} kg; coverage is support occupancy, not optical alpha or thickness`,
       ].join("\n");
@@ -454,6 +509,9 @@ describe("posed source-body wet-film coverage", () => {
           element: screen.container.querySelector("[data-fluid-wet-film-figure]") as HTMLElement,
           path: "../../test-results/fluid-wet-film-figure/flexed-dry-wet-source-body.png",
         });
+      particleRenderer.dispose();
+      particleGeometry.dispose();
+      particleMaterial.dispose();
     },
     LOAD.timeout + 30_000,
   );

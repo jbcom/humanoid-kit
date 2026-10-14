@@ -28,6 +28,25 @@ both the cells and ledger unchanged. This is detachment bookkeeping and posed
 release output, not a particle simulator, collision, contact transfer, or a
 rendered droplet claim.
 
+## Detached particle motion
+
+`DetachedFluidParticles` consumes those exact releases. Each spawn carries a
+caller-selected initial velocity in metres per second; its bounded integrator
+accepts caller-selected gravity in metres per second squared and advances only
+an integer number of `FluidState.fixedStepSeconds` with semi-implicit Euler
+integration. It never injects, detaches, settles, or otherwise rewrites mass:
+the sum of live particle masses must stay within the existing state's
+`detachedKg` ledger. Its fixed steps advance the same `FluidState` checkpoint
+clock, so repeated calls with equal release order, velocities, gravity, and
+step count reproduce the same particle frame.
+
+`src/render/fluidParticles.ts` is a narrow Three adapter. It instances
+caller-owned geometry and material at those SI positions and adds no
+`SkinMaterial` uniform or texture. Geometry, material, visual radius, and
+colour remain caller choices; this system does not assign a fluid optical
+profile. There is no collision, contact transfer, pooling, evaporation, or
+terminal settlement in this slice.
+
 ## Coverage output
 
 `AttachedFluidField.coverageSnapshot(frame)` is an immutable, renderer-neutral
