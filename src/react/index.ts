@@ -51,6 +51,15 @@ export {
   useHumanoidClient,
   useHumanoidReady,
 } from "./Humanoid.tsx";
+export {
+  Interactable,
+  type InteractableProps,
+  type InteractionRef,
+  InteractionsProvider,
+  useInteraction,
+  useInteractionEvents,
+  useInteractions,
+} from "./interaction.tsx";
 export { Miniatures, type MiniaturesProps } from "./Miniatures.tsx";
 export {
   PresenceProvider,
