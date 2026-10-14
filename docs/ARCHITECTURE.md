@@ -3694,6 +3694,34 @@ array, an `Array.from`, a render result or a literal of more than sixteen
 elements to a raw `toEqual`. It reads source text, so it cannot see a large
 array that arrives out of a function declared in another file.
 
+### Test tolerances and browser paths
+
+Every comparison keeps the bound in the test that owns its claim. Pure geometry,
+weights and recipes use exact equality where the representation permits it, or
+the test's explicit `toBeCloseTo` precision. GPU-position parity uses the
+`2e-5` metre float32 skinning bound in `tests/browser/affordanceGpu.test.tsx`.
+Colour parity uses `e2e/colour-parity.spec.ts`: ΔE00 at most 4.5, palette
+spread at most 3, absolute lightness error at most 4, lightness spread at most
+5, chroma error at most 7 and hue error at most 5 degrees. A threshold changes
+only with a measured replacement claim; a renderer, platform or timeout never
+justifies a relaxed comparison.
+
+SwiftShader (`HK_GPU=software` under `xvfb-run`) is the repeatable CI execution
+path. It has the longer 120 second browser-test timeout because it is slower;
+it is not visual acceptance. Headed local Chromium and the admitted headless
+Metal render lane provide the hardware evidence. Results from those paths are
+compared to the assertion that names the path, never by silently widening an
+assertion for a different renderer.
+
+The Vitest and Playwright skip ledgers record every observed skip with its
+declared reason. CI fails for a skip that is not in the finite expected-skip
+ledger; an expected skip is still visible in the emitted count. Dedicated
+inspection fixtures remain opt-in. Alpha-to-coverage assertions may skip only
+on the SwiftShader software-reference path; the admitted Metal lane rejects
+the same skip, because it is the canonical GPU proof. The Quaternius retarget
+identity check uses a source-backed, CC0 skeleton-and-T-pose fixture in
+`tests/fixtures/`, so it runs in every unit job without a developer-home path.
+
 ## Public demo
 
 The GitHub Pages demo ships the body pack and the hair pack (both CC0, neither
