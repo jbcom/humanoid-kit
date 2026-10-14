@@ -10,6 +10,24 @@ The bounded field rejects a new triangle/material identity at capacity rather
 than coalescing or discarding it. It has no renderer, droplets, contact
 transfer, residue, adult aperture adapter, or mesh changes.
 
+## Explicit detachment
+
+`AttachedFluidField.detach(frame, requests)` is the first bounded detachment
+operation. A caller supplies each posed triangle, material identity, and mass
+to release in kilograms; this field does not invent a runoff threshold, drop
+radius, or material property. It prevalidates every request against the live
+sparse cells, then atomically debits those cells and transfers the exact total
+from `attachedKg` to `FluidState`'s `detachedKg` ledger.
+
+Its immutable releases carry the matching frame's triangle, source vertex IDs,
+barycentric position in metres, and surface normal. They are renderer-neutral
+handoff points for a later bounded droplet adapter. A full-cell release removes
+that triangle from the next wet-film coverage snapshot; a partial release keeps
+the occupied support with its reduced conserved mass. Rejected batches leave
+both the cells and ledger unchanged. This is detachment bookkeeping and posed
+release output, not a particle simulator, collision, contact transfer, or a
+rendered droplet claim.
+
 ## Coverage output
 
 `AttachedFluidField.coverageSnapshot(frame)` is an immutable, renderer-neutral

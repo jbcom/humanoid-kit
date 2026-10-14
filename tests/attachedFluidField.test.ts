@@ -67,6 +67,38 @@ describe("AttachedFluidField", () => {
     field.step(frame([0, 2, 0, 1, 2, 0, 0, 3, 0, 1, 1, 0]), 1);
     expect(field.frame()).toEqual(before);
   });
+  it("detaches caller-selected posed surface mass atomically into the conserved ledger", () => {
+    const { state, field } = createField(2, 0);
+    field.inject("s", source.anchor, "water", 0.75);
+
+    const releases = field.detach(frame(), [{ triangle: 0, materialId: "water", massKg: 0.25 }]);
+
+    expect(releases).toHaveLength(1);
+    expect(releases[0]).toMatchObject({
+      triangle: 0,
+      sourceVertices: [0, 1, 2],
+      materialId: "water",
+      massKg: 0.25,
+      positionM: [0, 0, 0],
+    });
+    expect(Object.isFrozen(releases)).toBe(true);
+    expect(Object.isFrozen(releases[0])).toBe(true);
+    expect(field.frame()).toEqual([
+      { triangle: 0, barycentric: [1, 0, 0], materialId: "water", massKg: 0.5 },
+    ]);
+    expect(state.snapshot().ledger).toMatchObject({ attachedKg: 0.5, detachedKg: 0.25 });
+
+    const before = { frame: field.frame(), ledger: state.snapshot().ledger };
+    expect(() =>
+      field.detach(frame(), [{ triangle: 0, materialId: "water", massKg: 0.5000001 }]),
+    ).toThrow("cannot detach");
+    expect(field.frame()).toEqual(before.frame);
+    expect(state.snapshot().ledger).toEqual(before.ledger);
+
+    field.detach(frame(), [{ triangle: 0, materialId: "water", massKg: 0.5 }]);
+    expect(field.frame()).toEqual([]);
+    expect(state.snapshot().ledger).toMatchObject({ attachedKg: 0, detachedKg: 0.75 });
+  });
   it("rejects capacity and malformed frames without creating ledger mass", () => {
     const { state, field } = createField(1);
     const second = {
