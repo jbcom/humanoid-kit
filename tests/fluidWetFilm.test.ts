@@ -171,6 +171,10 @@ describe("fluid wet-film rendering bridge", () => {
     const material = new SkinMaterial();
     const body = geometry();
     const wrongOrder = snapshot("water", [1, 1, 1, 0], [0]);
+    // Reuse the valid support once, then prove a later bind still checks the
+    // source identity rather than trusting that cached support blindly.
+    bindFluidWetFilmCoverage(material, body, wrongOrder);
+    bindFluidWetFilmCoverage(material, body, wrongOrder);
     const wrongCell = wrongOrder.cells[0];
     if (!wrongCell) throw new Error("wet-film fixture needs a source cell");
     const mismatched = {

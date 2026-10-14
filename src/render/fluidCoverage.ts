@@ -33,6 +33,7 @@ const materialGeometry = new WeakMap<SkinMaterial, BufferGeometry>();
 const geometryMaterial = new WeakMap<BufferGeometry, SkinMaterial>();
 const materialCoverage = new WeakMap<SkinMaterial, CoverageTexture>();
 const uvTopologies = new WeakMap<BufferGeometry, readonly UvTriangle[]>();
+const validatedSupportKeys = new WeakMap<BufferGeometry, string>();
 const trackedMaterials = new WeakSet<SkinMaterial>();
 const trackedGeometries = new WeakSet<BufferGeometry>();
 
@@ -60,6 +61,7 @@ function claimFigureMaterial(material: SkinMaterial, geometry: BufferGeometry): 
     trackedGeometries.add(geometry);
     geometry.addEventListener("dispose", () => {
       uvTopologies.delete(geometry);
+      validatedSupportKeys.delete(geometry);
       const boundMaterial = geometryMaterial.get(geometry);
       if (boundMaterial) releaseFluidWetFilmCoverage(boundMaterial);
     });
@@ -181,6 +183,15 @@ function overlapsInterior(a: UvTriangle, b: UvTriangle): boolean {
   );
 }
 
+/**
+ * The UV support mask depends on render triangle identity, not on per-frame
+ * mass or pose values. Keep the identity in the key so a new immutable
+ * snapshot can share the expensive selected-by-all overlap result safely.
+ */
+function supportKey(cells: readonly FluidCoverageCell[]): string {
+  return cells.map((cell) => `${cell.triangle}:${cell.sourceVertices.join(",")}`).join("|");
+}
+
 function validateSupport(
   geometry: BufferGeometry,
   cells: readonly FluidCoverageCell[],
@@ -202,6 +213,8 @@ function validateSupport(
       throw new RangeError("fluid wet-film occupied triangle has degenerate UV support");
     return triangle;
   });
+  const key = supportKey(cells);
+  if (validatedSupportKeys.get(geometry) === key) return selected;
   for (const triangle of selected)
     for (const other of all)
       if (
@@ -212,6 +225,7 @@ function validateSupport(
         throw new RangeError(
           "fluid wet-film occupied triangle overlaps another triangle in UV space",
         );
+  validatedSupportKeys.set(geometry, key);
   return selected;
 }
 
