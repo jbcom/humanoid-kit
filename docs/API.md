@@ -1251,6 +1251,14 @@ and expressions"). Framework-free.
   non-arm-only trial poses. `createHandContact` (Interactions, below) is what
   drives them from an interaction's contact, and `<Humanoid handContact>`
   applies that to a live figure.
+- Internal rig helper: `src/rig/fingerTarget.ts` is not an exported package
+  entry point. Its `solveFingerSurfaceTarget(input)` changes only one existing
+  finger's declared MakeHuman BVH rotation channels, reads a caller-supplied
+  CPU-skinned pad frame, and returns its measured gap to a caller-supplied
+  fixed surface. Callers provide every source channel's initial value and
+  action-specific bounds; the helper adds no finger geometry, no fixed curl
+  pose, and no partner or capsule policy. Its `surfaceSamples` result is the
+  deterministic count of CPU surface samples consumed by the bounded solve.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
