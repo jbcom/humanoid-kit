@@ -97,8 +97,10 @@ describe("fold solve quality", () => {
     }
   });
 
-  it("reduces real contact queries for a synthetic nonsettling first round, retaining later work", () => {
-    const control = Float32Array.from([0, 0, 0, 0.03, 0, 0, 0, 0.03, 0, 0.002, 0.002, 0.001]);
+  it.each([0.01, 0.03])("retains rounded grid-boundary triangles at scale %f", (scale) => {
+    // The original .01 triangle's Float32 centroid rounds below its double
+    // centroid. Grid bounds must use the same precision as bucket insertion.
+    const control = Float32Array.from([0, 0, 0, scale, 0, 0, 0, scale, 0, 0.002, 0.002, 0.001]);
     const rest: RestBones = {
       names: ["root"],
       parents: Int16Array.of(-1),

@@ -984,8 +984,11 @@ class TriangleGrid {
             (positions[(skin[t * 3 + 2] as number) * 3 + k] as number)) /
           3;
         centres[t * 3 + k] = c;
-        low[k] = Math.min(low[k] as number, c);
-        high[k] = Math.max(high[k] as number, c);
+        // Bounds and bucket insertion must read the same Float32 centre: a
+        // rounded centre below a double lower bound would be placed in cell -1.
+        const centre = centres[t * 3 + k] as number;
+        low[k] = Math.min(low[k] as number, centre);
+        high[k] = Math.max(high[k] as number, centre);
       }
     let widest = 0;
     for (let t = 0; t < triangles; t++) {
