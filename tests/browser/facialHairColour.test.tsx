@@ -33,6 +33,7 @@ import { inlineWorkerClient } from "./inlineClient.ts";
 
 const BEARD = "beard-viking",
   MOUSTACHE = "moustache-viking";
+const CAPTURE_PNG = import.meta.env.MODE === "facial-colour-capture";
 const BLACK = HAIR_COLOURS.black as HairColour;
 const requests: WorkerRequest[] = [];
 const client = inlineWorkerClient(
@@ -174,17 +175,18 @@ it("routes independent colours through the actual live Humanoid worker path with
     });
     if (id !== BEARD && id !== MOUSTACHE) expect(tint(id)).toEqual(old?.colour);
   }
-  for (const [view, yaw] of [
-    ["front", 0],
-    ["oblique", Math.PI / 4],
-    ["profile", Math.PI / 2],
-  ] as const) {
-    changeYaw(yaw);
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
-    await page.screenshot({ path: `../../test-results/facial-colour-live/${view}.png` });
-  }
+  if (CAPTURE_PNG)
+    for (const [view, yaw] of [
+      ["front", 0],
+      ["oblique", Math.PI / 4],
+      ["profile", Math.PI / 2],
+    ] as const) {
+      changeYaw(yaw);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      await page.screenshot({ path: `../../test-results/facial-colour-live/${view}.png` });
+    }
   changeRecipe(
     createRecipe({
       ...independent,

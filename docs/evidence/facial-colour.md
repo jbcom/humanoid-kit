@@ -24,7 +24,11 @@ facial recolouring. A changed baked facial colour requires another archetype.
 ## Producers and checks
 
 The live producer is `tests/browser/facialHairColour.test.tsx`; its camera uses
-the actual settled skinned portrait bounds. The miniature producer is
+the actual settled skinned portrait bounds. Its front/oblique/profile PNG
+artifacts are requested explicitly with `--mode facial-colour-capture`.
+The default route still runs every worker, material, source-buffer and
+colour-restoration assertion, without waiting for screenshot transport.
+The miniature producer is
 `tests/browser/facialHairColourMiniature.test.ts`, with one static frame,
 `body: "surface"`, body triangle targets `[800, 400]`,
 `facialHair: "alpha-cards"` and `facialHairLod: "all"` on the distant crowd.
@@ -69,4 +73,5 @@ Reproduce the focused routes with:
 ```sh
 pnpm exec vitest run --project unit tests/facialHairColour.test.ts tests/miniatureFacialHair.test.ts tests/hairRecipe.test.ts tests/facialHairRuntime.test.ts
 pnpm exec vitest run --project browser tests/browser/facialHairColour.test.tsx tests/browser/facialHairColourMiniature.test.ts
+pnpm exec vitest run --mode facial-colour-capture --project browser tests/browser/facialHairColour.test.tsx
 ```
