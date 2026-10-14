@@ -103,7 +103,11 @@ export class AnimationFrameWriter {
       const owner = ownership[sideIndex];
       const out = f.contacts[c] as HumanoidAnimationContact;
       out.position[0] = soles[k * 3] as number;
-      out.position[1] = (soles[k * 3 + 1] as number) + lift;
+      // `contactPoints` measures from the rest ground plane, while a frame is
+      // measured in the mesh's local coordinates after this pose's lift. Put
+      // the point back in mesh space before applying that lift; otherwise the
+      // rest ground offset is counted twice.
+      out.position[1] = (soles[k * 3 + 1] as number) - figure.groundOffset + lift;
       out.position[2] = soles[k * 3 + 2] as number;
       out.owned = owner.index === k;
       out.hold = out.owned ? owner.hold : 0;

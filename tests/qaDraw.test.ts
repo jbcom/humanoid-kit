@@ -29,8 +29,12 @@ import { FOLD_JOINTS } from "../src/rig/folds.ts";
 
 const [HIP, KNEE] = FOLD_JOINTS;
 
-/** A figure as `Humanoid` draws one: a group holding its dual bones, a body mesh tagged `body` with each joint's slots. */
-function figure(slots: Record<string, number[]>) {
+/**
+ * A figure as `Humanoid` draws one: a group holding its dual bones, a body mesh
+ * tagged `part` (`body`, or `adultBody` for the adult surface an adult draws) with
+ * each joint's slots.
+ */
+function figure(slots: Record<string, number[]>, part: "body" | "adultBody" = "body") {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(4 * 3), 3));
   const attribute = makeFoldSlots(4);
@@ -41,7 +45,7 @@ function figure(slots: Record<string, number[]>) {
   const bone = new Bone();
   body.add(bone);
   body.bind(new Skeleton([bone]));
-  body.userData.hkPart = "body";
+  body.userData.hkPart = part;
   const group = new Group();
   group.userData.dualBones = new DualBones(1, 1);
   group.add(body);
@@ -158,6 +162,17 @@ describe("the shot's QA draw", () => {
     applyQaDraw(group, draw);
     expect(slotsOf(KNEE)).toEqual([-1, -1, -1, -1]);
     expect(slotsOf(HIP)).toEqual([3, -1, -1, 0]);
+  });
+
+  it("draws on the adult surface an adult draws, not only the base body", () => {
+    const { group, geometry } = figure({ knee: [0, 1, -1, 2], hip: [3, -1, -1, 0] }, "adultBody");
+    applyQaDraw(group, qaDraw(params("nofold=knee,hip")));
+    for (const joint of FOLD_JOINTS)
+      expect([0, 1, 2, 3].map((v) => foldSlotAt(geometry, joint, v))).toEqual([-1, -1, -1, -1]);
+    expect(foldNotes(group)).toHaveLength(1);
+    const wired = figure({}, "adultBody");
+    applyQaDraw(wired.group, qaDraw(params("shade=wire")));
+    expect(wired.body.children.filter((c) => (c as SkinnedMesh).isSkinnedMesh)).toHaveLength(1);
   });
 
   it("draws normals as colour, smooth or flat, skinned as the figure is, and again if the figure resets it", () => {

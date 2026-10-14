@@ -7,6 +7,17 @@
 import type { Vec3 } from "./disc.ts";
 import { type ReservoirRoot, type RootShape, shapeDifference } from "./root.ts";
 
+/**
+ * The size at which a reservoir lies flat on the skin it covers (`flatShape`), the shape
+ * a generator's smallest key grows out of. From rest to here the rings spread from their
+ * loop vertices across the skin, which shows nothing; from here to the smallest key the
+ * organ or sac rises from the middle of the disc and narrows as it rises. Grown out of
+ * rest instead, a size under the smallest key was a cylinder as wide as the loop with a
+ * flat end (#75): every ring left its loop vertex together and the cap was carried out
+ * flat.
+ */
+export const FLAT_SIZE = 0.01;
+
 /** A detail target as the generators make it: indices into the root's detail space and xyz deltas. */
 export interface DetailTarget {
   name: string;
@@ -54,5 +65,3 @@ export function shapeSum(root: ReservoirRoot, a: RootShape, b: RootShape, c: Roo
     return [p[0] + r[0] - q[0], p[1] + r[1] - q[1], p[2] + r[2] - q[2]] as Vec3;
   });
 }
-
-export const deg = (d: number): number => (d * Math.PI) / 180;

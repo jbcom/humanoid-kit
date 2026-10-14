@@ -32,4 +32,17 @@ describe("random beards", () => {
     // Without beards on offer, the recipe's body hair is kept as it is.
     expect(randomRecipe(base, 99, modifiers).bodyHair).toEqual(base.bodyHair);
   });
+
+  it("uses only authored facial assets when the creator supplies them", () => {
+    const base = createRecipe({ facialHair: ["beard-faun"] });
+    for (let seed = 0; seed < 40; seed++) {
+      const recipe = randomRecipe(base, seed, modifiers, {
+        facialHairStyles: ["beard-viking", "moustache-viking"],
+      });
+      expect(recipe.facialHair === undefined || recipe.facialHair.length === 1).toBe(true);
+      if (recipe.facialHair)
+        expect(["beard-viking", "moustache-viking"]).toContain(recipe.facialHair[0]);
+      expect(recipe.bodyHair).toBeUndefined();
+    }
+  });
 });

@@ -292,31 +292,6 @@ describe("AppearancePanel", () => {
       return { screen, seen };
     };
 
-    it("starts natural, picks a beard, and returns to natural leaving no body hair field", async () => {
-      const { screen, seen } = await panel(30);
-      await expect
-        .element(screen.getByRole("button", { name: "Natural" }))
-        .toHaveAttribute("aria-pressed", "true");
-      expect(seen.editor?.recipe.bodyHair).toBeUndefined();
-      await screen.getByRole("button", { name: "Goatee" }).click();
-      expect(seen.editor?.recipe.bodyHair).toEqual({ beard: "goatee" });
-      await screen.getByRole("button", { name: "Natural" }).click();
-      expect(seen.editor?.recipe.bodyHair).toBeUndefined();
-    });
-
-    it("shows a beard with controls as its style, and keeps the controls when the style changes", async () => {
-      const { screen, seen } = await panel(30, 1, {
-        beard: { style: "full", length: 0.1, grey: 0.4 },
-      });
-      await expect
-        .element(screen.getByRole("button", { name: "Full beard" }))
-        .toHaveAttribute("aria-pressed", "true");
-      await screen.getByRole("button", { name: "Forked" }).click();
-      expect(seen.editor?.recipe.bodyHair).toEqual({
-        beard: { style: "forked", length: 0.1, grey: 0.4 },
-      });
-    });
-
     it("offers underarm and pubic coverage to an adult", async () => {
       const { screen } = await panel(30);
       await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
@@ -396,6 +371,13 @@ describe("AppearancePanel", () => {
         { id: "brow01", label: "Brows, natural", tags: ["brows"], kind: "brows" as const },
         { id: "brow02", label: "Brows, thin", tags: ["brows"], kind: "brows" as const },
         { id: "lash01", label: "Lashes, full", tags: ["lashes"], kind: "lashes" as const },
+        { id: "beard-viking", label: "Viking beard", tags: ["beard"], kind: "facial" as const },
+        {
+          id: "moustache-viking",
+          label: "Viking moustache",
+          tags: ["moustache"],
+          kind: "facial" as const,
+        },
       ],
     };
     const panel = async (info = readyInfo(false, false, hair)) => {
@@ -462,6 +444,16 @@ describe("AppearancePanel", () => {
       expect(seen.editor?.recipe.hair?.colour).toEqual(DEFAULT_HAIR_COLOUR);
       await screen.getByRole("button", { name: "None" }).click();
       expect(seen.editor?.recipe.hair?.style).toBeNull();
+    });
+
+    it("offers authored beard and moustache assets independently and removes only the chosen one", async () => {
+      const { screen, seen } = await panel();
+      await screen.getByText("Body hair").click();
+      await screen.getByRole("button", { name: "Viking beard" }).click();
+      await screen.getByRole("button", { name: "Viking moustache" }).click();
+      expect(seen.editor?.recipe.facialHair).toEqual(["beard-viking", "moustache-viking"]);
+      await screen.getByRole("button", { name: "Viking beard" }).click();
+      expect(seen.editor?.recipe.facialHair).toEqual(["moustache-viking"]);
     });
 
     it("sets a natural colour from the palette, marks it, and the pigment sliders move off it", async () => {

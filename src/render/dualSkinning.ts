@@ -466,10 +466,6 @@ uniform highp sampler2D ${DUAL_BONES_UNIFORM};
 vec3 hkQRotate( vec4 q, vec3 v ) {
 	return v + 2.0 * cross( q.xyz, cross( q.xyz, v ) + q.w * v );
 }
-// Place k (0 to ${SKIN_INFLUENCES - 1}) of the eight held four in a and four in b.
-float hkPlace( vec4 a, vec4 b, int k ) {
-	return k < 4 ? a[ k ] : b[ k - 4 ];
-}
 // The rotation q and translation t of the vertex's blended dual quaternion, and its share of the scheme.
 void hkDualMotion( vec4 i0, vec4 w0, vec4 i1, vec4 w1, out vec4 q, out vec3 t, out float share ) {
 	vec4 r = vec4( 0.0 );
@@ -508,10 +504,14 @@ void hkDualMotion( vec4 i0, vec4 w0, vec4 i1, vec4 w1, out vec4 q, out vec3 t, o
  * and the linear half over all eight (three's chunk reads four). It reads
  * three's `getBoneMatrix`, so it goes after three's `skinning_pars_vertex`.
  */
-const VERTEX_SKIN_FUNCTIONS = /* glsl */ `
+const LINEAR_SKINNING_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
 attribute vec4 ${SKIN_INDEX_ATTRIBUTE_1};
 attribute vec4 ${SKIN_WEIGHT_ATTRIBUTE_1};
+// Place k (0 to ${SKIN_INFLUENCES - 1}) of the eight held four in a and four in b.
+float hkPlace( vec4 a, vec4 b, int k ) {
+	return k < 4 ? a[ k ] : b[ k - 4 ];
+}
 // The vertex's bones' matrices summed by weight over all its places, in bind space as three's.
 mat4 hkLinearMatrix() {
 	mat4 m = mat4( 0.0 );
@@ -522,6 +522,12 @@ mat4 hkLinearMatrix() {
 	}
 	return m;
 }
+#endif
+`;
+
+/** The dual-quaternion motion over the same eight places as `LINEAR_SKINNING_FUNCTIONS`. */
+const VERTEX_DUAL_MOTION_FUNCTIONS = /* glsl */ `
+#ifdef USE_SKINNING
 // hkDualMotion over this vertex's places.
 void hkVertexDualMotion( out vec4 q, out vec3 t, out float share ) {
 	hkDualMotion( skinIndex, skinWeight, ${SKIN_INDEX_ATTRIBUTE_1}, ${SKIN_WEIGHT_ATTRIBUTE_1}, q, t, share );
@@ -682,6 +688,29 @@ const normal = (fold: boolean): string => /* glsl */ `
 #endif
 `;
 
+/** The eight-place linear normal, for a host body material which deliberately has no dual or fold layer. */
+const linearNormal = /* glsl */ `
+#ifdef USE_SKINNING
+	mat4 hkLinear = hkLinearMatrix();
+	#define HK_LINEAR_MATRIX
+	mat4 hkNormalMatrix = bindMatrixInverse * hkLinear * bindMatrix;
+	objectNormal = vec4( hkNormalMatrix * vec4( objectNormal, 0.0 ) ).xyz;
+	#ifdef USE_TANGENT
+		objectTangent = vec4( hkNormalMatrix * vec4( objectTangent, 0.0 ) ).xyz;
+	#endif
+#endif
+`;
+
+/** The eight-place linear position, without the kit's dual-quaternion or fold layers. */
+const linearPosition = /* glsl */ `
+#ifdef USE_SKINNING
+	#ifndef HK_LINEAR_MATRIX
+		mat4 hkLinear = hkLinearMatrix();
+	#endif
+	transformed = ( bindMatrixInverse * hkLinear * bindMatrix * vec4( transformed, 1.0 ) ).xyz;
+#endif
+`;
+
 /**
  * Makes a three vertex shader skin by `bones`: call it from an
  * `onBeforeCompile`. With `fold`, the shader adds the joint folds too, for a
@@ -702,10 +731,89 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
   shader.vertexShader = shader.vertexShader
     .replace(
       "#include <skinning_pars_vertex>",
-      `#include <skinning_pars_vertex>\n${DUAL_SKINNING_FUNCTIONS}${VERTEX_SKIN_FUNCTIONS}${fold ? `${attributes}${FOLD_FUNCTIONS}` : ""}`,
+      `#include <skinning_pars_vertex>\n${LINEAR_SKINNING_FUNCTIONS}${DUAL_SKINNING_FUNCTIONS}${VERTEX_DUAL_MOTION_FUNCTIONS}${fold ? `${attributes}${FOLD_FUNCTIONS}` : ""}`,
     )
     .replace("#include <skinnormal_vertex>", normal(fold))
     .replace("#include <skinning_vertex>", position(fold));
+}
+
+/** Patches a shader for all eight of the body's stored influences, linearly and without folds. */
+export function patchLinearSkinning(shader: PatchableShader): void {
+  const needs = ["#include <skinning_pars_vertex>", "#include <skinning_vertex>"];
+  for (const chunk of needs)
+    if (!shader.vertexShader.includes(chunk))
+      throw new Error(`linear skinning: three's ${chunk} chunk moved`);
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      "#include <skinning_pars_vertex>",
+      `#include <skinning_pars_vertex>\n${LINEAR_SKINNING_FUNCTIONS}`,
+    )
+    .replace("#include <skinnormal_vertex>", linearNormal)
+    .replace("#include <skinning_vertex>", linearPosition);
+}
+
+/** Part of the program cache key for a host body material that reads all eight linear influences. */
+export const LINEAR_SKINNING_KEY = "linear-skinning-8";
+
+interface LinearSkinningBinding {
+  users: number;
+  before: Material["onBeforeCompile"];
+  render: Material["onBeforeRender"];
+  key: Material["customProgramCacheKey"];
+  compile: Material["onBeforeCompile"];
+  wrappedRender: Material["onBeforeRender"];
+  cacheKey: Material["customProgramCacheKey"];
+}
+
+/** Bindings are reference counted so one shared host material stays patched until every figure releases it. */
+const linearSkinningBindings = new WeakMap<Material, LinearSkinningBinding>();
+
+/**
+ * Makes a host-supplied body material skin with all eight influences, but keeps
+ * its deliberately linear, no-fold contract. The returned release restores the
+ * host callbacks and program cache key once its last `<Humanoid>` unmounts.
+ */
+export function applyLinearSkinning(material: Material): () => void {
+  const existing = linearSkinningBindings.get(material);
+  if (existing) {
+    existing.users++;
+    return () => releaseLinearSkinning(material, existing);
+  }
+  const before = material.onBeforeCompile;
+  const render = material.onBeforeRender;
+  const key = material.customProgramCacheKey;
+  const binding: LinearSkinningBinding = {
+    users: 1,
+    before,
+    render,
+    key,
+    compile: (shader, renderer) => {
+      before.call(material, shader, renderer);
+      patchLinearSkinning(shader as unknown as PatchableShader);
+    },
+    wrappedRender: (renderer, scene, camera, geometry, object, group) => {
+      ensureSkinPlaces(geometry);
+      render.call(material, renderer, scene, camera, geometry, object, group);
+    },
+    cacheKey: () => `${key.call(material)}|${LINEAR_SKINNING_KEY}`,
+  };
+  material.onBeforeCompile = binding.compile;
+  material.onBeforeRender = binding.wrappedRender;
+  material.customProgramCacheKey = binding.cacheKey;
+  material.needsUpdate = true;
+  linearSkinningBindings.set(material, binding);
+  return () => releaseLinearSkinning(material, binding);
+}
+
+function releaseLinearSkinning(material: Material, binding: LinearSkinningBinding): void {
+  if (--binding.users > 0) return;
+  linearSkinningBindings.delete(material);
+  // Leave host code that changed a callback while mounted intact: only undo our own wrappers.
+  if (material.onBeforeCompile === binding.compile) material.onBeforeCompile = binding.before;
+  if (material.onBeforeRender === binding.wrappedRender) material.onBeforeRender = binding.render;
+  if (material.customProgramCacheKey === binding.cacheKey)
+    material.customProgramCacheKey = binding.key;
+  material.needsUpdate = true;
 }
 
 /** Part of the program's cache key: a shader patched for dual skinning differs from one that is not. */
@@ -755,6 +863,18 @@ export function dualShadowMaterials(
   return { depth, distance };
 }
 
+/** Depth materials for a host body material: all eight linear influences, with neither dual motion nor folds. */
+export function linearShadowMaterials(): {
+  depth: MeshDepthMaterial;
+  distance: MeshDistanceMaterial;
+} {
+  const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  const distance = new MeshDistanceMaterial();
+  applyLinearSkinning(depth);
+  applyLinearSkinning(distance);
+  return { depth, distance };
+}
+
 /**
  * Makes the mesh's own CPU skinning (its bounds and ray picking, which three
  * does with linear skinning alone) follow the dual quaternion pose, as the
@@ -775,6 +895,27 @@ export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones, fold = f
         ? bones.skinFolds()
         : undefined;
     skinPositionAt(pose, index, weight, 0, target.x, target.y, target.z, out, 0, folding, vertex);
+    target.x = out[0];
+    target.y = out[1];
+    target.z = out[2];
+    return target;
+  };
+  mesh.applyBoneTransform = skin as SkinnedMesh["applyBoneTransform"];
+}
+
+/**
+ * Makes a mesh's CPU skinning (bounds and ray picking) match a host body
+ * material: all eight influences linearly, with neither dual motion nor folds.
+ */
+export function followLinearSkinning(mesh: SkinnedMesh, bones: DualBones): void {
+  const index = new Uint16Array(SKIN_INFLUENCES);
+  const weight = new Float32Array(SKIN_INFLUENCES);
+  const out: [number, number, number] = [0, 0, 0];
+  const skin = (vertex: number, target: Vector3 | Vector4): Vector3 | Vector4 => {
+    const pose = bones.linearPose();
+    if (!pose) return target;
+    readSkinAttributes(mesh.geometry, vertex, index, weight);
+    skinPositionAt(pose, index, weight, 0, target.x, target.y, target.z, out);
     target.x = out[0];
     target.y = out[1];
     target.z = out[2];

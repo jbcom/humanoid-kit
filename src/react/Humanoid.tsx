@@ -76,10 +76,13 @@ import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
+  applyLinearSkinning,
   DualBones,
   dualShadowMaterials,
   FOLD_SLOTS_ATTRIBUTE,
   followDualSkinning,
+  followLinearSkinning,
+  linearShadowMaterials,
   makeFoldSlots,
   setSkinAttributes,
   writeFoldSlots,
@@ -89,7 +92,6 @@ import {
   HairMaterial,
   isMultisampled,
   setHairOcclusionAttribute,
-  setHairRankAttribute,
   setHairStrandAttributes,
 } from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
@@ -119,8 +121,6 @@ import {
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
 import { ageSurfaceStrength } from "../surface/ageSurface.ts";
-import { beardCoverage, resolveBeard } from "../surface/beard.ts";
-import { bodyHairColour } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import {
   agedHairColour,
@@ -423,14 +423,17 @@ function useAttachmentMaterial(
   occlusionKeys: Vector3,
   report: (e: Error) => void,
   eyeMaterial: { library: EyeLibrary; id: string } | null = null,
+  dual: DualBones | null,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const material =
       t.kind === "eyes" ? new EyeMaterial() : createAttachmentMaterial(t.kind, t.material);
     // The figure's key weights, shared, so a pose change reaches every attachment.
     material.occlusionKeys = occlusionKeys;
+    // Attachments carry the same eight influences as the body, including in their visible shader.
+    if (dual) applyDualSkinning(material, dual);
     return material;
-  }, [t, occlusionKeys]);
+  }, [t, occlusionKeys, dual]);
   const reportRef = useLatest(report);
   const settle = useSettle();
   const invalidate = useThree((s) => s.invalidate);
@@ -564,6 +567,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  linear,
   shadows = true,
 }: {
   geometry: BufferGeometry;
@@ -578,6 +582,8 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /** Set when a host body material skins linearly through all eight influences. */
+  linear?: DualBones | null;
   /**
    * Whether it casts and receives shadows (default true). A decal lying on the skin
    * does neither: its quad's outline would shade the skin round it, and the skin
@@ -592,17 +598,18 @@ function SkinnedPart({
     m.receiveShadow = shadows;
     return m;
   }, [geometry, material, skeleton, shadows]);
-  // Shadows are cast by a depth material, which would skin linearly alone; and
-  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  // Shadows are cast by a depth material, and CPU bounds and ray picking have
+  // their own skinning hook: both must follow the material the body draws with.
   useEffect(() => {
-    if (!dual) return;
-    // The body's carries the joint folds, which its shadow, bounds and picking follow too.
+    if (!dual && !linear) return;
+    // The built-in body carries folds; a host material is eight-place linear with no folds.
     const body = part === "body" || part === "adultBody";
-    const shadows = dualShadowMaterials(dual, body);
+    const shadows = dual ? dualShadowMaterials(dual, body) : linearShadowMaterials();
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
-    followDualSkinning(mesh, dual, body);
+    if (dual) followDualSkinning(mesh, dual, body);
+    else followLinearSkinning(mesh, linear as DualBones);
     return () => {
       mesh.customDepthMaterial = undefined as never;
       mesh.customDistanceMaterial = undefined as never;
@@ -610,7 +617,7 @@ function SkinnedPart({
       shadows.depth.dispose();
       shadows.distance.dispose();
     };
-  }, [mesh, dual, part]);
+  }, [mesh, dual, linear, part]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -648,6 +655,7 @@ function AttachmentMesh({
   eyeLibrary,
   melanin,
   shape,
+  dual,
 }: {
   index: number;
   topology: AttachmentTopology;
@@ -660,6 +668,8 @@ function AttachmentMesh({
   eyeLibrary: EyeLibrary | undefined;
   melanin: number;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
 }) {
   const eyeMaterial = useMemo(
     () =>
@@ -668,7 +678,7 @@ function AttachmentMesh({
         : null,
     [topology.kind, eyeLibrary, eyes.material],
   );
-  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial);
+  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial, dual);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
@@ -685,6 +695,7 @@ function AttachmentMesh({
       part={index}
       renderOrder={topology.zDepth}
       shape={shape}
+      dual={dual}
     />
   );
 }
@@ -736,6 +747,7 @@ function HairMesh({
   visible,
   report,
   shape,
+  dual,
   density = 1,
   white = 0,
 }: {
@@ -747,12 +759,18 @@ function HairMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
   /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
   density?: number;
   /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
   white?: number;
 }) {
-  const material = useMemo(() => new HairMaterial(), []);
+  const material = useMemo(() => {
+    const made = new HairMaterial();
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [dual]);
   useEffect(() => material.setDensity(density), [material, density]);
   useDiffuseTexture(material, topology.textureUrl, report);
   // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
@@ -775,6 +793,7 @@ function HairMesh({
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
+      dual={dual}
     />
   );
 }
@@ -846,6 +865,7 @@ function DecalMesh({
   visible,
   report,
   shape,
+  dual,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -855,8 +875,14 @@ function DecalMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
 }) {
-  const material = useMemo(() => new DecalMaterial(), []);
+  const material = useMemo(() => {
+    const made = new DecalMaterial();
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [dual]);
   useDiffuseTexture(material, topology.textureUrl, report);
   const kind = topology.kind as DecalKind;
   // Brows and lashes grey with age on their own clocks; the recipe's grey is a floor.
@@ -879,6 +905,7 @@ function DecalMesh({
       renderOrder={topology.zDepth}
       shape={shape}
       shadows={false}
+      dual={dual}
     />
   );
 }
@@ -1128,14 +1155,15 @@ export function Humanoid({
     [ready],
   );
   useEffect(() => () => dual?.dispose(), [dual]);
-  // A custom material skins as it chooses; ours follows the dual quaternions.
+  // The built-in skin mixes dual quaternions and folds. A host material stays
+  // deliberately linear and fold-free, but must still read all eight body weights.
   useLayoutEffect(() => {
-    if (material) return;
+    if (material) return applyLinearSkinning(material);
     skin.setDualBones(dual);
     return () => skin.setDualBones(null);
   }, [skin, dual, material]);
-  // Whatever else skins to this figure (clothing, a custom material) follows its
-  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  // Whatever else skins to this figure follows its joints by
+  // `applyDualSkinning(material, group.userData.dualBones)`.
   useLayoutEffect(() => {
     const group = groupRef.current;
     if (!group) return;
@@ -1178,10 +1206,10 @@ export function Humanoid({
   );
   /** The worn brows and lashes, each with its static data and geometry. */
   const [decals, setDecals] = useState<{ topology: HairTopology; geometry: BufferGeometry }[]>([]);
-  /** The cards of a grown beard, when the recipe's style has some and the face grows hair. */
-  const [beard, setBeard] = useState<{ topology: HairTopology; geometry: BufferGeometry } | null>(
-    null,
-  );
+  /** Authored beard and moustache meshes, each using the normal hair material. */
+  const [facialHair, setFacialHair] = useState<
+    { topology: HairTopology; geometry: BufferGeometry }[]
+  >([]);
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
   const invalidate = useThree((s) => s.invalidate);
@@ -1199,32 +1227,6 @@ export function Humanoid({
   useEffect(() => {
     skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
   }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
-  // A grown beard's cards: their colour is the face's body hair, how many show
-  // the beard's coverage, and the share of them white its grey.
-  const beardLook = useMemo(() => {
-    const input = {
-      age: recipe.macros.age,
-      colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
-      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
-    };
-    return {
-      colour: bodyHairColour("face", input),
-      density: beardCoverage(input),
-      white: resolveBeard(input, Number.POSITIVE_INFINITY).grey,
-    };
-  }, [recipe]);
-  // A generated beard's geometry goes when the beard changes: a growing one
-  // makes new cards every millimetre, and nothing else holds them.
-  useEffect(() => {
-    if (!beard) return;
-    const { topology, geometry } = beard;
-    return () => {
-      if (!topology.id.startsWith("beard:")) return;
-      geometries?.hair.delete(topology.id);
-      geometry.dispose();
-    };
-  }, [beard, geometries]);
-
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
   const faceUnits = useSameEntries(pose?.faceUnits);
@@ -1785,26 +1787,27 @@ export function Humanoid({
             return [{ topology: t, geometry: g }];
           }),
         );
-        // A grown beard's cards: bound like scalp hair, thinned by their ranks.
-        const beardTopology = ev.beard ? client.hairTopology(ev.beard.id) : undefined;
-        if (ev.beard && beardTopology) {
-          let g = geometries.hair.get(ev.beard.id);
-          if (!g) {
-            g = makeGeometry(beardTopology);
-            setHairOcclusionAttribute(g, beardTopology.occlusion);
-            setHairStrandAttributes(
-              g,
-              beardTopology.fade,
-              beardTopology.growth,
-              beardTopology.fin,
-              beardTopology.uvScale,
-            );
-            if (beardTopology.rank) setHairRankAttribute(g, beardTopology.rank);
-            geometries.hair.set(ev.beard.id, g);
-          }
-          writeGeometry(g, ev.beard);
-          setBeard({ topology: beardTopology, geometry: g });
-        } else setBeard(null);
+        setFacialHair(
+          ev.facialHair.flatMap((facial) => {
+            const topology = client.hairTopology(facial.id);
+            if (!topology) return [];
+            let g = geometries.hair.get(facial.id);
+            if (!g) {
+              g = makeGeometry(topology);
+              setHairOcclusionAttribute(g, topology.occlusion);
+              setHairStrandAttributes(
+                g,
+                topology.fade,
+                topology.growth,
+                topology.fin,
+                topology.uvScale,
+              );
+              geometries.hair.set(facial.id, g);
+            }
+            writeGeometry(g, facial);
+            return [{ topology, geometry: g }];
+          }),
+        );
         // The skin under the worn style takes the scalp tint; a figure with none has no scalp.
         const style = ev.hair && hairTopology ? ev.hair.id : null;
         if (!scalpOf.current.has(target) || scalpOf.current.get(target) !== style) {
@@ -1920,6 +1923,7 @@ export function Humanoid({
               part="body"
               shape={shape}
               dual={material ? null : dual}
+              linear={material ? dual : null}
             />
             {adultGeometry && (
               <SkinnedPart
@@ -1930,6 +1934,7 @@ export function Humanoid({
                 part="adultBody"
                 shape={shape}
                 dual={material ? null : dual}
+                linear={material ? dual : null}
               />
             )}
             {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
@@ -1962,6 +1967,7 @@ export function Humanoid({
                   eyeLibrary={eyeMaterials}
                   melanin={recipe.skin.melanin}
                   shape={shape}
+                  dual={dual}
                 />
               ) : null;
             })}
@@ -1976,6 +1982,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             )}
             {decals.map((d) => (
@@ -1989,23 +1996,23 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             ))}
-            {beard && (
+            {facialHair.map((facial) => (
               <HairMesh
-                key={beard.topology.id}
-                topology={beard.topology}
-                geometry={beard.geometry}
+                key={facial.topology.id}
+                topology={facial.topology}
+                geometry={facial.geometry}
                 skeleton={rig.skeleton}
-                colour={beardLook.colour}
-                density={beardLook.density}
-                white={beardLook.white}
+                colour={wornColour}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
-            )}
+            ))}
             {figure?.bodyArt?.piercings.map((p) => (
               <PiercingMesh
                 key={p.site}

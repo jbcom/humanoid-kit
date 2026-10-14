@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadHumanoidAssetsStaged } from "../src/format/assetFormat.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { createWorkerHandler } from "../src/worker/handler.ts";
-import { BEARD_TOPOLOGIES_KEPT, type WorkerResponse } from "../src/worker/protocol.ts";
+import type { WorkerResponse } from "../src/worker/protocol.ts";
 import { stubFetch } from "./fetchStub.ts";
 import { hairManifest } from "./hairFixtures.ts";
 
@@ -159,30 +159,31 @@ describe("the worker with hair", { timeout: 60_000 }, () => {
     expect(alone?.type === "evaluated" && alone.evaluation.lashes).toBeNull();
   });
 
-  it("sends a generated beard's topology once while kept, fetching no beard file, and again once forgotten", async () => {
+  it("loads and sends authored facial-hair topologies once, alongside brows and lashes", async () => {
     const requested = stubFetch();
     const { handle, replies } = start();
     await handle({ type: "init", id: 1, load: LOAD, model: { subdivision: 0 } });
-    const beard = (length: number) =>
+    const facial = (styles: readonly string[]) =>
       createRecipe({
-        macros: { age: 35, gender: 1 },
-        bodyHair: { beard: { style: "full", length } },
+        hair: { style: null },
+        facialHair: styles,
       });
-    const sent = async (id: number, length: number) => {
-      await handle({ type: "evaluate", id, recipe: beard(length) });
+    const sent = async (id: number, styles: readonly string[]) => {
+      await handle({ type: "evaluate", id, recipe: facial(styles) });
       const r = replies.get(id);
       if (r?.type !== "evaluated") throw new Error(`no evaluation: ${JSON.stringify(r)}`);
-      return { id: r.evaluation.beard?.id, sent: (r.decalTopologies ?? []).map((t) => t.id) };
+      return {
+        worn: r.evaluation.facialHair.map((hair) => hair.id),
+        sent: (r.decalTopologies ?? []).map((t) => t.id),
+      };
     };
-    const first = await sent(2, 0.05);
-    expect(first.id).toMatch(/^beard:/);
-    expect(first.sent).toEqual([first.id]);
-    expect((await sent(3, 0.05)).sent).toEqual([]);
-    // Growing it past what is kept forgets the first; wearing it again sends it again.
-    let next = 4;
-    for (let k = 0; k < BEARD_TOPOLOGIES_KEPT; k++) await sent(next++, 0.06 + k * 0.01);
-    expect((await sent(next++, 0.05)).sent).toEqual([first.id]);
-    expect(requested.filter((u) => u.includes("beard") && u.endsWith(".bin.gz"))).toEqual([]);
+    const first = await sent(2, ["beard-viking", "moustache-viking"]);
+    expect(first.worn).toEqual(["beard-viking", "moustache-viking"]);
+    expect(first.sent).toEqual(["beard-viking", "moustache-viking"]);
+    expect((await sent(3, ["beard-viking", "moustache-viking"])).sent).toEqual([]);
+    expect((await sent(4, ["beard-faun"])).sent).toEqual(["beard-faun"]);
+    expect(requested.filter((u) => u.endsWith("beard-viking.bin.gz"))).toHaveLength(1);
+    expect(requested.filter((u) => u.endsWith("moustache-viking.bin.gz"))).toHaveLength(1);
   });
 
   it("answers an unknown style with an error that names it, and keeps serving", async () => {
