@@ -179,10 +179,12 @@ export function closedLipNormals(
 /**
  * How fast a closed canal's crease shade falls off from its lips across the closure's
  * zone (`closedLipShade`): the power of how far each vertex follows the closed opening.
- * The zone is a few millimetres round (`CanalForm.closure.zone`); at 4 the shade is a
- * sixteenth by halfway across it, so it stays a line. CHOICE, judged on renders.
+ * The zone is a few millimetres round (`CanalForm.closure.zone`); at 2 the shade is a
+ * quarter by halfway across it, so it stays a line. CHOICE, judged on renders (#77): at
+ * 4 it fell to nothing within a lattice vertex of the lips, and the line's edge drew
+ * the lattice's staircase, spiked.
  */
-export const CLOSED_LIP_SHADE_POWER = 4;
+export const CLOSED_LIP_SHADE_POWER = 2;
 
 /**
  * The share of its light a closed canal's lips lose where they meet, and its walls
