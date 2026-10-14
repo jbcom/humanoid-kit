@@ -22,6 +22,27 @@ export interface AttachedFluidCell {
   massKg: number;
 }
 
+/** An explicit caller-selected amount to release from one attached surface cell. */
+export interface FluidDetachmentRequest {
+  triangle: number;
+  materialId: string;
+  /** Conserved mass to transfer to the detached ledger, in kilograms. */
+  massKg: number;
+}
+
+/** Immutable, posed release data for a later detached-particle adapter. */
+export interface DetachedFluidRelease {
+  readonly triangle: number;
+  readonly sourceVertices: readonly [number, number, number];
+  readonly materialId: string;
+  /** Conserved released mass, in kilograms. */
+  readonly massKg: number;
+  /** Posed barycentric release location in model-local metres. */
+  readonly positionM: readonly [number, number, number];
+  /** Interpolated posed unit normal, dimensionless. */
+  readonly normal: readonly [number, number, number];
+}
+
 /**
  * One material's occupied posed triangle. `coverage` is triangle support
  * occupancy, not an optical alpha or a guessed film thickness.
@@ -176,6 +197,14 @@ const frozenVector = (vector: readonly number[]): readonly [number, number, numb
   Object.freeze([...vector]) as readonly [number, number, number];
 const frozenNumbers = (values: readonly number[]): readonly number[] => Object.freeze([...values]);
 
+function assertDetachmentRequest(request: FluidDetachmentRequest): void {
+  if (!Number.isSafeInteger(request.triangle) || request.triangle < 0)
+    throw new FluidStateError("fluid detachment triangle must be a non-negative safe integer");
+  if (typeof request.materialId !== "string" || request.materialId.length === 0)
+    throw new FluidStateError("fluid detachment materialId must be non-empty");
+  finitePositive(request.massKg, "fluid detachment massKg");
+}
+
 function neighbours(index: Uint32Array): readonly number[][] {
   const out = Array.from({ length: index.length / 3 }, () => new Set<number>());
   const edges = new Map<string, number>();
@@ -328,6 +357,75 @@ export class AttachedFluidField {
       throw new FluidStateError("attached field transport does not conserve mass");
     this.cells.clear();
     for (const [key, cell] of next) this.cells.set(key, cell);
+  }
+
+  /**
+   * Transfers caller-selected sparse-cell mass to the detached ledger and
+   * returns immutable release anchors from this exact posed frame. A future
+   * particle adapter owns motion after this handoff.
+   */
+  detach(
+    frame: PosedSurfaceFrame,
+    requests: readonly FluidDetachmentRequest[],
+  ): readonly DetachedFluidRelease[] {
+    this.assertSynchronized();
+    this.assertCompatibleFrame(frame);
+    const requested = new Map<string, FluidDetachmentRequest>();
+    for (const request of requests) {
+      assertDetachmentRequest(request);
+      const key = keyOf(request.triangle, request.materialId);
+      const current = requested.get(key);
+      requested.set(
+        key,
+        current ? { ...current, massKg: current.massKg + request.massKg } : { ...request },
+      );
+    }
+    if (requested.size === 0) return Object.freeze([]);
+
+    const releases: DetachedFluidRelease[] = [];
+    const next = new Map<string, AttachedFluidCell>();
+    let detachedKg = 0;
+    for (const [key, cell] of this.cells) {
+      const request = requested.get(key);
+      if (!request) {
+        next.set(key, cell);
+        continue;
+      }
+      if (request.massKg > cell.massKg)
+        throw new FluidStateError("cannot detach more fluid than triangle/material cell contains");
+      const { positionM, normal } = triangleCoverageGeometry(frame, cell);
+      const at = cell.triangle * 3;
+      const sourceVertices = [
+        frame.index[at] as number,
+        frame.index[at + 1] as number,
+        frame.index[at + 2] as number,
+      ] as const;
+      releases.push(
+        Object.freeze({
+          triangle: cell.triangle,
+          sourceVertices: Object.freeze([...sourceVertices]) as readonly [number, number, number],
+          materialId: cell.materialId,
+          massKg: request.massKg,
+          positionM: frozenVector(positionM),
+          normal: frozenVector(normal),
+        }),
+      );
+      detachedKg += request.massKg;
+      const remainingKg = cell.massKg - request.massKg;
+      if (remainingKg > 0) next.set(key, { ...cell, massKg: remainingKg });
+    }
+    if (releases.length !== requested.size)
+      throw new FluidStateError("fluid detachment cell is not attached");
+    const nextAttachedKg = [...next.values()].reduce((total, cell) => total + cell.massKg, 0);
+    const ledger = this.state.snapshot().ledger;
+    if (Math.abs(nextAttachedKg - (ledger.attachedKg - detachedKg)) > FLUID_MASS_EPSILON_KG)
+      throw new FluidStateError("fluid detachment does not conserve attached mass");
+    this.state.detachKg(detachedKg);
+    this.cells.clear();
+    for (const [key, cell] of next) this.cells.set(key, cell);
+    return Object.freeze(
+      releases.sort((a, b) => a.triangle - b.triangle || a.materialId.localeCompare(b.materialId)),
+    );
   }
 
   frame(): readonly AttachedFluidCell[] {
