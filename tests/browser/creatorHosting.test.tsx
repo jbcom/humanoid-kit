@@ -273,13 +273,58 @@ describe("<HumanoidCreator coverPolicy>", () => {
   it(
     "keeps drawing the covered figure while an uncovering is asked about, and refuses it",
     async () => {
+      const started = performance.now();
       const answers = [defer<boolean>(), defer<boolean>()];
       let asked = 0;
+      const report = (phase: string, detail: Record<string, unknown> = {}) => {
+        const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".hk-chip")).find(
+          (element) => element.textContent?.trim() === SUIT.label,
+        );
+        console.info(
+          "creator-second-click-diagnostic",
+          JSON.stringify({
+            phase,
+            elapsedMs: performance.now() - started,
+            requests: asked,
+            ariaPressed: button?.getAttribute("aria-pressed") ?? null,
+            inert: button ? button.closest("[inert]") !== null : null,
+            waiting: Array.from(document.querySelectorAll('[role="status"]')).some((element) =>
+              element.textContent?.includes("Waiting for confirmation…"),
+            ),
+            sentRecipes: sent.map((recipe) => ({
+              macros: recipe.macros,
+              modifiers: recipe.modifiers,
+              outfit: recipe.outfit ?? [],
+              uncovered: uncovered(recipe),
+            })),
+            ...detail,
+          }),
+        );
+      };
       const screen = await render(
         <Clothed
           initialRecipe={suited}
           coverPolicy={{
-            allowUncover: () => (answers[asked++] as { promise: Promise<boolean> }).promise,
+            allowUncover: (request) => {
+              const requestIndex = asked++;
+              report("policy-request", {
+                requestIndex,
+                cause: request.cause,
+                currentOutfit: request.current?.outfit ?? [],
+                proposedOutfit: request.proposed.outfit ?? [],
+                aborted: request.signal.aborted,
+              });
+              request.signal.addEventListener(
+                "abort",
+                () => report("policy-request-aborted", { requestIndex }),
+                { once: true },
+              );
+              const answer = answers[requestIndex] as { promise: Promise<boolean> };
+              void answer.promise.then((allowed) =>
+                report("policy-answer", { requestIndex, allowed }),
+              );
+              return answer.promise;
+            },
           }}
         />,
       );
@@ -302,10 +347,18 @@ describe("<HumanoidCreator coverPolicy>", () => {
       await pause(1000);
       expect(sent.some(uncovered)).toBe(false);
       // Asked again, and allowed this time.
-      await chip.click();
+      report("before-second-click");
+      try {
+        await chip.click();
+        report("after-second-click");
+      } finally {
+        report("second-click-finally");
+      }
+      report("before-second-answer");
       (answers[1] as { resolve: (v: boolean) => void }).resolve(true);
       await expect.element(chip).toHaveAttribute("aria-pressed", "false");
       await expect.poll(() => sent.some(uncovered), LOAD).toBe(true);
+      report("accepted-second-answer");
     },
     LOAD.timeout,
   );
