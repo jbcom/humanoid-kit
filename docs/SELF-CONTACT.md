@@ -1,7 +1,37 @@
 # Self-contact: a figure touching its own body
 
-Status: **specified, slice 1 in progress** (#117). Nothing here is implemented
-until its slice's tests are green; each slice says what it proves.
+Status: **slice 1 implemented** (#117): `solveSiteContact`, the `point` hand
+shape and the all-ages sites, headless (`src/interaction/siteContact.ts`;
+`docs/INTERACTIONS.md`, "Site contact"). Later slices are specified, not built.
+Nothing here is implemented until its slice's tests are green; each slice says
+what it proves.
+
+## Slice 1 as built
+
+- **Approach orientation.** The finger is not posed along the reverse of the
+  site's normal. That was the first wording, and it fails R3: the pad is the
+  pulp, 60% along the end bone, so a straight poke sinks the rest of the
+  fingertip into the skin.
+  - The pad faces the site instead, with the finger pitched into the skin
+    (15° to 55°, about 35° preferred).
+  - The heading across the skin is free. The solver chooses the heading and
+    pitch whose hand, placed rigidly at the goal, sinks least into a sample of
+    the rest of the body, then needs the least wrist bend. A wrist out of reach
+    always loses.
+  - The direction the finger comes in against is the site's normal, plus the way
+    out from the body's axis, plus the figure's forward. The skin normal alone
+    faces the chest under the chin and the neck behind an ear lobe.
+- **Hand placement before the arm solve.** The shaped hand is rigid on its
+  wrist, so the chosen finger frame fixes the wrist.
+  - The elbow and shoulder are seeded to that wrist with `seedArmTwoBone`, under
+    a pole chosen by the site's height: down, back and out below the shoulder,
+    out and forward at the head.
+  - Half the hand's turn about the forearm goes to the forearm's twist bone.
+  - `solveArmTarget`, by position only on the skinned pad, closes the rest.
+    `solveArmTarget`'s own wrist-only orientation pass could not turn the hand
+    this far and keep the contact.
+- **R4.** The site is measured again after each round, for up to 4 rounds,
+  until it moves less than 0.5 mm. In the slice's contacts it settles in one.
 
 A figure that can only pose is a mannequin. People touch themselves all the
 time: they scratch, rub an eye, tug an ear, pick their nose, rest a chin on a

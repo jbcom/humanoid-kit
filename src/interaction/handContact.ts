@@ -191,7 +191,7 @@ function palmOrientation(
 }
 
 /** The rotation whose basis columns are the frame's tangent, bitangent and normal. */
-function frameQuat(frame: FrameOut): Quat {
+export function frameQuat(frame: FrameOut): Quat {
   const [m00, m10, m20] = frame.tangent;
   const [m01, m11, m21] = frame.bitangent;
   const [m02, m12, m22] = frame.normal;
@@ -526,7 +526,11 @@ export function createHandContact(options: HandContactOptions = {}): HandContact
 }
 
 /** The arm's length, shoulder through wrist, as posed (segment lengths do not change with pose). */
-function armLength(rest: RestBones, rotations: BoneRotations, chain: readonly number[]): number {
+export function armLength(
+  rest: RestBones,
+  rotations: BoneRotations,
+  chain: readonly number[],
+): number {
   const heads = posedBones(rest, rotations).heads;
   let total = 0;
   for (let k = 1; k < chain.length; k++) {

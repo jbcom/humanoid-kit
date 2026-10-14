@@ -501,7 +501,10 @@ whether that sampler reached its target.
 `createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
 one solve. It owns transient skeleton and skinning scratch, borrows one
 immutable evaluated generation, and rejects stale generations, malformed shapes
-and trial changes outside the declared arm chain. Its lower-level `Into` helpers
+and trial changes outside the declared arm chain (and the same hand's finger
+bones, when a hand shape declares them). Its effector is the hand's grip by
+default, or any other affordance or landmark of the hand (a finger pad for site
+contact). Its lower-level `Into` helpers
 remain trusted rig math: callers provide finite unit rotations and independent,
 non-overlapping output buffers. This seam deliberately makes an integration
 choose when it has a final live hand frame to close, rather than quietly moving
@@ -576,6 +579,57 @@ policy; a target is placed out of one figure's reach.
 `status`, `reason`, `distance` (measured hand frame to target, metres),
 `orientationError`, `geometricallyReachable`, `target` and `hand` (world).
 The report object is reused between calls; copy what you keep.
+
+### Site contact
+
+`solveSiteContact(input)` (framework-free, headless,
+`src/interaction/siteContact.ts`) puts a point of a figure's hand on a named
+site of the same figure's body: the index pad on the nose tip, the chin, the
+crown, an ear lobe, the sternum notch or the navel. It is slice 1 of
+self-contact (`docs/SELF-CONTACT.md`, #117). It works in figure space on the
+surface as the renderer skins it, so one call lands on any body's own nose.
+The `<Humanoid>` seam, the blend clock and `RegionalContact` emission belong to
+later slices.
+
+- **Hand shape first.** `handShapeRotations` sets one hand's finger bones
+  outright to a `HAND_SHAPES` entry, mirrored for the left hand. `point` keeps
+  the index straight, curls the other fingers and tucks the thumb. Nothing
+  else moves: the fingers belong to the shape and the arm to the solver.
+- **Effector and site from one skinning.** `createArmSkinnedFrameSampler` takes
+  an `effector` (an affordance or landmark id; `hand.X` by default, so hand
+  contact is unchanged) and the hand's `fingerBones` as declared candidates.
+  Its `frames` reads the effector and a site landmark from the same skinned
+  candidate pose.
+- **Hand placed, then closed on the skin.** The shaped hand is rigid on its
+  wrist. So the finger's frame at the goal (the site, lifted 1 mm along its
+  normal) fixes where the wrist must be. The solver searches the free heading
+  across the skin (every 10°) and the finger's pitch into it (15° to 55°,
+  about 35° preferred). For each candidate it seeds the elbow and shoulder to
+  that wrist (`seedArmTwoBone`), turns the wrist to the hand and moves half of
+  the turn about the forearm into the forearm's twist bone. A position-only
+  `solveArmTarget` on the skinned pad then closes the last millimetres.
+- **Choosing the approach.** A candidate whose wrist is out of reach always
+  loses. After that, the cost is how far a sample of the hand's skin sinks into
+  the rest of the body, then the wrist's bend.
+  - The body sample is coarse, but taken whole within 4 cm of the site, and it
+    leaves out the touching arm.
+  - The direction the finger comes in against is the site's normal, turned out
+    from the body's axis and toward the figure's front. Under the chin the skin
+    normal faces the chest, so a hand that came in along it would sink.
+- **The site moves with the arm (R4).** The site is measured again under each
+  solved pose. The solve repeats until the site holds within 0.5 mm, for at most
+  4 rounds.
+- **No stretching.** No joint is translated. The report's `gap` is the
+  measured skinned effector to its goal. `status` is `reached` only when that
+  gap is within `tolerance` (4 mm, so the pad is within 5 mm of the site) at
+  full weight. Otherwise it is `unreached`, with `reason` set to
+  `geometrically-unreachable`, `tolerance-not-reached` or `partial-weight`.
+- **Blending.** `weight` slerps the arm and the shaped fingers from the source.
+  At weight 0 `out` is the source byte for byte.
+- **Age policy.** The all-ages sites (`SELF_CONTACT_SITES`) are core `contact`
+  affordances with `adult: false`, so a child's fidget naming one stays "all"
+  (`audienceOf`). Any site the core does not know, such as a pack's
+  `introitus`, makes the definition adult.
 
 ### Stimuli and reactions
 
