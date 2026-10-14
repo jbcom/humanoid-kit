@@ -1421,10 +1421,12 @@ slices 1 and 2 of its build plan.
   pose generation. `update({ active, figure, geometryGeneration, source, target,
   out })` only solves when one of those identities changes; it writes a weighted
   pose from the cached result and returns `idle`, `blending`, `holding` or
-  `released`. The report's `solution` is always the full-weight receipt, never a
-  claim that a partly blended frame already touches. A source pose or target that
-  mutates under the same identity throws rather than silently drawing a stale
-  solve. `release(source, out)` copies the source byte-for-byte and drops the
+  `released`. `out` must be a separate same-length buffer: the source is immutable
+  for its generation and is never a destination. The report's `solution` is always
+  the full-weight receipt, never a claim that a partly blended frame already
+  touches. A source pose or target that mutates under the same identity throws
+  rather than silently drawing a stale solve. `release(source, out)` copies the
+  source byte-for-byte and drops the
   cache; `cancel(source, out)` does the same immediately with `cancelled` state;
   `invalidate()` drops it without writing; `dispose()` makes later updates invalid.
   `useSiteContactConstraint()` from `humanoid-kit/react` owns this

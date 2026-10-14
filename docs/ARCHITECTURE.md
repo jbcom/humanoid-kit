@@ -3537,12 +3537,14 @@ returns to idle.
 
 **Cached site contacts.** `createSiteContactConstraint` is deliberately outside the
 current `<Humanoid>` frame pass. It retains only a full solve for one immutable
-source-pose generation, evaluated geometry generation, target object and shape;
-its `update` may run in a renderer's frame writer to blend that result, but it
-never runs a multi-second solve during React render. An inactive phase releases
-byte-for-byte to its source and drops the cache. A later `<Humanoid siteContact>`
-integration must compose this output before skeleton, skin and presence readers,
-like held hand contacts; this cache does not claim that seam has landed.
+source-pose generation, evaluated geometry generation, target object and shape.
+It is a static-source cache primitive, not a changing-clip adapter: `update`
+solves synchronously for each new source generation, so a frame writer must not
+feed it a fresh clip sample every frame. It never runs a multi-second solve during
+React render. An inactive phase releases byte-for-byte to its separate output
+buffer and drops the cache. A later `<Humanoid siteContact>` integration must
+compose this output before skeleton, skin and presence readers, like held hand
+contacts; this cache does not claim that seam or moving-pose throughput has landed.
 
 **Frames for consumers.** The lift, the carry and the sole contacts of each frame are
 written by `AnimationFrameWriter` (`src/animation/frameWriter.ts`), which is
