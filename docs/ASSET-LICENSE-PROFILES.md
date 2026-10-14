@@ -48,3 +48,14 @@ The shared helper is `scripts/lib/assetLicenceProfile.ts`. Its records are
 deliberately renderer-neutral and do not create public runtime exports. Packer
 hooks, generated data, and feature-specific acceptance tests remain with the
 pack that owns the asset.
+
+`scripts/pack-hair.ts` consumes the option for its MakeHuman Community facial
+attachments. Its default commercial output includes the verified bodyparts06
+records and writes `packs/hair/data/ASSET-ATTRIBUTION.md`; its `cc0-only`
+output retains the bodyparts05 set and records each bodyparts06 feature as
+unavailable. The grinsegold bodyparts06 MHCLO and OBJ headers, and the
+culturalibre moustache OBJ header, say `AGPL3` while the official archive record
+says `CC-BY`; the generated attribution and provenance record each conflict and
+preserve the source-header share-alike notice. The
+generated `ASSET-SOURCES.md` pins the original Bodyparts06 archive and describes
+the source paths and transformations needed to reproduce the derived files.

@@ -1,3 +1,15 @@
+Composite asset licence notice
+
+This package contains CC0 system and bodyparts05 data, plus bodyparts06 data
+with CC-BY and AGPL3 source notices. It is therefore not wholly CC0. The
+selected asset licence, author, source, required credit, modification statement
+and any share-alike obligation for each shipped non-CC0 facial attachment are
+in `data/ASSET-ATTRIBUTION.md`; `data/PROVENANCE.md` preserves the source-header
+and official-record conflicts. `data/ASSET-SOURCES.md` provides the pinned
+original Bodyparts06 source archive, paths and transformations for recipients.
+This file carries the
+CC0 1.0 legal code for the CC0 portion only.
+
 Creative Commons Legal Code
 
 CC0 1.0 Universal

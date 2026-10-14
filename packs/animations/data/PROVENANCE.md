@@ -48,12 +48,12 @@ dedicated to the public domain (CC0 1.0 Universal (authored for humanoid-kit)). 
 
 - charge_advance: `scripts/clips/charge_advance.json` (sha256 `602981d64522924237afb71b4bbe075fca55147d27e24e62443ce468982323ef`)
 - colour_bearer: `scripts/clips/colour_bearer.json` (sha256 `718035801b4b785d2f1f8a25f76fe58fa534bb8c95e95893b54a7bb06e5e9f83`)
-- kneel_pray: `scripts/clips/kneel_pray.json` (sha256 `edd700f02b2cc849190a9de5498b176c0dd7d1b77ce7e54750e2fb7181d10ddd`)
+- kneel_pray: `scripts/clips/kneel_pray.json` (sha256 `7f0543de5b1634a0358989c7e8464142fc9b8b4ba853332b6c216438c2b9b2ac`)
 - march_quick: `scripts/clips/march_quick.json` (sha256 `040e6322278f94c3c81f8774cc0e654a92e58cf3f967acd187e3760855ac1435`)
 - musket_fire: `scripts/clips/musket_fire.json` (sha256 `7070819762399f99406673f877d693ae45cab24a2c5460d17c6f2dfed8b3c474`)
 - musket_load: `scripts/clips/musket_load.json` (sha256 `371d8018f7ea0eb9ffc88e498b64fb5cda944fa858d4103be5a10a1200b0d569`)
 - officer_sword_raised: `scripts/clips/officer_sword_raised.json` (sha256 `82491a1a8ff414fea8fe43fdd9f875160422b2830732d30472dbd8262b0673a4`)
-- pray_standing: `scripts/clips/pray_standing.json` (sha256 `d3dd868933bb29db4cab7baa0b341f2e0cf107a6990fdf0cee4b4a7ec4f33a22`)
+- pray_standing: `scripts/clips/pray_standing.json` (sha256 `39232d34e62cd88a927de3c00ab1f656fa372f23cc9f3d51d8f17a5299a5a875`)
 
 ## Outputs
 
@@ -151,9 +151,9 @@ dedicated to the public domain (CC0 1.0 Universal (authored for humanoid-kit)). 
 | zombie_walk_fwd_loop.bin.gz | `43992dc9e2c6be986ed5444fae35ac95be330ded6dedb0fd8c2c298c811eb046` |
 | charge_advance.bin.gz | `db7a31659e9013868f41dc2ff0fbb0a2e3c244b923989d3c6564d4f830d9230b` |
 | colour_bearer.bin.gz | `a90192f9ac5e0798de35f4593afa16f9ae9e74f1f7eb60385090587bd3664128` |
-| kneel_pray.bin.gz | `9c9b4c6c28117fcf76f06b8013ba2d6565f5a7f1790a26180586967a335ea2d8` |
+| kneel_pray.bin.gz | `cfbb3a0c17e95e50af52a3027cb351418323724e2cb12e457ce499d90f985c22` |
 | march_quick.bin.gz | `6d945d5f839485eb31e1cd65d75ef66f4879ff162460e92e56204c73f761eec4` |
 | musket_fire.bin.gz | `49ad9ec6747ef8c91f75699bfc4670d624ddd417f92c2a4b39e1e59ea45a98af` |
 | musket_load.bin.gz | `add1a4647da98f3624d7a75782e79291b93fc8bf0d4cfc0935fdfafcd1f82e8a` |
 | officer_sword_raised.bin.gz | `35692640acc3de9c8c30bea0cfbe6b26ba3b0bfa16804c0989463430ac593e50` |
-| pray_standing.bin.gz | `da85221a2a6d3450d0b54186d07ac1bb23fc413f7bfad8f91494ce0237f938b8` |
+| pray_standing.bin.gz | `0d12da02f0e61531147f00352a3270d16a2c90419977ef3ecfa52161fa3ef900` |
