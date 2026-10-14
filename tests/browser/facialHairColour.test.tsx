@@ -28,6 +28,7 @@ import {
   hairTint,
 } from "../../src/surface/hairTone.ts";
 import type { WorkerRequest } from "../../src/worker/protocol.ts";
+import { expectSameArray } from "./arrays.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const BEARD = "beard-viking",
@@ -162,10 +163,15 @@ it("routes independent colours through the actual live Humanoid worker path with
   ).toBe(true);
   for (const id of ids) {
     const old = original.get(id);
+    if (!old) throw new Error(`Missing original facial colour geometry for ${id}`);
     expect(mesh(id).geometry).toBe(old?.geometry);
     expect(mesh(id).material).toBe(old?.material);
-    expect(Array.from(mesh(id).geometry.index?.array ?? [])).toEqual(old?.index);
-    expect(Array.from(mesh(id).geometry.getAttribute("uv").array)).toEqual(old?.uvs);
+    expectSameArray(mesh(id).geometry.index?.array ?? [], old.index, {
+      what: `${id} source indices after colour change`,
+    });
+    expectSameArray(mesh(id).geometry.getAttribute("uv").array, old.uvs, {
+      what: `${id} source UVs after colour change`,
+    });
     if (id !== BEARD && id !== MOUSTACHE) expect(tint(id)).toEqual(old?.colour);
   }
   for (const [view, yaw] of [
