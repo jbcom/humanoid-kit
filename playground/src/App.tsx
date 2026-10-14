@@ -57,6 +57,7 @@ import { GraftQa } from "./GraftQa";
 import { HandshakeLab } from "./HandshakeLab";
 import { MiniatureLab } from "./MiniatureLab";
 import { QaShade } from "./qaShade";
+import { SelfContactLab } from "./SelfContactLab";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -510,6 +511,8 @@ export function App() {
   if (params.has("miniatures")) return <MiniatureLab />;
   // The graft scene builds its own model on the main thread: it needs no worker.
   if (params.get("scene") === "graft") return <GraftQa />;
+  // Private development review fixture for the self-contact solver.
+  if (params.get("scene") === "self-contact") return <SelfContactLab />;
   return <WorkerApp />;
 }
 

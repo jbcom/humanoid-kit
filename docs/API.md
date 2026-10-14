@@ -1387,6 +1387,19 @@ slices 1 and 2 of its build plan.
   measured final hand frame to the target in metres; `target` and `hand` are
   world points. `handContactSide(definition, contact, role)` reads which hand
   a contact asks of a role, or null.
+- `solveSiteContact(input)`: closes a skinned point of one hand on a named
+  landmark of the same figure. It is framework-free and takes the evaluated
+  `SiteContactFigure` (including the evaluated render `index`), source rotations,
+  an `effector`, a `site`, an optional `shape` (`point`, `pinch`, `flat`, `cup`, `claw` or `fist`) and `out`. It
+  returns its measured `SiteContactReport`; use its `gap`, `collision`, `status` and
+  `orientationError` as the result, never a bone-centre approximation. For broad
+  `flat`/`cup` palm contact, `contact` is explicit `volar-palm-support`: it
+  reports the selected primary-metacarpal source render `vertex`, its final
+  `position` and `normal`, the stable `palm.X` `centreVertex`, and the
+  `centreToContact` offset. `palm.X` remains the centre landmark; it is not
+  silently redefined as the broad contact.
+  `handShapeRotations` can also apply any `HAND_SHAPES` entry separately to a
+  pose buffer. The caller chooses the gesture appropriate to its action.
 - `InteractionEvent` is delivered through `on(participant, listener)` to both
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,

@@ -31,6 +31,7 @@ import { skinOfEvaluation } from "../src/model/reservoirSkin.ts";
 import { createPresenceRegistry } from "../src/presence/presence.ts";
 import { AgePolicyError, isAdult } from "../src/recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
+import { heaviestBone } from "../src/rig/influences.ts";
 import { bodyPoseRotations, restBones, rigData } from "../src/rig/pose.ts";
 import { adultPackData, bodyPackData } from "./fixtures.ts";
 import { figure } from "./interactionHarness.ts";
@@ -48,6 +49,14 @@ const BODIES: Record<string, Recipe> = {
   "heavy man": createRecipe({ macros: { age: 30, gender: 1, weight: 1 } }),
   elder: createRecipe({ macros: { age: 85, gender: 0 } }),
 };
+/** A flat chest selected independently of the figure's gender macro. */
+const FLAT_CHEST = createRecipe({
+  macros: { age: 30, gender: 0, weight: 0, muscle: 0 },
+  regionalMacros: {
+    breastL: { breastPresence: 0, breastSize: 0 },
+    breastR: { breastPresence: 0, breastSize: 0 },
+  },
+});
 
 /** All-ages sites, each with the hand that reaches it. */
 const CONTACTS = [
@@ -89,6 +98,7 @@ function figureOf(recipe: Recipe): SiteContactFigure {
   return {
     adult: isAdult(recipe),
     generation: ev,
+    index: topology.index,
     restBones: restBones(model.assets, Float32Array.from(ev.control)),
     rest: Float32Array.from(ev.positions),
     restNormals: Float32Array.from(ev.normals),
@@ -165,6 +175,7 @@ function touch(
   effector: string,
   site: string,
   standoff?: number,
+  shape: keyof typeof HAND_SHAPES = "point",
 ): { report: SiteContactReport; gap: number; inside: number; out: Float32Array } {
   const figure = figureOf(recipe);
   const out = new Float32Array(BONES * 4);
@@ -173,7 +184,7 @@ function touch(
     source,
     effector,
     site,
-    shape: "point",
+    shape,
     ...(standoff === undefined ? {} : { standoff }),
     out,
   });
@@ -209,6 +220,102 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
           expect(gap, "pad to site, metres, on the rendered surface").toBeLessThan(GAP);
           expect(inside, "hand vertices inside the body").toBe(0);
         });
+
+  /**
+   * Minor ear contacts close. Broad support contacts report the primary-palm
+   * support that reaches the site, but remain red until the full hand clears.
+   */
+  for (const [name, recipe, effector, site, shape, expected] of [
+    ["child right ear pinch", BODIES.child, "finger-pad-1.R", "ear-lobe.R", "pinch", "reached"],
+    ["child left ear pinch", BODIES.child, "finger-pad-1.L", "ear-lobe.L", "pinch", "reached"],
+    [
+      "flat hand at sternum",
+      BODIES["slim woman"],
+      "palm.R",
+      "sternum-notch",
+      "flat",
+      "body-collision",
+    ],
+    [
+      "flat hand at source-flat sternum",
+      FLAT_CHEST,
+      "palm.R",
+      "sternum-notch",
+      "flat",
+      "body-collision",
+    ],
+    ["flat hand on source-flat chest", FLAT_CHEST, "palm.R", "nipple.R", "flat", "reached"],
+    ["cupped hand at heavy navel", BODIES["heavy man"], "palm.R", "navel", "cup", "reached"],
+  ] as const)
+    it(`reports ${name} on the actual contact patch after the final arm solve`, () => {
+      const { report, gap, inside, out } = touch(
+        recipe as Recipe,
+        standing,
+        effector,
+        site,
+        undefined,
+        shape,
+      );
+      const broad = shape === "flat" || shape === "cup";
+      if (!broad) {
+        expect(report.status, report.reason).toBe("reached");
+        expect(gap, "pad to site, metres, on the rendered surface").toBeLessThan(GAP);
+        expect(inside, "hand vertices inside the body").toBe(0);
+        return;
+      }
+      expect(report.status, report.reason).toBe(expected === "reached" ? "reached" : "unreached");
+      if (expected === "body-collision") expect(report.reason).toBe("body-collision");
+      const contact = report.contact;
+      expect(contact?.domain, "broad contact domain").toBe("volar-palm-support");
+      if (!contact) throw new Error("missing broad contact support");
+      expect(contact.vertex, "support differs from stable palm centre").not.toBe(
+        contact.centreVertex,
+      );
+      const figure = figureOf(recipe as Recipe);
+      const bone =
+        figure.restBones.names[heaviestBone(figure.skinIndex, figure.skinWeight, contact.vertex)];
+      expect(bone, "support is primary metacarpal skin").toMatch(/^metacarpal[1-4]\.R$/);
+      const posed = surfacePoser(model, recipe as Recipe)(out);
+      const frames = landmarks(model, posed) as Record<
+        string,
+        { position: readonly number[]; normal: readonly number[] }
+      >;
+      const siteFrame = frames[site];
+      if (!siteFrame) throw new Error(`missing site frame: ${site}`);
+      const point: [number, number, number] = [
+        posed.positions[contact.vertex * 3] as number,
+        posed.positions[contact.vertex * 3 + 1] as number,
+        posed.positions[contact.vertex * 3 + 2] as number,
+      ];
+      const normal: [number, number, number] = [
+        posed.normals[contact.vertex * 3] as number,
+        posed.normals[contact.vertex * 3 + 1] as number,
+        posed.normals[contact.vertex * 3 + 2] as number,
+      ];
+      const centre: [number, number, number] = [
+        posed.positions[contact.centreVertex * 3] as number,
+        posed.positions[contact.centreVertex * 3 + 1] as number,
+        posed.positions[contact.centreVertex * 3 + 2] as number,
+      ];
+      expect(
+        dist(point, contact.position),
+        "reported support is the posed source vertex",
+      ).toBeLessThan(1e-6);
+      expect(dist(point, siteFrame.position), "support to site, metres").toBeLessThan(GAP);
+      expect(
+        normal[0] * contact.normal[0] +
+          normal[1] * contact.normal[1] +
+          normal[2] * contact.normal[2],
+        "reported support normal",
+      ).toBeGreaterThan(0.999);
+      expect(contact.centreToContact).toEqual([
+        point[0] - centre[0],
+        point[1] - centre[1],
+        point[2] - centre[2],
+      ]);
+      if (expected === "reached") expect(inside, "full hand is clear").toBe(0);
+      else expect(inside, "strict full-hand collision remains red").toBeGreaterThan(0);
+    });
 
   it("sees a finger pushed into the face: the penetration check is not vacuous", () => {
     const { inside } = touch(
@@ -295,6 +402,17 @@ describe("what a site contact accepts", () => {
 });
 
 describe("hand shapes", () => {
+  it("offers the contact shapes specified for self contact", () => {
+    expect(Object.keys(HAND_SHAPES).sort()).toEqual([
+      "claw",
+      "cup",
+      "fist",
+      "flat",
+      "pinch",
+      "point",
+    ]);
+  });
+
   it("moves only the fingers of its own hand", () => {
     for (const shape of Object.keys(HAND_SHAPES) as (keyof typeof HAND_SHAPES)[])
       for (const side of ["L", "R"] as const) {
@@ -322,6 +440,43 @@ describe("hand shapes", () => {
       expect(dist(frames[`finger-pad-${f}.R`]?.position as number[], wrist)).toBeLessThan(
         index * 0.8,
       );
+  });
+
+  it("puts the thumb opposite the index for a pinch", () => {
+    const recipe = BODIES["slim woman"] as Recipe;
+    const out = handShapeRotations(rig, standing, "pinch", "R", new Float32Array(BONES * 4));
+    const frames = landmarks(model, surfacePoser(model, recipe)(out)) as Record<
+      string,
+      { position: readonly number[] }
+    >;
+    expect(
+      dist(
+        frames["finger-pad-1.R"]?.position as number[],
+        frames["finger-pad-2.R"]?.position as number[],
+      ),
+    ).toBeLessThan(0.04);
+  });
+
+  it("keeps a flat hand open and folds a fist into the palm", () => {
+    const recipe = BODIES["slim woman"] as Recipe;
+    const pads = (shape: keyof typeof HAND_SHAPES) => {
+      const out = handShapeRotations(rig, standing, shape, "R", new Float32Array(BONES * 4));
+      const frames = landmarks(model, surfacePoser(model, recipe)(out)) as Record<
+        string,
+        { position: readonly number[] }
+      >;
+      const wrist = frames["wrist.R"]?.position as number[];
+      return [1, 2, 3, 4, 5].map((finger) =>
+        dist(frames[`finger-pad-${finger}.R`]?.position as number[], wrist),
+      );
+    };
+    const flat = pads("flat");
+    const fist = pads("fist");
+    // The support-palm thumb rests adducted, while the four long digits remain open.
+    for (let finger = 1; finger < flat.length; finger++) {
+      expect(flat[finger]).toBeGreaterThan(0.1);
+      expect(fist[finger]).toBeLessThan(flat[finger] as number);
+    }
   });
 });
 

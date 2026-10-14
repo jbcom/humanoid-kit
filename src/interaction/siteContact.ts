@@ -16,12 +16,15 @@
  * reach is reported with its measured gap, and the arm keeps the closest pose
  * it found (R5).
  */
+
+import { DoubleSide, Ray, Vector3 } from "three";
 import {
   type ArmSkinnedFrameSampler,
   createArmSkinnedFrameSampler,
 } from "../affordance/armSkinnedFrameSampler.ts";
 import { SELF_CONTACT_SITES } from "../affordance/registry.ts";
 import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
+import { PENETRATION_LIMIT, partOfBone } from "../foundation/invariants.ts";
 import {
   type FrameOut,
   frameOut,
@@ -29,13 +32,15 @@ import {
   type LandmarkAnchors,
   type LandmarkId,
 } from "../foundation/landmarks.ts";
+import type { PosedBody } from "../foundation/posed.ts";
+import { BodySurface } from "../foundation/surface.ts";
 import { AgePolicyError } from "../recipe/agePolicy.ts";
 import {
   type ArmPole,
   type ArmTargetReason,
+  type ArmTargetResult,
   type ArmTip,
   armChain,
-  armTip,
   seedArmTwoBone,
   solveArmTarget,
 } from "../rig/armTarget.ts";
@@ -47,6 +52,7 @@ import {
   type RestBones,
 } from "../rig/bones.ts";
 import type { SkinFold } from "../rig/dual.ts";
+import { heaviestBone } from "../rig/influences.ts";
 import { type RigData, skinNormals, skinPositions } from "../rig/pose.ts";
 import { conjugate, mul, type Quat, quaternionAngle, rotate, slerp } from "../rig/quat.ts";
 import { defaultAffordanceAdult } from "./definition.ts";
@@ -65,6 +71,8 @@ export interface SiteContactFigure {
   /** Identity of the evaluated geometry below; a new evaluation is a new identity. */
   generation: object;
   restBones: RestBones;
+  /** The evaluated render surface's triangles, matching `rest` and the skin binding. */
+  index: Uint32Array;
   /** The evaluated render surface at rest, with its normals and skin weights. */
   rest: Float32Array;
   restNormals: Float32Array;
@@ -116,6 +124,58 @@ export const HAND_SHAPES = {
     ...curled(3, 75, 95, 55),
     ...curled(4, 75, 95, 55),
     ...curled(5, 80, 95, 55),
+  },
+  /**
+   * Thumb and index meet to take a small thing or an ear lobe; the other fingers
+   * stay folded clear of the contact.  The index's bend leaves its pad as the
+   * declared effector, while the thumb supplies the opposing face of the pinch.
+   */
+  pinch: {
+    "finger1-1": [35, -45, 0],
+    "finger1-2": [40, -45, 0],
+    "finger1-3": [30, -45, 0],
+    "finger2-1": [42, -30, 0],
+    "finger2-2": [62, -30, 0],
+    "finger2-3": [42, -30, 0],
+    ...curled(3, 70, 90, 55),
+    ...curled(4, 75, 95, 55),
+    ...curled(5, 80, 95, 55),
+  },
+  /** An open hand, with the thumb resting toward the palm while fingers remain straight. */
+  flat: {
+    "finger1-1": [15, 20, 0],
+    "finger1-2": [20, 20, 0],
+    "finger1-3": [25, 15, 0],
+  },
+  /** A relaxed palm around a rounded surface, with every finger partly flexed. */
+  cup: {
+    "finger1-1": [55, 35, 0],
+    "finger1-2": [60, 28, 0],
+    "finger1-3": [45, 18, 0],
+    ...curled(2, 30, 42, 24),
+    ...curled(3, 34, 46, 28),
+    ...curled(4, 38, 50, 30),
+    ...curled(5, 42, 54, 32),
+  },
+  /** Bent interphalangeal joints with raised knuckles, for a light scratch. */
+  claw: {
+    "finger1-1": [12, 18, 0],
+    "finger1-2": [28, 16, 0],
+    "finger1-3": [22, 10, 0],
+    ...curled(2, 12, 72, 58),
+    ...curled(3, 12, 76, 60),
+    ...curled(4, 12, 80, 62),
+    ...curled(5, 12, 84, 64),
+  },
+  /** A closed hand: all digits curl into the palm and the thumb folds over them. */
+  fist: {
+    "finger1-1": [55, 35, 0],
+    "finger1-2": [60, 28, 0],
+    "finger1-3": [45, 18, 0],
+    ...curled(2, 78, 98, 60),
+    ...curled(3, 82, 102, 64),
+    ...curled(4, 86, 106, 68),
+    ...curled(5, 90, 110, 72),
   },
 } as const satisfies Record<string, HandShapeJoints>;
 
@@ -190,7 +250,10 @@ export interface SiteContactInput {
 }
 
 /** Why a site contact did not close. */
-export type SiteContactReason = Exclude<ArmTargetReason, "orientation-unavailable">;
+export type SiteContactReason =
+  | Exclude<ArmTargetReason, "orientation-unavailable">
+  /** Every contact-closing heading drove the sampled hand into the rest of the body. */
+  | "body-collision";
 
 export interface SiteContactReport {
   status: "reached" | "unreached";
@@ -200,8 +263,26 @@ export interface SiteContactReport {
   gap: number;
   /** Radians between the pad and its approach orientation, when the effector is a finger pad. */
   orientationError: number | null;
+  /** Metres of final-pose hand clearance shortfall against the indexed body surface. */
+  collision: number;
   /** Site-then-arm rounds the solve took (R4), 1 to 4. */
   rounds: number;
+  /**
+   * Broad flat/cup contact reports the actual source-derived volar support, not
+   * the stable `palm.X` centre landmark. Its pose is measured after the solve.
+   */
+  contact?: {
+    domain: "volar-palm-support";
+    /** The actual primary-metacarpal support vertex on the rendered surface. */
+    vertex: number;
+    /** The stable `palm.X` centre used to derive this support patch. */
+    centreVertex: number;
+    /** The solved support position and outward skin normal in figure space. */
+    position: V3;
+    normal: V3;
+    /** Solved figure-space vector from the stable centre landmark to the support. */
+    centreToContact: V3;
+  };
 }
 
 /**
@@ -228,6 +309,26 @@ const APPROACH_PITCH = (35 * Math.PI) / 180;
 const PITCHES = [15, 25, 35, 45, 55].map((degrees) => (degrees * Math.PI) / 180);
 const PITCH_PREFERENCE = 0.05 / ((10 * Math.PI) / 180);
 
+/** The contact face a gesture presents. */
+interface HandApproach {
+  pitches: readonly number[];
+  preferred: number;
+}
+const HAND_APPROACH: Record<HandShape, HandApproach> = {
+  point: { pitches: PITCHES, preferred: APPROACH_PITCH },
+  pinch: { pitches: PITCHES, preferred: APPROACH_PITCH },
+  // A rigid zero-pitch hand drives its straight fingers into a curved chest
+  // after the metacarpal support closes. This shallow lift keeps that support
+  // on skin while the fingers clear its tangent plane.
+  flat: { pitches: [0, (-15 * Math.PI) / 180], preferred: (-15 * Math.PI) / 180 },
+  cup: {
+    pitches: [15, 25, 35].map((degrees) => (degrees * Math.PI) / 180),
+    preferred: (25 * Math.PI) / 180,
+  },
+  claw: { pitches: PITCHES, preferred: APPROACH_PITCH },
+  fist: { pitches: PITCHES, preferred: APPROACH_PITCH },
+};
+
 /** The shaped hand in its wrist's frame: rigid there once the fingers hold their shape. */
 interface HeldHand {
   /** The pad's offset from the wrist's head. */
@@ -235,12 +336,18 @@ interface HeldHand {
   /** The pad's finger frame (x along the finger, z out of the pad). */
   finger: Quat;
   /** A sample of the hand's skin, xyz from the wrist's head: what must stay out of the body. */
-  skin: Float32Array;
+  skin: { positions: Float32Array; vertices: Uint32Array };
+  /** Every rendered vertex whose primary source bone belongs to this hand. */
+  fullSkin: Float32Array;
   /**
    * How far outside the body each point must stay: `CLEARANCE`, but none at the
    * pad itself, which is held on the skin by the standoff alone.
    */
   clearance: Float32Array;
+  /** Source-rendered, volar non-digit palm patch for broad flat/cup contacts. */
+  patch: { positions: Float32Array; vertices: Uint32Array } | null;
+  /** Stable `palm.X` centre from which broad support skin is selected. */
+  centreVertex: number | null;
 }
 
 type V3 = [number, number, number];
@@ -351,21 +458,36 @@ export function solveSiteContact(input: SiteContactInput): SiteContactReport {
   });
   const pad = frameOut();
   const at = frameOut();
+  const contact: {
+    anchor: V3 | null;
+    wrist: number;
+    vertex: number | null;
+    centreVertex: number | null;
+  } = { anchor: null, wrist: chain[5] as number, vertex: null, centreVertex: null };
   const report: SiteContactReport = {
     status: "unreached",
     reason: "partial-weight",
     gap: Number.NaN,
     orientationError: null,
+    collision: Number.NaN,
     rounds: 0,
   };
   const measure = (rotations: BoneRotations) => {
     sampler.frames(figure.generation, rotations, pad, siteId, at);
-    return distance(pad.position, goalOf(at, standoff));
+    if (!contact.anchor) return distance(pad.position, goalOf(at, standoff));
+    const pose = posedBonesInto(rest, rotations, posedBonesScratch(rest));
+    const head = pointAt(pose.heads, contact.wrist);
+    const offset = rotate(quatAt(pose.world, contact.wrist), ...contact.anchor);
+    return distance(
+      [head[0] + offset[0], head[1] + offset[1], head[2] + offset[2]],
+      goalOf(at, standoff),
+    );
   };
 
   if (weight === 0) {
     out.set(source);
     report.gap = measure(out);
+    report.collision = 0;
     return report;
   }
 
@@ -383,11 +505,14 @@ export function solveSiteContact(input: SiteContactInput): SiteContactReport {
     chain,
     side,
     siteId,
+    effector,
     FINGER_PAD.exec(effector)?.[1],
+    shape,
     standoff,
     iterations,
     tolerance,
     report,
+    contact,
   );
 
   // The weight blends from the frame's own pose: the arm and the shaped fingers alike.
@@ -409,7 +534,28 @@ export function solveSiteContact(input: SiteContactInput): SiteContactReport {
     out.set(weight >= 1 ? to : slerp(from, to, weight), k);
   }
   report.gap = measure(out);
-  const reached = weight >= 1 && report.gap <= tolerance;
+  if (contact.vertex !== null && contact.centreVertex !== null) {
+    const support = skinSome(figure, out, [contact.centreVertex, contact.vertex], true);
+    const normal = support.normals;
+    if (!normal) throw new Error("site contact: support normal is unavailable");
+    report.contact = {
+      domain: "volar-palm-support",
+      vertex: contact.vertex,
+      centreVertex: contact.centreVertex,
+      position: [
+        support.positions[3] as number,
+        support.positions[4] as number,
+        support.positions[5] as number,
+      ],
+      normal: [normal[3] as number, normal[4] as number, normal[5] as number],
+      centreToContact: [
+        (support.positions[3] as number) - (support.positions[0] as number),
+        (support.positions[4] as number) - (support.positions[1] as number),
+        (support.positions[5] as number) - (support.positions[2] as number),
+      ],
+    };
+  }
+  const reached = weight >= 1 && report.gap <= tolerance && report.reason !== "body-collision";
   report.status = reached ? "reached" : "unreached";
   if (reached) delete report.reason;
   else if (weight < 1) report.reason = "partial-weight";
@@ -459,10 +605,11 @@ function poleFor(
 
 /**
  * The full-weight solve, alternating the site's measurement and the arm's solve
- * (R4) for at most `MAX_ROUNDS` rounds, until the site moves less than
- * `SITE_SETTLED` under the solved arm. Each round places the hand for its
- * approach (`placeHand`), then closes the skinned pad onto the goal by position
- * alone: what is left of the approach orientation after that is only reported.
+ * (R4) for at most `MAX_ROUNDS`, until the site moves less than
+ * `SITE_SETTLED` under the solved arm. Finger-pad contacts retain their selected
+ * approach frame through the final DLS solve, then score that **final skinned
+ * hand** against the body sample. The seed is not accepted merely because it was
+ * clear before DLS: DLS may turn the wrist through the body while closing the pad.
  * An effector that is not a finger pad has no approach and is seeded on its
  * rigid offset from the wrist instead.
  */
@@ -473,11 +620,19 @@ function solveRounds(
   chain: readonly number[],
   side: HandSide,
   site: LandmarkId,
+  effectorId: string,
   digit: string | undefined,
+  shape: HandShape,
   standoff: number,
   iterations: number,
   tolerance: number,
   report: SiteContactReport,
+  contact: {
+    anchor: V3 | null;
+    wrist: number;
+    vertex: number | null;
+    centreVertex: number | null;
+  },
 ): BoneRotations {
   const rest = figure.restBones;
   const pad = frameOut();
@@ -501,68 +656,122 @@ function solveRounds(
     );
     return fingerQuat(along, n);
   };
-  const effector = (rotations: BoneRotations) => {
-    sampler.frames(figure.generation, rotations, pad, site, at);
-    return { position: [pad.position[0], pad.position[1], pad.position[2]] as const };
-  };
-
+  // Finger pads need an anatomical x-axis from their end joint. Palm and grip
+  // frames already carry a measured surface tangent, so they can retain an
+  // approach just as a finger pad does.
+  const frameOf = (rotations: BoneRotations, frame: FrameOut): Quat =>
+    dip >= 0 ? fingerOf(rotations, frame) : frameQuat(frame);
   sampler.frames(figure.generation, shaped, pad, site, at);
-  const tip = armTip(rest, shaped, chain, [pad.position[0], pad.position[1], pad.position[2]]);
   let goal = goalOf(at, standoff);
   let siteAt: V3 = [at.position[0], at.position[1], at.position[2]];
   // The hand is rigid on the wrist bone once shaped: the pad's offset and finger
   // frame in the wrist's own frame, measured once on the shaped source.
   const wrist = chain[5] as number;
   const forearm = chain[4] as number;
-  let held: HeldHand | null = null;
-  if (dip >= 0) {
-    const posed = posedBonesInto(rest, shaped, bones);
-    const w = conjugate(quatAt(posed.world, wrist));
-    const head = pointAt(posed.heads, wrist);
-    const offset = rotate(w, ...sub(pad.position, head));
-    const skin = handSkin(figure, shaped, side, digit as string, w, head);
-    const clearance = new Float32Array(skin.length / 3);
-    for (let i = 0; i < clearance.length; i++)
-      clearance[i] = distance(skin.subarray(i * 3, i * 3 + 3), offset) < PAD_ZONE ? 0 : CLEARANCE;
-    held = { offset, finger: mul(w, fingerOf(shaped, pad)), skin, clearance };
-  }
+  const posed = posedBonesInto(rest, shaped, bones);
+  const w = conjugate(quatAt(posed.world, wrist));
+  const head = pointAt(posed.heads, wrist);
+  const offset = rotate(w, ...sub(pad.position, head));
+  const { skin, fullSkin } = handSkin(figure, shaped, side, digit ?? "2", w, head);
+  const broadPatch = (shape === "flat" || shape === "cup") && effectorId.startsWith("palm.");
+  const patch = broadPatch ? palmPatch(figure, shaped, side, w, head, offset, pad.normal) : null;
+  const patchVertices = patch && new Set(patch.vertices);
+  const clearance = new Float32Array(skin.positions.length / 3);
+  for (let i = 0; i < clearance.length; i++)
+    clearance[i] =
+      patchVertices?.has(skin.vertices[i] as number) ||
+      distance(skin.positions.subarray(i * 3, i * 3 + 3), offset) < PAD_ZONE
+        ? 0
+        : CLEARANCE;
+  const centreVertex = broadPatch
+    ? figure.anchors.vertices[`palm.${side}` as "palm.L" | "palm.R"].vertex
+    : null;
+  if (patch && centreVertex !== null && !patch.vertices.includes(centreVertex))
+    throw new Error("site contact: declared palm anchor is outside the source volar-palm patch");
+  const held: HeldHand = {
+    offset,
+    finger: mul(w, frameOf(shaped, pad)),
+    skin,
+    fullSkin,
+    clearance,
+    patch,
+    centreVertex,
+  };
   // The forearm's axis at rest, which is also its axis in its own (rest-aligned) frame.
   const forearmAxis = unit(sub(pointAt(rest.heads, wrist), pointAt(rest.heads, forearm)));
   const body = bodyProbe(figure, shaped, side, site);
   let current: BoneRotations = shaped;
   let reachable = true;
+  let collision = false;
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     report.rounds = round;
     const pole = poleFor(rest, shaped, chain, side, goal, bones);
     const start = new Float32Array(shaped.length);
-    const n = approachNormal(bodyAxis(rest, current, bones), at);
-    const approach = held
-      ? placeHand(rest, shaped, chain, held, forearmAxis, body, n, goal, pole, bones, start)
-      : null;
-    if (!approach) seedArmTwoBone(rest, shaped, chain, tip, goal, pole, start);
-    // Close the last millimetres on the skinned pad, position only: contact wins.
-    const placed = new Float32Array(shaped.length);
-    const result = solveArmTarget({
+    // Broad palms take the actual skinned site's normal. The finger approach
+    // bias is useful for a fingertip's path around a face, but would tilt a
+    // flat or cupped contact patch through the torso it is meant to meet.
+    const n = broadPatch
+      ? unit([at.normal[0], at.normal[1], at.normal[2]])
+      : approachNormal(bodyAxis(rest, current, bones), at);
+    const approach = placeHand(
       rest,
-      rotations: start,
+      shaped,
       chain,
-      tip,
-      effector,
-      target: { position: goal },
-      iterations,
-      tolerance,
-      out: placed,
-    });
+      held,
+      HAND_APPROACH[shape],
+      forearmAxis,
+      body,
+      n,
+      [at.normal[0], at.normal[1], at.normal[2]],
+      goal,
+      pole,
+      bones,
+      (seed, finger, anchor, out) =>
+        solveArmTarget({
+          rest,
+          rotations: seed,
+          chain,
+          tip: { position: anchor },
+          effector: (rotations) => {
+            sampler.frames(figure.generation, rotations, pad, site, at);
+            const pose = posedBonesInto(rest, rotations, bones);
+            const head = pointAt(pose.heads, wrist);
+            const offset = rotate(quatAt(pose.world, wrist), ...anchor);
+            return {
+              position: [head[0] + offset[0], head[1] + offset[1], head[2] + offset[2]] as const,
+              orientation: frameOf(rotations, pad),
+            };
+          },
+          // A point contact has always closed by position after its approach seed.
+          // Broad palms retain their measured face through the final DLS solve.
+          target: broadPatch ? { position: goal, orientation: finger } : { position: goal },
+          iterations,
+          tolerance,
+          out,
+        }),
+      start,
+    );
+    current = approach.rotations;
+    contact.anchor = approach.anchor;
+    contact.vertex = approach.vertex;
+    contact.centreVertex = held.centreVertex;
+    const result = approach.result;
+    collision = approach.collision > 0;
+    report.collision = approach.collision;
     reachable = result.geometricallyReachable;
-    current = placed;
     sampler.frames(figure.generation, current, pad, site, at);
-    report.orientationError = approach ? quaternionAngle(fingerOf(current, pad), approach) : null;
+    report.orientationError = quaternionAngle(frameOf(current, pad), approach.finger);
     const moved = distance(at.position, siteAt);
     siteAt = [at.position[0], at.position[1], at.position[2]];
     goal = goalOf(at, standoff);
     if (moved < SITE_SETTLED) break;
   }
-  report.reason = reachable ? "tolerance-not-reached" : "geometrically-unreachable";
+  report.reason = !reachable
+    ? "geometrically-unreachable"
+    : collision
+      ? "body-collision"
+      : "tolerance-not-reached";
+  body.dispose();
   return current;
 }
 
@@ -588,27 +797,14 @@ const CLEARANCE = 0.001;
 const CLEARANCE_WEIGHT = 400 / 0.001;
 /** CHOICE: the pad's own patch of skin, 1 cm about it, which touches the site by design. */
 const PAD_ZONE = 0.01;
-/**
- * CHOICE: one body vertex in 2 away from the site, and about 400 points of the
- * hand's skin (with all of the touching finger's two end bones). Sparser
- * samples were measured to miss a curled knuckle sunk 2.5 mm into a belly a
- * finger's length from the navel.
- */
-const BODY_STRIDE = 2;
+/** About 400 hand points plus every vertex of the touching finger's last two bones. */
 const HAND_POINTS = 400;
-/** Beyond this, metres, a point is in the open whatever the nearest skin's facing. */
-const BODY_REACH = 0.06;
-/** The body sample's grid cell, metres. */
-const CELL = 0.02;
-/** CHOICE: within 4 cm of the site (a finger's two end bones) the body's skin is sampled whole. */
-const SITE_NEAR = 0.04;
 
-/** The arm's own bones on a side, whose skin is the arm's rather than the body's it touches. */
-const ARM_BONE = (side: HandSide) =>
-  new RegExp(`^(upperarm0[12]|lowerarm0[12]|wrist|metacarpal[1-4]|finger[1-5]-[1-3])\\.${side}$`);
 /** The hand's bones on a side, whose skin moves rigidly with the wrist once shaped. */
 const HAND_BONE = (side: HandSide) =>
   new RegExp(`^(wrist|metacarpal[1-4]|finger[1-5]-[1-3])\\.${side}$`);
+/** The palm is wrist/metacarpal skin; digits and forearm never enter its contact patch. */
+const PALM_BONE = (side: HandSide) => new RegExp(`^metacarpal[1-4]\\.${side}$`);
 
 /** Each vertex's share of weight on the bones `of` names, for the vertices `stride` apart. */
 function weightOn(figure: SiteContactFigure, of: RegExp): Float32Array {
@@ -666,6 +862,56 @@ function skinSome(
  * wrist's posed rotation, `head` is its posed head), skinned in the shaped pose:
  * the hand is rigid on the wrist once its fingers hold their shape.
  */
+/**
+ * The broad contact domain is source-rendered volar palm skin only. Bone
+ * ownership excludes every digit and forearm; the normal test chooses the same
+ * side of the hand as the posed palm landmark, rather than a nearby fingertip.
+ */
+function palmPatch(
+  figure: SiteContactFigure,
+  shaped: BoneRotations,
+  side: HandSide,
+  wristInverse: Quat,
+  head: V3,
+  palm: V3,
+  palmNormal: ArrayLike<number>,
+): { positions: Float32Array; vertices: Uint32Array } {
+  const palmBones = figure.restBones.names.map((name) => PALM_BONE(side).test(name));
+  const kept: number[] = [];
+  for (let vertex = 0; vertex < figure.skinIndex.length / SKIN_INFLUENCES; vertex++)
+    if (palmBones[heaviestBone(figure.skinIndex, figure.skinWeight, vertex)]) kept.push(vertex);
+  const { positions, normals } = skinSome(figure, shaped, kept, true);
+  if (!normals) throw new Error("site contact: palm patch normals are unavailable");
+  const localNormal = rotate(
+    wristInverse,
+    palmNormal[0] as number,
+    palmNormal[1] as number,
+    palmNormal[2] as number,
+  );
+  const local: number[] = [];
+  const vertices: number[] = [];
+  for (let i = 0; i < positions.length; i += 3) {
+    const point = rotate(
+      wristInverse,
+      (positions[i] as number) - head[0],
+      (positions[i + 1] as number) - head[1],
+      (positions[i + 2] as number) - head[2],
+    );
+    const normal = rotate(
+      wristInverse,
+      normals[i] as number,
+      normals[i + 1] as number,
+      normals[i + 2] as number,
+    );
+    if (distance(point, palm) > 0.1 || dot(normal, localNormal) < 0.35) continue;
+    local.push(...point);
+    vertices.push(kept[i / 3] as number);
+  }
+  if (vertices.length === 0)
+    throw new Error("site contact: no source volar-palm vertices near the palm landmark");
+  return { positions: Float32Array.from(local), vertices: Uint32Array.from(vertices) };
+}
+
 function handSkin(
   figure: SiteContactFigure,
   shaped: BoneRotations,
@@ -673,118 +919,165 @@ function handSkin(
   digit: string,
   wristInverse: Quat,
   head: V3,
-): Float32Array {
+): { skin: { positions: Float32Array; vertices: Uint32Array }; fullSkin: Float32Array } {
   const share = weightOn(figure, HAND_BONE(side));
   // The touching finger's last two bones, all of them: they come closest to the skin.
   const leading = weightOn(figure, new RegExp(`^finger${digit}-[23]\\.${side}$`));
   const hand: number[] = [];
+  const full: number[] = [];
   share.forEach((s, v) => {
     if (s > 0.5) hand.push(v);
+    const bone = figure.restBones.names[
+      heaviestBone(figure.skinIndex, figure.skinWeight, v)
+    ] as string;
+    if (partOfBone(bone) === `hand.${side}`) full.push(v);
   });
   const stride = Math.max(1, Math.ceil(hand.length / HAND_POINTS));
   const kept = hand.filter((v, i) => i % stride === 0 || (leading[v] as number) > 0.5);
-  const { positions } = skinSome(figure, shaped, kept, false);
-  const out = new Float32Array(positions.length);
-  for (let i = 0; i < positions.length; i += 3)
-    out.set(
-      rotate(
-        wristInverse,
-        (positions[i] as number) - head[0],
-        (positions[i + 1] as number) - head[1],
-        (positions[i + 2] as number) - head[2],
-      ),
-      i,
-    );
-  return out;
+  const local = (vertices: readonly number[]) => {
+    const { positions } = skinSome(figure, shaped, vertices, false);
+    const out = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3)
+      out.set(
+        rotate(
+          wristInverse,
+          (positions[i] as number) - head[0],
+          (positions[i + 1] as number) - head[1],
+          (positions[i + 2] as number) - head[2],
+        ),
+        i,
+      );
+    return out;
+  };
+  return {
+    skin: { positions: local(kept), vertices: Uint32Array.from(kept) },
+    fullSkin: local(full),
+  };
 }
 
 /**
- * A coarse sample of the body's skin, the touching arm's left out, skinned in
- * the frame's pose and held in a grid: enough to tell whether a point of the
- * hand is inside the body. The arm's shoulder (`shoulder01`) stays in the
- * sample: the arm solve turns it only a little, and the chest skin weighted to
- * it is exactly what a hand at the sternum must not sink into.
+ * The touching hand is tested against the posed indexed surface that is drawn,
+ * with all triangles of that arm excluded.  A nearest-vertex field can report
+ * an apparent outside point between sparse vertices while the rendered hand is
+ * through a triangle, so it is not a contact acceptance predicate.
  */
 interface BodyProbe {
-  /** Metres by which `p` is less than `clearance` outside the nearest skin (0 when clear). */
+  /** Source-pose skin, for the inexpensive seed tie-break. */
   sunk(p: V3, clearance: number): number;
+  /** Refit the final-arm skin for one DLS candidate. */
+  poseAfterDls(rotations: BoneRotations): void;
+  /** The refitted final-arm skin, measured by the foundation's two-ray inside test. */
+  sunkAfterDls(p: V3, outward: V3): number;
+  dispose(): void;
+}
+
+/** A thin `PosedBody` view: `BodySurface` needs only this mesh data for collision queries. */
+function collisionBody(
+  index: Uint32Array,
+  positions: Float32Array,
+  normals: Float32Array,
+): PosedBody {
+  return { index, positions, normals } as PosedBody;
 }
 
 function bodyProbe(
   figure: SiteContactFigure,
   rotations: BoneRotations,
   side: HandSide,
-  site: LandmarkId,
+  _site: LandmarkId,
 ): BodyProbe {
-  const share = weightOn(figure, ARM_BONE(side));
-  const { rest } = figure;
-  // Every vertex near the site (measured at rest), one in `BODY_STRIDE` elsewhere: a finger
-  // touching a thin or tightly curved site (an ear lobe, a chin) needs all the skin there.
-  const anchor = (figure.anchors.vertices as Partial<Record<string, { vertex: number }>>)[site];
-  const restSite: V3 = anchor
-    ? pointAt(rest, anchor.vertex)
-    : [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
-  const near = SITE_NEAR * SITE_NEAR;
-  const kept: number[] = [];
-  for (let v = 0; v < share.length; v++) {
-    if ((share[v] as number) >= 0.5) continue;
-    const dx = (rest[v * 3] as number) - restSite[0];
-    const dy = (rest[v * 3 + 1] as number) - restSite[1];
-    const dz = (rest[v * 3 + 2] as number) - restSite[2];
-    if (v % BODY_STRIDE === 0 || dx * dx + dy * dy + dz * dz < near) kept.push(v);
-  }
-  const { positions, normals } = skinSome(figure, rotations, kept, true);
-  const facing = normals as Float32Array;
-  const cellOf = (x: number) => Math.floor(x / CELL);
-  const key = (x: number, y: number, z: number) =>
-    ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
-  const grid = new Map<number, number[]>();
-  for (let i = 0; i < kept.length; i++) {
-    const k = key(
-      cellOf(positions[i * 3] as number),
-      cellOf(positions[i * 3 + 1] as number),
-      cellOf(positions[i * 3 + 2] as number),
+  // A supplied source fold carries its authored definition; the final arm pose
+  // recomputes its flexion while skinning, as the renderer does.
+  const folds = figure.folds?.map(({ fold }) => fold);
+  const armPart = new Set([`hand.${side}`, `forearm.${side}`, `upperarm.${side}`]);
+  const part = (vertex: number) =>
+    partOfBone(
+      figure.restBones.names[heaviestBone(figure.skinIndex, figure.skinWeight, vertex)] as string,
     );
-    const cell = grid.get(k);
-    if (cell) cell.push(i);
-    else grid.set(k, [i]);
+  const triangles: number[] = [];
+  for (let i = 0; i < figure.index.length; i += 3) {
+    const a = figure.index[i] as number;
+    const b = figure.index[i + 1] as number;
+    const c = figure.index[i + 2] as number;
+    if (armPart.has(part(a)) || armPart.has(part(b)) || armPart.has(part(c))) continue;
+    triangles.push(a, b, c);
   }
-  const span = Math.ceil(BODY_REACH / CELL);
+  const index = Uint32Array.from(triangles);
+  const sourcePositions = skinPositions(
+    figure.restBones,
+    rotations,
+    figure.rest,
+    figure.skinIndex,
+    figure.skinWeight,
+    new Float32Array(figure.rest.length),
+    folds,
+  );
+  const sourceNormals = skinNormals(
+    figure.restBones,
+    rotations,
+    figure.restNormals,
+    figure.skinIndex,
+    figure.skinWeight,
+    new Float32Array(figure.restNormals.length),
+    folds,
+  );
+  const finalPositions = Float32Array.from(sourcePositions);
+  const finalNormals = Float32Array.from(sourceNormals);
+  const source = new BodySurface(collisionBody(index, sourcePositions, sourceNormals));
+  const final = new BodySurface(collisionBody(index, finalPositions, finalNormals));
+  const sourceSunk = (surface: BodySurface, p: V3, clearance: number) =>
+    Math.max(0, clearance - surface.signedDistance(p));
+  // `signedDistance` is a local-normal query. Once the touching arm is cut
+  // from this surface its sign is ambiguous, so accept only a two-ray inside
+  // result, as the foundation's rendered-surface invariant does.
+  const ray = new Ray();
+  const point = new Vector3();
+  const direction = new Vector3();
+  const turned = new Vector3();
+  const finalSunk = (p: V3, outward: V3) => {
+    point.set(p[0], p[1], p[2]);
+    direction.set(outward[0], outward[1], outward[2]).normalize();
+    ray.origin.copy(point);
+    ray.direction.copy(direction);
+    if (final.bvh.raycast(ray, DoubleSide).length % 2 === 0) return 0;
+    turned.crossVectors(
+      direction,
+      Math.abs(direction.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0),
+    );
+    ray.direction.copy(direction).addScaledVector(turned.normalize(), 0.5).normalize();
+    if (final.bvh.raycast(ray, DoubleSide).length % 2 === 0) return 0;
+    const nearest = final.closest(p);
+    return nearest && nearest.distance > PENETRATION_LIMIT ? nearest.distance : 0;
+  };
   return {
-    sunk(q, clearance) {
-      let best = BODY_REACH * BODY_REACH;
-      let nearest = -1;
-      const cx = cellOf(q[0]);
-      const cy = cellOf(q[1]);
-      const cz = cellOf(q[2]);
-      // Shell by shell outward: once the nearest found is nearer than the next shell can be, stop.
-      for (let r = 0; r <= span; r++) {
-        for (let x = cx - r; x <= cx + r; x++)
-          for (let y = cy - r; y <= cy + r; y++)
-            for (let z = cz - r; z <= cz + r; z++) {
-              if (Math.max(Math.abs(x - cx), Math.abs(y - cy), Math.abs(z - cz)) !== r) continue;
-              const cell = grid.get(key(x, y, z));
-              if (!cell) continue;
-              for (const i of cell) {
-                const dx = q[0] - (positions[i * 3] as number);
-                const dy = q[1] - (positions[i * 3 + 1] as number);
-                const dz = q[2] - (positions[i * 3 + 2] as number);
-                const d2 = dx * dx + dy * dy + dz * dz;
-                if (d2 < best) {
-                  best = d2;
-                  nearest = i;
-                }
-              }
-            }
-        if (nearest >= 0 && best <= r * CELL * (r * CELL)) break;
-      }
-      if (nearest < 0) return 0;
-      const k = nearest * 3;
-      const out =
-        (q[0] - (positions[k] as number)) * (facing[k] as number) +
-        (q[1] - (positions[k + 1] as number)) * (facing[k + 1] as number) +
-        (q[2] - (positions[k + 2] as number)) * (facing[k + 2] as number);
-      return Math.max(0, clearance - out);
+    sunk: (p, clearance) => sourceSunk(source, p, clearance),
+    poseAfterDls(pose) {
+      skinPositions(
+        figure.restBones,
+        pose,
+        figure.rest,
+        figure.skinIndex,
+        figure.skinWeight,
+        finalPositions,
+        folds,
+      );
+      skinNormals(
+        figure.restBones,
+        pose,
+        figure.restNormals,
+        figure.skinIndex,
+        figure.skinWeight,
+        finalNormals,
+        folds,
+      );
+      // The BufferAttribute keeps these arrays; refitting preserves the indexed
+      // acceleration while making the candidate's final arm pose the query mesh.
+      final.bvh.refit();
+    },
+    sunkAfterDls: (p, outward) => finalSunk(p, outward),
+    dispose() {
+      source.dispose();
+      final.dispose();
     },
   };
 }
@@ -802,28 +1095,120 @@ function bodyProbe(
  * the nearest is taken and left to the skinned polish to close or report.
  * Writes the pose into `out` and returns the finger's target frame.
  */
+interface PlacedHand {
+  finger: Quat;
+  anchor: V3;
+  /** Original rendered vertex when a broad palm patch supplies the anchor. */
+  vertex: number | null;
+  rotations: BoneRotations;
+  result: ArmTargetResult;
+  /** Sum of clearance shortfalls after DLS, in metres; zero is collision-free. */
+  collision: number;
+}
+
+type CloseHand = (
+  seed: BoneRotations,
+  finger: Quat,
+  anchor: V3,
+  out: BoneRotations,
+) => ArmTargetResult;
+
+/** Scores a hand-skin domain after DLS in the actual posed wrist frame. */
+function postDlsCollision(
+  rest: RestBones,
+  rotations: BoneRotations,
+  wrist: number,
+  skin: Float32Array,
+  outward: V3,
+  body: BodyProbe,
+  bones: PosedBonesScratch,
+): number {
+  const posed = posedBonesInto(rest, rotations, bones);
+  body.poseAfterDls(rotations);
+  const head = pointAt(posed.heads, wrist);
+  const world = quatAt(posed.world, wrist);
+  let collision = 0;
+  for (let i = 0; i < skin.length; i += 3) {
+    const p = rotate(world, skin[i] as number, skin[i + 1] as number, skin[i + 2] as number);
+    collision += body.sunkAfterDls([head[0] + p[0], head[1] + p[1], head[2] + p[2]], outward);
+  }
+  return collision;
+}
+
+/**
+ * The broad-contact point is the volar primary-metacarpal support furthest
+ * toward the body along this candidate's normal. The stable `palm.X` landmark
+ * selects the patch, but does not pretend to be its physical contact point.
+ */
+function palmSupport(
+  held: HeldHand,
+  hand: Quat,
+  outward: V3,
+): { anchor: V3; vertex: number | null } {
+  if (!held.patch || held.centreVertex === null) return { anchor: held.offset, vertex: null };
+  let best = 0;
+  let projection = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < held.patch.positions.length; i += 3) {
+    const point: V3 = [
+      held.patch.positions[i] as number,
+      held.patch.positions[i + 1] as number,
+      held.patch.positions[i + 2] as number,
+    ];
+    const candidate = dot(rotate(hand, ...point), outward);
+    if (candidate < projection) {
+      projection = candidate;
+      best = i / 3;
+    }
+  }
+  return {
+    anchor: [
+      held.patch.positions[best * 3] as number,
+      held.patch.positions[best * 3 + 1] as number,
+      held.patch.positions[best * 3 + 2] as number,
+    ],
+    vertex: held.patch.vertices[best] as number,
+  };
+}
+
+/**
+ * Places and closes the hand for each surface heading. A heading is accepted only
+ * if its **post-DLS** sampled hand remains out of the body; position and the
+ * selected finger frame are both solver targets, so the final polish cannot
+ * silently discard the gesture-aware seed.
+ */
 function placeHand(
   rest: RestBones,
   shaped: BoneRotations,
   chain: readonly number[],
   held: HeldHand,
+  approach: HandApproach,
   forearmAxis: V3,
   body: BodyProbe,
   n: V3,
+  siteNormal: V3,
   goal: V3,
   pole: ArmPole,
   bones: PosedBonesScratch,
+  close: CloseHand,
   out: BoneRotations,
-): Quat {
+): PlacedHand {
   const wrist = chain[5] as number;
   const forearm = chain[4] as number;
   const t = unit(cross(n, Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
   const b = cross(n, t);
   const wristOnly: ArmTip = { position: [0, 0, 0] };
   const candidate = new Float32Array(shaped.length);
-  let best = approachQuat(n, t, APPROACH_PITCH);
-  let bestScore = Number.POSITIVE_INFINITY;
-  for (const pitch of PITCHES)
+  const closed = new Float32Array(shaped.length);
+  const candidates: {
+    finger: Quat;
+    anchor: V3;
+    vertex: number | null;
+    outward: V3;
+    rotations: BoneRotations;
+    result: ArmTargetResult;
+    score: number;
+  }[] = [];
+  for (const pitch of approach.pitches)
     for (let k = 0; k < HEADINGS; k++) {
       const h = (2 * Math.PI * k) / HEADINGS;
       const finger = approachQuat(
@@ -836,7 +1221,10 @@ function placeHand(
         pitch,
       );
       const hand = mul(finger, conjugate(held.finger));
-      const offset = rotate(hand, ...held.offset);
+      const support = palmSupport(held, hand, n);
+      const anchor = support.anchor;
+      const vertex = support.vertex;
+      const offset = rotate(hand, ...anchor);
       const at: V3 = [goal[0] - offset[0], goal[1] - offset[1], goal[2] - offset[2]];
       seedArmTwoBone(rest, shaped, chain, wristOnly, at, pole, candidate);
       const seeded = posedBonesInto(rest, candidate, bones);
@@ -854,22 +1242,79 @@ function placeHand(
         (miss > WRIST_MISS ? OUT_OF_REACH + miss / WRIST_MISS : 0) +
         bend +
         Math.max(0, Math.abs(twistAngle(twist, forearmAxis)) - FREE_TWIST) +
-        PITCH_PREFERENCE * Math.abs(pitch - APPROACH_PITCH);
-      // The hand's skin where this heading puts it (the wrist placed at `at`, turned as
-      // `hand`), given up on as soon as it costs more than the best heading so far.
-      const skin = held.skin;
-      for (let i = 0; i < skin.length && score < bestScore; i += 3) {
+        PITCH_PREFERENCE * Math.abs(pitch - approach.preferred);
+      // The static source-pose surface cheaply ranks all headings. It is only
+      // a prefilter: final acceptance below always uses the refitted DLS pose.
+      const skin = held.skin.positions;
+      for (let i = 0; i < skin.length; i += 3) {
         const p = rotate(hand, skin[i] as number, skin[i + 1] as number, skin[i + 2] as number);
-        const clearance = held.clearance[i / 3] as number;
         score +=
-          CLEARANCE_WEIGHT * body.sunk([at[0] + p[0], at[1] + p[1], at[2] + p[2]], clearance);
+          CLEARANCE_WEIGHT *
+          body.sunk([at[0] + p[0], at[1] + p[1], at[2] + p[2]], held.clearance[i / 3] as number);
       }
-      if (score >= bestScore) continue;
-      bestScore = score;
-      best = finger;
-      out.set(candidate);
+      const result = close(candidate, finger, anchor, closed);
+      candidates.push({
+        finger,
+        anchor,
+        vertex,
+        outward: siteNormal,
+        rotations: Float32Array.from(closed),
+        result,
+        score,
+      });
     }
-  return best;
+  candidates.sort(
+    (a, b) =>
+      Number(a.result.status !== "reached") - Number(b.result.status !== "reached") ||
+      a.score - b.score,
+  );
+  let fallback: PlacedHand | null = null;
+  for (const candidate of candidates) {
+    // An orientation/position miss is never an acceptable contact, so it cannot
+    // win by being collision-free. The exact collision query is reserved for
+    // contact-closing headings, and stops at the first safe one in the stable
+    // heading order; if none is safe, every closing heading is measured before
+    // returning the least-penetrating diagnostic pose.
+    if (candidate.result.status !== "reached") continue;
+    const sampledCollision = postDlsCollision(
+      rest,
+      candidate.rotations,
+      wrist,
+      held.skin.positions,
+      candidate.outward,
+      body,
+      bones,
+    );
+    // The stride sample cheaply rejects almost every bad heading. A candidate it
+    // clears is accepted only after the same indexed test covers every hand vertex.
+    const collision =
+      sampledCollision === 0
+        ? postDlsCollision(
+            rest,
+            candidate.rotations,
+            wrist,
+            held.fullSkin,
+            candidate.outward,
+            body,
+            bones,
+          )
+        : sampledCollision;
+
+    const placed: PlacedHand = { ...candidate, collision };
+    if (collision === 0) {
+      out.set(candidate.rotations);
+      return placed;
+    }
+    if (!fallback || collision < fallback.collision) fallback = placed;
+  }
+  if (fallback) {
+    out.set(fallback.rotations);
+    return fallback;
+  }
+  const closest = candidates[0];
+  if (!closest) throw new Error("site contact: no hand approach candidates");
+  out.set(closest.rotations);
+  return { ...closest, collision: 0 };
 }
 
 /** The body's axis, pelvis to skull, whose nearest point says which way is out from a site. */

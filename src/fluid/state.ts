@@ -7,7 +7,8 @@ import { AgePolicyError, assertAgePolicy, isAdult } from "../recipe/agePolicy.ts
 import type { Recipe } from "../recipe/recipe.ts";
 
 const SNAPSHOT_VERSION = 1 as const;
-const MASS_EPSILON_KG = 1e-12;
+/** Maximum ledger drift, in kilograms, accepted from floating-point addition. */
+export const FLUID_MASS_EPSILON_KG = 1e-12;
 
 export class FluidStateError extends Error {
   override name = "FluidStateError";
@@ -155,7 +156,7 @@ export function assertFluidLedger(ledger: FluidMassLedger): void {
     ledger.escapedKg;
   if (
     !Number.isFinite(represented) ||
-    Math.abs(ledger.injectedTotalKg - represented) > MASS_EPSILON_KG
+    Math.abs(ledger.injectedTotalKg - represented) > FLUID_MASS_EPSILON_KG
   )
     throw new FluidStateError("fluid mass is not conserved");
 }
@@ -305,7 +306,7 @@ export class FluidState {
       state.sourceInjectedKg.set(id, mass);
       injected += mass;
     }
-    if (Math.abs(injected - snapshot.ledger.injectedTotalKg) > MASS_EPSILON_KG)
+    if (Math.abs(injected - snapshot.ledger.injectedTotalKg) > FLUID_MASS_EPSILON_KG)
       throw new FluidStateError("source injection total does not match ledger");
     assertFluidLedger(snapshot.ledger);
     state.ledger = structuredClone(snapshot.ledger);
