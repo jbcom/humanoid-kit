@@ -14,11 +14,43 @@ import type {
   InteractionRuntime,
   Offer,
 } from "../interaction/runtime.ts";
-import type { ObjectPresence } from "../presence/presence.ts";
+import type { ObjectPresence, PresenceRegistry } from "../presence/presence.ts";
 import { usePresenceRegistry } from "./presence.tsx";
 
 const InteractionsContext = createContext<InteractionRuntime | null>(null);
 const EMPTY_OFFERS: readonly Offer[] = [];
+
+interface ObjectRegistration {
+  token: object;
+  object: ObjectPresence;
+}
+
+/** React-owned registrations only: never overwrite an existing registry object. */
+const registrations = new WeakMap<PresenceRegistry, Map<string, ObjectRegistration>>();
+
+const registrationsFor = (registry: PresenceRegistry) => {
+  let entries = registrations.get(registry);
+  if (!entries) {
+    entries = new Map();
+    registrations.set(registry, entries);
+  }
+  return entries;
+};
+
+function releaseObject(
+  registry: PresenceRegistry,
+  id: string,
+  token: object,
+  object: ObjectPresence,
+): void {
+  const entries = registrations.get(registry);
+  if (!entries) return;
+  const registration = entries.get(id);
+  if (registration?.token !== token || registration.object !== object) return;
+  entries.delete(id);
+  if (entries.size === 0) registrations.delete(registry);
+  if (registry.getObject(id) === object) registry.removeObject(id);
+}
 
 /**
  * Makes an existing interaction runtime available to descendants. Create the
@@ -86,33 +118,66 @@ export interface InteractableProps {
   object: ObjectPresence;
   /** Offers made by this object. Every offerer must be this object's id. */
   offers?: readonly Offer[];
+  /** Called when this component cannot register its object or offers. */
+  onRegistrationError?: (error: Error) => void;
   children?: ReactNode;
 }
 
 /**
  * Publishes an object or fixture and registers the offers it makes while
- * mounted. Its object id owns every supplied offer, which prevents a component
- * from accidentally advertising another component's object. Both registrations
- * are removed on replacement and unmount.
+ * mounted. An id is exclusively owned by one Interactable registration: an
+ * existing registry object is rejected rather than replaced and reported through
+ * `onRegistrationError`. Both registrations are removed on replacement and
+ * unmount, only while this registration owns it.
  */
 export function Interactable({
   object,
   offers = EMPTY_OFFERS,
+  onRegistrationError,
   children,
 }: InteractableProps): ReactNode {
   const registry = usePresenceRegistry();
   const runtime = useInteractions();
-  for (const offer of offers) {
-    if (offer.by !== object.id)
-      throw new Error(`offer ${offer.id} is by ${offer.by}, not interactable ${object.id}`);
-  }
+  const token = useRef<object | null>(null);
+  if (token.current === null) token.current = {};
+  const owner = token.current;
   useEffect(() => {
-    registry.setObject(object);
-    const stops = offers.map((offer) => runtime.offer(offer));
+    const fail = (error: Error) => onRegistrationError?.(error);
+    if (registry.getObject(object.id)) {
+      fail(new Error(`interactable ${object.id} is already registered`));
+      return;
+    }
+    const entry = registrationsFor(registry);
+    if (entry.has(object.id)) {
+      fail(new Error(`interactable ${object.id} is already registered`));
+      return;
+    }
+    for (const offer of offers) {
+      if (offer.by !== object.id) {
+        fail(new Error(`offer ${offer.id} is by ${offer.by}, not interactable ${object.id}`));
+        return;
+      }
+    }
+    entry.set(object.id, { token: owner, object });
+    const stops: (() => void)[] = [];
+    try {
+      registry.setObject(object);
+      for (const offer of offers) stops.push(runtime.offer(offer));
+    } catch (error) {
+      for (let i = stops.length - 1; i >= 0; i--)
+        try {
+          stops[i]?.();
+        } catch {
+          // The original registration error is the useful failure to report.
+        }
+      releaseObject(registry, object.id, owner, object);
+      fail(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
     return () => {
-      for (const stop of stops) stop();
-      registry.removeObject(object.id);
+      for (let i = stops.length - 1; i >= 0; i--) stops[i]?.();
+      releaseObject(registry, object.id, owner, object);
     };
-  }, [registry, runtime, object, offers]);
+  }, [registry, runtime, object, offers, owner, onRegistrationError]);
   return <>{children}</>;
 }

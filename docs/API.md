@@ -1360,8 +1360,10 @@ slices 1 and 2 of its build plan.
 the `PresenceProvider` that owns the same registry; the provider does not
 create another runtime or clock. `<Interactable object={object} offers={offers}>`
 publishes its `ObjectPresence` and its own offers while mounted, then removes
-both on replacement or unmount. Every supplied offer's `by` must equal the
-object id.
+both on replacement or unmount. Its object id must be unique in that registry:
+an existing object is rejected and never replaced. Every supplied offer's `by`
+must equal the object id. `onRegistrationError` observes a duplicate id or a
+failed offer registration.
 
 - `useInteractions()` returns that existing runtime.
 - `useInteraction(id)` returns a live `{ current }` accessor for a running

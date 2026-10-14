@@ -3,7 +3,11 @@ import { type ReactNode, useEffect } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import type { InteractionDefinition } from "../../src/interaction/definition.ts";
-import { createInteractions, type Offer } from "../../src/interaction/runtime.ts";
+import {
+  createInteractions,
+  type InteractionRuntime,
+  type Offer,
+} from "../../src/interaction/runtime.ts";
 import { createPresenceRegistry, type ObjectPresence } from "../../src/presence/presence.ts";
 import {
   Interactable,
@@ -81,6 +85,49 @@ describe("React interaction bindings", () => {
 
     await screen.unmount();
     await expect.poll(() => registry.getObject("apple")).toBeUndefined();
+  });
+
+  it("rejects a duplicate object id without replacing the existing object", async () => {
+    const { registry, runtime } = setup();
+    const original = object();
+    registry.setObject(original);
+    const errors: string[] = [];
+    await render(
+      <Scene registry={registry} runtime={runtime}>
+        <Interactable
+          object={object()}
+          offers={[offer()]}
+          onRegistrationError={(error) => errors.push(error.message)}
+        />
+      </Scene>,
+    );
+    await expect.poll(() => errors).toEqual(["interactable apple is already registered"]);
+    expect(registry.getObject("apple")).toBe(original);
+    expect(runtime.offersFor("ada")).toEqual([]);
+  });
+
+  it("rolls back an object and earlier offers when registration fails part way through", async () => {
+    const { registry, runtime } = setup();
+    const errors: string[] = [];
+    const failingRuntime: InteractionRuntime = {
+      ...runtime,
+      offer(candidate) {
+        if (candidate.id === "broken") throw new Error("offer registration failed");
+        return runtime.offer(candidate);
+      },
+    };
+    await render(
+      <Scene registry={registry} runtime={failingRuntime}>
+        <Interactable
+          object={object()}
+          offers={[offer(), { ...offer(), id: "broken" }]}
+          onRegistrationError={(error) => errors.push(error.message)}
+        />
+      </Scene>,
+    );
+    await expect.poll(() => errors).toEqual(["offer registration failed"]);
+    expect(registry.getObject("apple")).toBeUndefined();
+    expect(runtime.offersFor("ada")).toEqual([]);
   });
 
   it("uses the latest event listener and removes it on unmount", async () => {
