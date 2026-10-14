@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { evaluateBinding, evaluateBindingWithOffsetScale } from "../src/mhclo/bound.ts";
+import {
+  evaluateBinding,
+  evaluateBindingWithGrowth,
+  evaluateBindingWithOffsetScale,
+  resolveOffsetScaleGrowth,
+  sourceCardRoots,
+} from "../src/mhclo/bound.ts";
 import { parseMhclo } from "../src/mhclo/parse.ts";
 
 const HEADER =
@@ -91,5 +97,67 @@ describe("evaluateBindingWithOffsetScale", () => {
       /finite Float32 output/,
     );
     expect(Array.from(out)).toEqual([7, 8, 9]);
+  });
+
+  it("derives every source-card root from its boundary edge nearest the MHCLO base surface", () => {
+    const card = {
+      entry: { vertexCount: 6, scale: null },
+      refVerts: Uint32Array.from(Array(18).fill(0)),
+      weights: Float32Array.from(Array.from({ length: 6 }, () => [1, 0, 0]).flat()),
+      offsets: Float32Array.of(
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.1,
+        0,
+        0.2,
+        -0.2,
+        0,
+        0.2,
+        -0.2,
+        0,
+      ),
+      faceVerts: Uint32Array.of(0, 1, 4, 3, 1, 2, 5, 4),
+    } as never;
+    const control = Float32Array.of(0, 0, 0);
+    const native = evaluateBinding(card, control, new Float32Array(18));
+    expect(Array.from(sourceCardRoots(card, control, native))).toEqual([1, 1, 0, 0, 0, 0]);
+  });
+
+  it("contracts to the exact source at the native point, then extends common source depth", () => {
+    const growthAsset = {
+      entry: { vertexCount: 2, scale: null },
+      refVerts: Uint32Array.of(0, 1, 2, 0, 1, 2),
+      weights: Float32Array.of(0.5, 0.25, 0.25, 0.5, 0.25, 0.25),
+      offsets: Float32Array.of(0.1, -0.2, 0.3, 0.1, -0.4, 0.3),
+    } as never;
+    const hidden = resolveOffsetScaleGrowth(growthAsset, control, 0, 0);
+    const smaller = resolveOffsetScaleGrowth(growthAsset, control, 0, 0.25);
+    const native = resolveOffsetScaleGrowth(growthAsset, control, 0, 0.5);
+    const floor = resolveOffsetScaleGrowth(growthAsset, control, 0, 1);
+    expect(hidden.visible).toBe(false);
+    expect(hidden.sourceScale).toBe(0);
+    expect(hidden.restFloorDepthScale).toBeCloseTo(4, 6);
+    expect(smaller.visible).toBe(true);
+    expect(smaller.sourceScale).toBeCloseTo(0.5, 6);
+    expect(native.nativeFraction).toBe(0.5);
+    expect(
+      Array.from(evaluateBindingWithGrowth(growthAsset, control, native, new Float32Array(6))),
+    ).toEqual(Array.from(evaluateBinding(growthAsset, control, new Float32Array(6))));
+    expect(floor.restFloorDepthScale).toBeCloseTo(4, 6);
+    expect(floor.depthScale).toBeCloseTo(4, 6);
+    expect(floor.sourceScale).toBe(1);
+    expect(
+      Array.from(evaluateBindingWithGrowth(growthAsset, control, floor, new Float32Array(6))).map(
+        (value) => Number(value.toFixed(6)),
+      ),
+    ).toEqual([0.6, 0.8, 0.3, 0.6, 0, 0.3]);
   });
 });
