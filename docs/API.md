@@ -1262,6 +1262,10 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   until a figure joins or leaves, and entries are updated in place as figures
   move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
   figure has joined.
+  `FigurePresence.partnerNeeds?` is a list of advisory `{ tags, minPartners,
+  maxPartners }` requests: tags must be nonempty dotted lower-case strings, both
+  bounds are integers, `minPartners >= 0`, `maxPartners >= 1`, and the minimum
+  cannot exceed the maximum. It does not match or reserve anyone.
 - Objects and fixtures join the same registry as `ObjectPresence` (`{ id,
   kind: "object", position, rotation, bounds, frames, tags, state }`):
   `setObject`, `removeObject`, `getObject`, `objects()`. An object has no age.
@@ -1768,9 +1772,22 @@ request. `assertRegionalContact(contact, own)` is the implemented pure
 validator: it checks a finite location, unit normal, non-negative force and
 duration, phase, and whether `surface` versus `aperture-entry` agrees with the
 registered affordance. It does not create a response, animation, deformation or
-injury. There is no exported `InjuryState` today. See [Regional contact and
-injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
-recovery, injury, persistence and renderer-proof gates.
+injury.
+
+`RegionalInjuryState` is a separate framework-free state boundary. Its
+`RegionalInjury` union distinguishes `surface-marking`,
+`transient-deformation` and `persistent-body-change` records.
+`RegionalInjuryAnchor` pins a base-mesh vertex to the loaded body
+`topology` and body SHA-256; incompatible anchors fail instead of
+retargeting. Every record carries consumer-authored creation and update time,
+an opaque `sourceCategory` and an opaque non-empty `severityBand`; the kit
+assigns neither clock semantics nor severity thresholds. State methods return
+events for the applied action, while records retain the current lifecycle and
+metadata. `snapshot()` serializes only records explicitly marked `saved`;
+`restore()` validates that boundary and always reports a replacement event.
+`routeRegionalInjuryLayers()` passes active records to a caller-owned body or
+under-cover layer without rendering, collision or affordance effects. See the [regional contact and injury
+contract](REGIONAL-CONTACTS.md) for lifecycle and renderer-proof limits.
 
 ## `humanoid-kit/editor`
 
@@ -2235,7 +2252,10 @@ animator.root;                // how far the figure has been carried: [x across,
   docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
   framework-free channel every `PresenceRegistry` owns as `frames`.
   `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
-  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  `onRelease(reason, figure)` hears `"released"`, `"superseded"` or `"removed"`.
+  `frames.latest(figure)` returns the live producer's latest reused frame, or
+  `undefined` before publish and after replacement, re-evaluation, release or removal;
+  copy it before retaining it. `frames.bind(figure)`
   returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
   `live`; `generation`); binding an id again supersedes its producer. An observer's exception
   is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`

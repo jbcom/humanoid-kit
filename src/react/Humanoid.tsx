@@ -106,7 +106,7 @@ import {
 import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { FOLD_JOINTS, foldFlexion } from "../rig/folds.ts";
-import { flexedPast } from "../rig/jointFold.ts";
+import { flexedPast, type SurfaceFold } from "../rig/jointFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   type BoneRotations,
@@ -128,7 +128,7 @@ import {
   type HairColour,
   hairAlbedo,
 } from "../surface/hairTone.ts";
-import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import type { HumanoidWorkerClient, ReadyInfo, SurfaceAnchors } from "../worker/client.ts";
 import { CoatMesh } from "./CoatMesh.tsx";
 import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
@@ -1307,6 +1307,9 @@ export function Humanoid({
   const writePoseRef = useLatest(writePose);
   useEffect(() => writePose(figure), [writePose, figure]);
   const materialRef = useLatest(material);
+  /** Private support input follows the same evaluated surface that the renderer draws. */
+  const supportAnchors = useRef<SurfaceAnchors | null>(null);
+  const supportFolds = useRef<{ surface: "base" | "adult"; folds: SurfaceFold[] } | null>(null);
   /**
    * Gives the affordances the figure `ev` of `evaluated` as it is drawn: its rest
    * surface and skin weights, and the live pose, fold and lifted group. With a
@@ -1349,14 +1352,15 @@ export function Humanoid({
   // Where the landmarks are held, which the affordances' frames need: the figure is not
   // settled until they have arrived.
   useEffect(() => {
-    if (!affordances || !ready) return;
+    if (!ready) return;
     let live = true;
     const end = settle.begin();
     client.landmarkAnchors().then(
       (anchors) => {
         end();
         if (!live) return;
-        affordances.setAnchors(anchors);
+        supportAnchors.current = anchors;
+        affordances?.setAnchors(anchors);
         // Landmark data arrives outside React; wake a demand canvas so its anchors can place themselves.
         invalidate();
       },
@@ -1368,9 +1372,10 @@ export function Humanoid({
     return () => {
       live = false;
       end();
+      supportAnchors.current = null;
       // Another client's (or no) figure is coming: its anchors are not these, so until its own
       // arrive the frames are null rather than these anchors read on its figure.
-      affordances.setAnchors(null);
+      affordances?.setAnchors(null);
     };
   }, [client, affordances, ready, report, settle, invalidate]);
   // The joint folds (docs/ARCHITECTURE.md, "The hip fold", "The knee fold") are solved for
@@ -1422,7 +1427,7 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
   useEffect(() => {
     const wanted = foldedFor.current;
-    if (!jointsFlexed || !wanted || !dual || !geometries) return;
+    if ((!jointsFlexed && animation === undefined) || !wanted || !dual || !geometries) return;
     let live = true;
     // The figure is not settled until the folds that shape it have been drawn.
     const end = settle.begin();
@@ -1441,6 +1446,7 @@ export function Humanoid({
           const left = other?.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;
           if (left) writeFoldSlots(left, joint, undefined);
         }
+        supportFolds.current = { surface, folds };
         dual.setFolds(folds, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
         fading.current?.();
@@ -1456,12 +1462,32 @@ export function Humanoid({
       live = false;
       end();
     };
-  }, [client, jointsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
+  }, [client, jointsFlexed, figureKey, dual, geometries, adultGeometry, animation, report, settle]);
   // A new identity whenever the figure or its pose changes, or a fold has faded in: the
   // meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure, rotations and foldsShown are the triggers
   const shape = useMemo(() => ({}), [figure, rotations, foldsShown]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
+  const animationSupport = useCallback(() => {
+    if (!ready || !figure) return null;
+    const anchors = supportAnchors.current;
+    const fold = supportFolds.current;
+    if (!anchors || !fold || fold.surface !== figure.surface) return null;
+    const topology = figure.surface === "adult" ? adultSurface : ready.topology.body;
+    const surfaceAnchors = figure.surface === "adult" ? anchors.adult : anchors.base;
+    if (!topology || !surfaceAnchors) return null;
+    const skin = skinOfEvaluation(figure, topology);
+    return {
+      generation: figure,
+      restBones: restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
+      ground: -figure.groundOffset,
+      rest: figure.positions,
+      skinIndex: skin.skinIndex,
+      skinWeight: skin.skinWeight,
+      anchors: surfaceAnchors,
+      folds: fold.folds,
+    };
+  }, [ready, figure, adultSurface]);
   // A clip's pose is written each frame (`useFigureAnimation`), the face units (with the
   // jaw laid over, `writePose`) over it.
   useFigureAnimation({
@@ -1480,6 +1506,7 @@ export function Humanoid({
     presenceSource,
     frames: presence ? (presenceContext?.registry.frames ?? null) : null,
     figureId: presence?.id,
+    support: animationSupport,
     report,
   });
   // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.
@@ -1795,6 +1822,7 @@ export function Humanoid({
           const g = wornRef.current?.geometries[i];
           if (g) writeGeometry(g, a);
         });
+        supportFolds.current = null;
         foldedFor.current = { recipe, signals: shapeSignals };
         setFigure(ev);
         setAreolaScale(Math.round(ev.areolaScale * 100) / 100);

@@ -164,8 +164,8 @@ export function frameContactWorld(
 /** Receives a figure's completed frame; the object is reused, so copy what you keep. */
 export type FrameObserver = (frame: Readonly<HumanoidAnimationFrame>) => void;
 
-/** Why an observed figure's producer stopped: it let go, or another producer bound the id. */
-export type FrameReleaseReason = "released" | "superseded";
+/** Why an observed figure's producer stopped. */
+export type FrameReleaseReason = "released" | "superseded" | "removed";
 
 export type FrameReleaseObserver = (reason: FrameReleaseReason, figure: string) => void;
 
@@ -199,6 +199,18 @@ export interface AnimationFrames {
   observe(figure: string, onFrame: FrameObserver, onRelease?: FrameReleaseObserver): () => void;
   /** Binds a producer to `figure`, superseding any producer bound to it. */
   bind(figure: string): FrameBinding;
+  /**
+   * The most recently published frame for `figure`, or undefined until that producer
+   * publishes and after it is released, superseded or removed. The producer owns and
+   * reuses this object, so it is only valid until its next publish; copy it to retain it.
+   */
+  latest(figure: string): Readonly<HumanoidAnimationFrame> | undefined;
+  /**
+   * Invalidates a removed figure's producer and latest frame. Presence registries call
+   * this when a figure leaves, so an old producer cannot advertise animation for a
+   * later figure that reuses the id.
+   */
+  remove(figure: string): void;
 }
 
 interface Observer {
@@ -216,6 +228,8 @@ interface Producer {
 
 interface Entry {
   producer: Producer | null;
+  /** The current producer's most recent frame; it is never copied or retained after release. */
+  latest: HumanoidAnimationFrame | undefined;
   /** Replaced, never mutated, so a delivery walks the observers it began with. */
   observers: readonly Observer[];
 }
@@ -228,7 +242,7 @@ export function createAnimationFrames(): AnimationFrames {
   const entryOf = (figure: string): Entry => {
     let e = entries.get(figure);
     if (!e) {
-      e = { producer: null, observers: [] };
+      e = { producer: null, latest: undefined, observers: [] };
       entries.set(figure, e);
     }
     return e;
@@ -261,6 +275,21 @@ export function createAnimationFrames(): AnimationFrames {
   const releaseTo = (figure: string, e: Entry, reason: FrameReleaseReason) =>
     deliver(e.observers, (o) => o.onRelease?.(reason, figure));
 
+  const remove = (figure: string) => {
+    const e = entries.get(figure);
+    if (!e) return;
+    e.latest = undefined;
+    const producer = e.producer;
+    e.producer = null;
+    if (!producer) {
+      prune(figure, e);
+      return;
+    }
+    producer.live = false;
+    releaseTo(figure, e, "removed");
+    prune(figure, e);
+  };
+
   return {
     observe(figure, onFrame, onRelease) {
       const e = entryOf(figure);
@@ -275,6 +304,10 @@ export function createAnimationFrames(): AnimationFrames {
         prune(figure, current);
       };
     },
+    latest(figure) {
+      return entries.get(figure)?.latest;
+    },
+    remove,
     bind(figure) {
       const e = entryOf(figure);
       const producer: Producer = { live: true, generation: ++generations };
@@ -292,11 +325,17 @@ export function createAnimationFrames(): AnimationFrames {
           frame.generation = producer.generation;
           // The entry is looked up again: an unobserved, unbound figure was pruned.
           const current = entries.get(figure);
-          if (current) deliver(current.observers, (o) => o.onFrame(frame));
+          if (!current || current.producer !== producer) return false;
+          current.latest = frame;
+          deliver(current.observers, (o) => o.onFrame(frame));
           return true;
         },
         rebind() {
-          if (producer.live) producer.generation = ++generations;
+          if (producer.live) {
+            producer.generation = ++generations;
+            const current = entries.get(figure);
+            if (current?.producer === producer) current.latest = undefined;
+          }
           return producer.generation;
         },
         release() {
@@ -305,12 +344,14 @@ export function createAnimationFrames(): AnimationFrames {
           const current = entries.get(figure);
           if (!current || current.producer !== producer) return;
           current.producer = null;
+          current.latest = undefined;
           prune(figure, current);
           releaseTo(figure, current, "released");
         },
       };
       const previous = e.producer;
       e.producer = producer;
+      e.latest = undefined;
       if (previous) {
         // The old producer is dead before anyone hears of it, so a frame it
         // publishes from inside an observer's call is already dropped.
