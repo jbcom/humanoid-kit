@@ -129,6 +129,12 @@ import {
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
 import { placeRigid, rigidSkin } from "./rigidFit.ts";
+import {
+  DEFAULT_SKIN_INFLUENCES,
+  projectSkinInfluences,
+  type SkinWeights as RuntimeSkinWeights,
+  type SkinInfluences,
+} from "./skinQuality.ts";
 import { clothTuck, coveredBy, type TuckCloth, tuckDepths, underHat } from "./tuck.ts";
 
 export interface ModelOptions {
@@ -136,6 +142,11 @@ export interface ModelOptions {
   subdivision?: number;
   /** Attachment ids to wear; defaults to every attachment in the body pack (eyes, teeth, tongue). */
   attachments?: readonly string[];
+  /**
+   * MakeHuman skin influences retained per runtime vertex (4–8). Default 8,
+   * preserving the source pack's full weights byte-for-byte.
+   */
+  skinInfluences?: SkinInfluences;
 }
 
 /** Static render data: sent once, reused for every evaluation. */
@@ -634,6 +645,8 @@ export class HumanoidModel {
   private readonly detailGates: ReadonlyMap<string, readonly Factor[]>;
   /** Detail targets whose weight is derived from factors alone (`AdultDetailSpec.drives`), compiled. */
   private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
+  /** Runtime projection of the pack skin; its arrays remain eight-wide for every consumer. */
+  private readonly skin: RuntimeSkinWeights<Uint8Array>;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** Source-derived chest libraries, keyed by the exact MakeHuman age. */
@@ -650,6 +663,10 @@ export class HumanoidModel {
 
   constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
     this.assets = assets;
+    this.skin = projectSkinInfluences(
+      { skinIndex: assets.skinIndex, skinWeight: assets.skinWeight },
+      options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES,
+    );
     const bodyKeys = assets.manifest.bodyOcclusion?.keys;
     if (bodyKeys && bodyKeys.join() !== OCCLUSION_KEYS.map((k) => k.id).join())
       throw new AssetFormatError(
@@ -700,7 +717,16 @@ export class HumanoidModel {
     for (const a of wearing) for (const v of a.deleteVerts) this.mountedVisible[v] = 0;
     this.level = level;
     this.body = part(
-      buildSurfaceMesh({ ...assets, vertexCount: assets.manifest.vertexCount }, bodyFaces, level),
+      buildSurfaceMesh(
+        {
+          ...assets,
+          vertexCount: assets.manifest.vertexCount,
+          skinIndex: this.skin.skinIndex,
+          skinWeight: this.skin.skinWeight,
+        },
+        bodyFaces,
+        level,
+      ),
     );
     this.bodyTrianglesPerFace = 2 * 4 ** level;
     this.mountedBodyIndex = maskIndex(
@@ -902,7 +928,7 @@ export class HumanoidModel {
   private attachmentSurface(
     asset: Bound & Pick<BoundAsset, "faceVerts" | "faceUvs" | "uvs">,
     level: number,
-    skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight),
+    skin = bindingSkin(asset, this.skin.skinIndex, this.skin.skinWeight),
   ): SurfaceMesh {
     return buildSurfaceMesh(
       {
@@ -952,8 +978,8 @@ export class HumanoidModel {
         bones,
         faceUnitRotations(rig, occlusionCornerUnits(m)),
         rest,
-        this.assets.skinIndex,
-        this.assets.skinWeight,
+        this.skin.skinIndex,
+        this.skin.skinWeight,
         new Float32Array(rest.length),
       );
       // Every corner reuses the rest bake wherever nothing within reach moved.
@@ -1002,8 +1028,8 @@ export class HumanoidModel {
               bones,
               faceUnitRotations(rig, occlusionCornerUnits(m)),
               rest,
-              assets.skinIndex,
-              assets.skinWeight,
+              this.skin.skinIndex,
+              this.skin.skinWeight,
               new Float32Array(rest.length),
             );
       const normals = quadVertexNormals(body, quads);
@@ -1183,7 +1209,7 @@ export class HumanoidModel {
     const positions = this.evaluate(occlusionFigure()).control;
     const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
     if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
-    const { skinIndex, skinWeight } = this.assets;
+    const { skinIndex, skinWeight } = this.skin;
     const onHead = new Uint8Array(this.assets.manifest.vertexCount);
     for (let v = 0; v < onHead.length; v++) {
       let weight = 0;
@@ -1433,8 +1459,8 @@ export class HumanoidModel {
   /** The pack's skin and the visible body's base vertices, for grounding a posed figure. */
   rigSkin(): RigSkin {
     return {
-      skinIndex: this.assets.skinIndex,
-      skinWeight: this.assets.skinWeight,
+      skinIndex: this.skin.skinIndex,
+      skinWeight: this.skin.skinWeight,
       bodyVertices: this.bodyVertices,
     };
   }
@@ -2259,7 +2285,7 @@ export class HumanoidModel {
   private graftInput(): ModelGraftInput {
     const visible = faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible);
     return {
-      assets: this.assets,
+      assets: { ...this.assets, ...this.skin },
       bodyFaces: this.bodyFaces,
       base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
       adult: () => {
@@ -2389,7 +2415,7 @@ export class HumanoidModel {
     if (solved) {
       this.solvedFolds.delete(key);
     } else {
-      const { skinIndex, skinWeight } = this.assets;
+      const { skinIndex, skinWeight } = this.skin;
       const tris = this.bodyControlTriangles;
       solved = [
         yield* solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris),
@@ -2613,7 +2639,7 @@ export class HumanoidModel {
     let g = this.garmentParts.get(id);
     if (!g) {
       const asset = this.garmentAsset(id);
-      const skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight);
+      const skin = bindingSkin(asset, this.skin.skinIndex, this.skin.skinWeight);
       const n = asset.entry.vertexCount * 3;
       g = {
         asset,

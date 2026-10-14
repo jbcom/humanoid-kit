@@ -479,11 +479,19 @@ interface BodyArtRecipe {
 ### Evaluation
 
 ```ts
-new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
+new HumanoidModel(assets: HumanoidAssets, options?: {
+  subdivision?: 0 | 1 | 2
+  skinInfluences?: 4 | 5 | 6 | 7 | 8
+})
 ```
 
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
-and throws `RangeError` for anything else.
+and throws `RangeError` for anything else. `skinInfluences` defaults to 8: the
+full MakeHuman source weights. Lower values retain each runtime vertex's heaviest
+weights, renormalise them and zero the remaining places in the same eight-wide
+layout. The setting therefore reaches topology, attachment and garment binding,
+worker rig data, folds, grounding, occlusion and the GPU attributes together; it
+does not repack or mutate source assets.
 
 - `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
   the files its Modelling > Custom tab lists from `data/custom`. Each
