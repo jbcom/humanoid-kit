@@ -510,6 +510,12 @@ or the packed body-cavity occlusion, and do not change geometry. The worker and
 `<Humanoid>` receive this setting through the `ModelOptions` supplied to their
 `HumanoidWorkerClient`.
 
+The [paired CPU cost and field-error receipt](evidence/runtime-occlusion-cost.md)
+compares 32 and 16 rays on the same custom attachment set. In nine shared-host
+samples, the posed-bake median fell from 776.47 ms to 421.59 ms, with field mean
+absolute error 0.03416 and maximum error 0.1875. This is workload-specific CPU
+evidence; it does not establish a GPU speedup or change the full-fidelity default.
+
 `foldSolvePasses` is an integer from 1 to 60, default 60. It caps the actual
 contact-push loop in the first round of each hip and knee key, at every opening;
 settled contacts still stop early. Later rounds keep their existing 15-pass
