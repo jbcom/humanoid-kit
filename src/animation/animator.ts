@@ -10,6 +10,7 @@ import type { BoneRotations, RestBones } from "../rig/bones.ts";
 import { type AnimationClip, blendRotations, clipTime, sampleClip, setIdentity } from "./clip.ts";
 import { FootLock } from "./footlock.ts";
 import { planRootMotion, type RootMotionPlan, rootDisplacement } from "./locomotion.ts";
+import { SupportConstraint, type SupportFigure, type SupportReport } from "./supportConstraint.ts";
 
 export interface PlayOptions {
   /** Seconds the new clip takes to replace the old one; default `DEFAULT_FADE`, and none for the first clip. */
@@ -51,6 +52,17 @@ export class Animator {
   private readonly b: BoneRotations;
   private readonly plans = new Map<AnimationClip, RootMotionPlan>();
   private readonly step: [number, number] = [0, 0];
+  private readonly supported: BoneRotations;
+  private support: SupportConstraint | null = null;
+  private supportFigure: SupportFigure | null = null;
+  /** Last internal authored-support result; an unavailable or unreachable key leaves the sampled pose unchanged. */
+  readonly supportReport: SupportReport = {
+    state: "idle",
+    clip: null,
+    time: 0,
+    residual: Number.NaN,
+    tolerance: null,
+  };
 
   /**
    * `bones` is the rig's bone count; `rest` is the figure's skeleton and `ground`
@@ -65,6 +77,7 @@ export class Animator {
     this.rotations = setIdentity(new Float32Array(bones * 4));
     this.a = new Float32Array(bones * 4);
     this.b = new Float32Array(bones * 4);
+    this.supported = new Float32Array(bones * 4);
   }
 
   /** Replaces the skeleton the root motion is planned for (the figure's shape changed). */
@@ -73,6 +86,20 @@ export class Animator {
     this.ground = ground;
     this.lock = rest ? new FootLock(rest, ground) : null;
     this.plans.clear();
+    this.setSupportFigure(null);
+  }
+
+  /** Supplies the evaluated renderer-equivalent surface for private authored support tracks. */
+  setSupportFigure(figure: SupportFigure | null): boolean {
+    if (
+      this.supportFigure?.generation === figure?.generation &&
+      this.supportFigure?.anchors === figure?.anchors &&
+      this.supportFigure?.folds === figure?.folds
+    )
+      return false;
+    this.supportFigure = figure;
+    this.support = figure ? new SupportConstraint(figure) : null;
+    return true;
   }
 
   /** The clip playing, and the time into it. */
@@ -178,6 +205,7 @@ export class Animator {
     if (!cur) return;
     if (!this.previous) {
       sampleClip(cur.clip, cur.time, this.rotations);
+      this.alignSupport(cur.clip, cur.time);
       if (cur.clip.grounded) this.plant();
       // An airborne clip must not publish the last grounded clip's ownership.
       else this.lock?.reset();
@@ -187,9 +215,43 @@ export class Animator {
     sampleClip(this.previous.clip, this.previous.time, this.a);
     sampleClip(cur.clip, cur.time, this.b);
     blendRotations(this.a, this.b, w, this.rotations);
+    this.alignSupport(cur.clip, cur.time);
     if (cur.clip.grounded || this.previous.clip.grounded) this.plant();
     // Once the fade has reached two airborne clips, no old sole may remain owned.
     else this.lock?.reset();
+  }
+
+  /** Aligns exact authored support keys before FootLock takes its contact snapshots. */
+  private alignSupport(clip: AnimationClip, time: number): void {
+    const active = clip.supportTracks?.some((track) =>
+      track.times.some((key) => Math.abs(key - time) <= 1e-6),
+    );
+    if (!active) {
+      Object.assign(this.supportReport, {
+        state: "idle",
+        clip: null,
+        time,
+        residual: Number.NaN,
+        tolerance: null,
+      });
+      return;
+    }
+    if (!this.support) {
+      Object.assign(this.supportReport, {
+        state: "unavailable",
+        clip: clip.id,
+        time,
+        residual: Number.NaN,
+        tolerance:
+          clip.supportTracks?.find((track) =>
+            track.times.some((key) => Math.abs(key - time) <= 1e-6),
+          )?.quality.contactTolerance ?? null,
+      });
+      return;
+    }
+    const report = this.support.apply(clip, time, this.rotations, this.supported);
+    this.rotations.set(this.supported);
+    Object.assign(this.supportReport, report);
   }
 
   /** Holds the planted feet, and has the figure give way to one its leg could not reach (`FootLock.correction`). */

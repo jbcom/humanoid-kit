@@ -38,7 +38,11 @@ function groundDistanceNear(
   const unliftedJoint = [joint[0] as number, (joint[1] as number) - lift, joint[2] as number];
   let best = Number.POSITIVE_INFINITY;
   for (let i = 0; i < positions.length; i += 3) {
-    const point = [positions[i] as number, positions[i + 1] as number, positions[i + 2] as number];
+    const point: [number, number, number] = [
+      positions[i] as number,
+      positions[i + 1] as number,
+      positions[i + 2] as number,
+    ];
     if (distance(point, unliftedJoint) <= radius) best = Math.min(best, Math.abs(point[1] + lift));
   }
   return best;
@@ -75,11 +79,29 @@ describe("period drill acceptance", () => {
     expect(failures).toEqual([]);
   });
 
+  it("resolves renderer-surface support at the held kneeling key", () => {
+    const animation = clip("kneel_pray");
+    const frame = drillFigure(DRILL_FIGURES[3]?.macros ?? {})(animation, animation.duration);
+    expect(frame.support).toMatchObject({
+      state: "satisfied",
+      clip: "kneel_pray",
+      time: animation.duration,
+      tolerance: 0.015,
+    });
+    expect(frame.support.residual).toBeLessThanOrEqual(0.015);
+  });
+
   it("grounds the rear knee and each supporting sole in the held kneeling prayer", () => {
     const animation = clip("kneel_pray");
     const failures: string[] = [];
     for (const figure of DRILL_FIGURES) {
       const frame = drillFigure(figure.macros)(animation, animation.duration);
+      if (frame.support.state !== "satisfied")
+        failures.push(`${figure.name}: support solver ${frame.support.state}`);
+      else if (frame.support.residual > 0.015)
+        failures.push(
+          `${figure.name}: support residual ${(frame.support.residual * 1000).toFixed(1)} mm`,
+        );
       const rearKnee = groundDistanceNear(
         frame.body.positions,
         frame.lift,
@@ -107,7 +129,7 @@ describe("period drill acceptance", () => {
         const marks = drillFigure(figure.macros)(animation, animation.duration).marks;
         const left = marks("palm.L");
         const right = marks("palm.R");
-        const middle = [
+        const middle: [number, number, number] = [
           (left.position[0] + right.position[0]) / 2,
           (left.position[1] + right.position[1]) / 2,
           (left.position[2] + right.position[2]) / 2,
@@ -139,7 +161,11 @@ describe("period drill acceptance", () => {
       "colour_bearer",
     ]) {
       for (const spec of DRILL_FIGURES) {
-        const drift = stanceDrift(stationaryFigure[spec.name], clip(id), 3);
+        const drift = stanceDrift(
+          stationaryFigure[spec.name as keyof typeof stationaryFigure],
+          clip(id),
+          3,
+        );
         expect(
           drift.worst,
           `${spec.name} ${id}: ${(drift.worst * 1000).toFixed(1)} mm`,
