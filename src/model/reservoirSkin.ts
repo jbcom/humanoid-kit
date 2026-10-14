@@ -575,8 +575,9 @@ export function evaluatedFold(
   fold: SurfaceFold,
   skinning: ReservoirSkinning,
   shares: Float32Array | null,
+  closed?: ArrayLike<number> | null,
 ): SurfaceFold {
-  if (!shares) return fold;
+  if (!shares && !(closed && skinning.closure)) return fold;
   const row = rowTexels(fold.joint) * 4;
   const { owner, loops } = skinning;
   /** The fold's value at `i` (it is held as half floats). */
@@ -607,11 +608,17 @@ export function evaluatedFold(
     roots[s] = root;
     return root;
   };
+  const closure = closed && skinning.closure;
   const blended: { v: number; e: number; s: number }[] = [];
   for (let v = 0; v < owner.length; v++) {
-    const s = owner[v] as number;
-    if (s < 0) continue;
-    const e = shares[v] as number;
+    let s = owner[v] as number;
+    let e: number;
+    if (s >= 0) e = shares ? (shares[v] as number) : 0;
+    else if (closure && closed) {
+      // A closed canal's lips take its root's fold as they take its weights (`evaluatedSkin`).
+      s = closure.canal[v] as number;
+      e = s < 0 ? 0 : (closure.follows[v] as number) * ((closed[s] as number | undefined) ?? 0);
+    } else continue;
     // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
     if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached)) blended.push({ v, e, s });
   }

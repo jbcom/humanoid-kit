@@ -21,7 +21,8 @@ describe("the light a closed canal keeps out (#77)", () => {
     const shade = closedLipShade(closure, none, [1, 0], new Float32Array(5));
     expect(shade[0]).toBeCloseTo(CANAL_DARK.lips, 6);
     expect(shade[1]).toBeCloseTo(CANAL_DARK.lips * 0.5 ** CLOSED_LIP_SHADE_POWER, 6);
-    expect(shade[1] as number).toBeLessThan(0.1);
+    // Halfway across the zone, under half the lips' shade: a line with a soft edge.
+    expect(shade[1] as number).toBeLessThan(CANAL_DARK.lips / 2);
     expect(shade[2]).toBe(0);
     // Canal 1 is not closed (not drawn): its lips are skin, unshaded.
     expect(shade[3]).toBe(0);

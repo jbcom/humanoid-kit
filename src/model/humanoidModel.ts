@@ -2269,14 +2269,8 @@ export class HumanoidModel {
       const drawn = this.evaluatePart(adult.part, control, displacement, pushed);
       shares = rootShares(adult.skinning, pushed, drawn.positions);
     }
-    const skin = adult
-      ? evaluatedSkin(
-          adult.topology,
-          adult.skinning,
-          shares,
-          displacement ? this.closedShares(detail) : null,
-        )
-      : null;
+    const closed = adult && displacement ? this.closedShares(detail) : null;
+    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares, closed) : null;
     const folds = solved.map((fold) => {
       // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
       // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
@@ -2288,8 +2282,9 @@ export class HumanoidModel {
         control,
         this.assets,
       );
-      // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-      return adult ? evaluatedFold(onSurface, adult.skinning, shares) : onSurface;
+      // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights,
+      // and a closed canal's lips with its root, so the two sides fold alike (`evaluatedFold`).
+      return adult ? evaluatedFold(onSurface, adult.skinning, shares, closed) : onSurface;
     });
     return { surface: adult ? "adult" : "base", folds };
   }
