@@ -86,7 +86,7 @@ import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
-import { closureDisplacement, closureShare } from "./canalClosure.ts";
+import { closedLipNormals, closureDisplacement, closureShare } from "./canalClosure.ts";
 import {
   carriedDetail,
   latticePositions,
@@ -1654,13 +1654,16 @@ export class HumanoidModel {
       displacement,
       pushed,
     );
+    const closed = adult && pushed ? this.closedShares(detail) : null;
+    if (adult?.skinning.closure && closed)
+      closedLipNormals(adult.skinning.closure, closed, body.positions, body.normals);
     const skin =
       adult && pushed
         ? evaluatedSkin(
             adult.topology,
             adult.skinning,
             rootShares(adult.skinning, pushed, body.positions),
-            this.closedShares(detail),
+            closed,
           )
         : null;
     const attachments = this.attached.map((a) =>

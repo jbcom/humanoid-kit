@@ -13,6 +13,7 @@ import {
 import { AnimationFrameWriter, type FrameFigure } from "../animation/frameWriter.ts";
 import type { AnimationLibrary } from "../animation/library.ts";
 import { contactBones } from "../animation/locomotion.ts";
+import type { SupportFigure } from "../animation/supportConstraint.ts";
 import type { Evaluation } from "../model/humanoidModel.ts";
 import type { DualBones } from "../render/dualSkinning.ts";
 import { type OcclusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
@@ -89,6 +90,8 @@ interface Args {
   frames: AnimationFrames | null;
   /** The figure's presence id. */
   figureId: string | undefined;
+  /** Internal renderer-equivalent support input, null until anchors and fold tables have arrived. */
+  support: () => SupportFigure | null;
   report: (e: Error) => void;
 }
 
@@ -217,7 +220,11 @@ export function useFigureAnimation(args: Args): void {
     // Root motion is measured against R3F's render clock. Capping this step makes
     // a slow frame visibly shorten a walk, so the animator receives that clock's
     // full elapsed step.
+    const supportChanged = a.setSupportFigure(cur.support());
     if (!cur.animation.paused) a.update(delta);
+    // A paused sheet does not call `update`; refresh the held key once its support
+    // surface has arrived so it cannot remain on the pre-support sample.
+    else if (supportChanged) a.seek(a.playing.time);
     const { ready: info, skeleton: sk } = cur;
     const fit = rig.current;
     if (!fit) return;

@@ -3,7 +3,7 @@ import { RecipeError } from "../src/makehuman/recipeMorph.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { assertValidRecipe, RecipeValidationError } from "../src/recipe/validate.ts";
-import { loadHairFixtureAssets } from "./hairFixtures.ts";
+import { hairManifest, loadHairFixtureAssets } from "./hairFixtures.ts";
 
 const model = new HumanoidModel(loadHairFixtureAssets());
 
@@ -23,6 +23,33 @@ describe("the authored facial-hair runtime", () => {
     ]);
     for (const worn of evaluation.facialHair)
       expect(worn.positions.length).toBe(model.hairTopology(worn.id).vertexCount * 3);
+  });
+
+  it("keeps all five authored assets separate from the body across adult age and macro variation", () => {
+    const ids = hairManifest.styles
+      .filter((style) => style.kind === "facial")
+      .map((style) => style.id);
+    expect(ids).toHaveLength(5);
+    for (const macros of [
+      { age: 18, gender: 0, height: 0.15 },
+      { age: 45, gender: 1, height: -0.2 },
+      { age: 90, gender: 0.35, height: 0.05 },
+    ]) {
+      const plain = createRecipe({ macros });
+      const worn = model.evaluate(createRecipe({ macros, hair: { style: null }, facialHair: ids }));
+      expect(
+        worn.facialHair.map((hair) => hair.id),
+        JSON.stringify(macros),
+      ).toEqual(ids);
+      for (const hair of worn.facialHair)
+        expect(hair.positions.length, `${JSON.stringify(macros)} ${hair.id}`).toBe(
+          model.hairTopology(hair.id).vertexCount * 3,
+        );
+      // Selecting facial geometry does not deform, replace, or otherwise perturb the body.
+      expect(Array.from(worn.positions), JSON.stringify(macros)).toEqual(
+        Array.from(model.evaluate(plain).positions),
+      );
+    }
   });
 
   it("keeps recipes with no facial-hair field byte-for-byte compatible", () => {

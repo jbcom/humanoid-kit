@@ -9,6 +9,32 @@
   "loop": false,
   "rootMotion": false,
   "grounded": true,
+  "supportTracks": [
+    {
+      "times": [1.2, 1.6, 2, 4],
+      "supports": [
+        { "kind": "surface", "landmark": "knee.R", "radius": 0.1 },
+        { "kind": "sole", "bone": "foot.L" },
+        { "kind": "sole", "bone": "toe1-1.L" },
+        { "kind": "sole", "bone": "toe5-1.L" },
+        { "kind": "sole", "bone": "toe1-1.R" },
+        { "kind": "sole", "bone": "toe5-1.R" }
+      ],
+      "chains": [
+        "upperleg01.L",
+        "lowerleg01.L",
+        "foot.L",
+        "upperleg01.R",
+        "lowerleg01.R",
+        "foot.R"
+      ],
+      "quality": {
+        "contactTolerance": 0.015,
+        "maxRotationRadians": 0.7,
+        "iterations": 24
+      }
+    }
+  ],
   "keys": [
     {
       "t": 0,
