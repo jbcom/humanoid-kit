@@ -3171,97 +3171,18 @@ and a full beard each change the face, the full beard more than the goatee,
 chest hair shows against the same chest bare, and a child asked for a full beard
 grows none.
 
-**A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
-Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
-`beard`, whose entries the packer generates (`src/surface/bodyHairCards.ts`)
-rather than packs from a MakeHuman file: narrow strips rooted where the
-beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
-density from 0.7; a card is drawn whole, so one rooted in the mask's faint
-edge was a lone strip down the neck, and the coat carries that thinning
-instead), running along the coat's comb, lifting off the skin, bound to the base
-mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
-the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
-has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
-beard style it serves; today `beard-full` (a full beard; a moustache and a
-goatee are the coat's alone). Each card carries a rank, a byte per vertex
-(`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
-its density (`setDensity`, the face's coverage), whole, beside the hairline
-test and outside the alpha-to-coverage term, so the beard thins with age
-and the recipe with the same geometry, and scalp hair, with no ranks (0) and
-the default density (1), is untouched. The model wears generated cards (see
-"Beards" below) only where the face grows a beard (`beardCoverage`), so a
-child's figure has none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
-the brows' and lashes' topology) and are coloured by the face's body hair
-colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
-coat shades the skin under them). Rebuilding the hair pack with them leaves
-every scalp, brow and lash file byte-identical; only the manifest gains the
-entry.
+**Facial hair (current, issue #14).** The hair pack now carries authored MakeHuman facial attachments. A recipe selects them explicitly through `facialHair`; each keeps its source vertices, faces, texture alpha, face/jaw MHCLO anchors and hair colour. `facialHairLength` is the existing explicit source-free-offset multiplier for a selected beard: one is the exact packed placement, and a value above one expands every authored free-offset axis. It is not a named style generator and does not apply to moustaches.
 
-**Beards (design, 2026-10-13, issue #14).** A beard is a style plus
-continuous controls, not one asset per look. `bodyHair.beard` takes a style
-name, or `{ style, length?, volume?, grey?, fork?, part? }`, and every absent
-control is the style's default (`BEARD_SHAPES`, `src/surface/beard.ts`). The
-ten styles (none, stubble, moustache, goatee, imperial, mutton chops, chin
-curtain, full, forked, Longstreet) differ in which parts grow (moustache,
-chin, cheeks, the coat's parts) and their default length, from 1.5 mm of
-stubble to 35 cm of a chest-length Longstreet. `length` is the longest part's,
-in metres; each part keeps its share of it, so one number grows a beard over
-a game's months without swapping assets, and `resolveBeard` clamps it to the
-chin's height above the floor. The coat is the beard's dense base:
-each part's coat length is the shorter of the style's base (`BEARD_LENGTHS`)
-and the resolved part length, so a shorter `length` trims it and a longer one
-is left to the cards. `generateBeardCards(assets, beard)`
-(`src/surface/beardCards.ts`) makes the cards from the resolved beard: they
-root on the parts at least `BEARD_CARD_MIN_LENGTH` (5 mm) long, each card at
-its part's length, and volume scales their number and their lift. Long cards
-drape (`CardDrape`, numbers in `DRAPE`). Their quads are about 2.5 cm long, so
-they bend. Between 1 and 5 cm from the root they turn from the comb to fall,
-a little forward, gathering toward the middle (`CardDrape.gather`, 0.55 for
-beards: a card falls toward 45% of its root's distance from the midline, over
-about 8 cm of drop), so cheek hair joins the chin's in one mass rather than
-fanning over the chest; a card widens with its length (`CardSpec.widen`, 4 cm
-a metre up to 30 cm), a long one a lock. The chin's hair forks into two
-points `DRAPE.forkApart` (4.5 cm) either side by `fork`, and the
-moustache parts out from the middle by `part`. Past the first centimetre each
-point is pushed off the body's nearest surface and slides along it, so a
-chest-length beard lies on the chest instead of passing through it. A card's
-first 5 cm are bound to its root's triangle, so the moustache and chin follow
-the jaw. Past that, each point within 3 cm of the body is bound to the
-triangle under it, and the points after it to the last that touched, so the
-length lying on the chest, belly or lap follows them through morphs and poses
-(`DRAPE.bindFrom`, `DRAPE.touch`). Up to 64 quads let a floor-length beard
-bend all the way down. The beard
-is quantised before generating (lengths floored to the millimetre, the other
-controls to a twentieth), so `beardCardKey` names equal cards, and growing a
-beard by a hair does not regenerate them. Grey is the material's, not the
-geometry's: `HairMaterial.setWhite` draws that share of whole cards white,
-chosen by an integer hash of their rank, so a greying beard is salt and
-pepper rather than a uniform tint. The model wears the generated cards
-(`Evaluation.beard`, id `beard:` and the key), made at evaluation on the
-worker in about 0.1 to 0.3 s a new key: drawn unsubdivided and shaded by
-`beardCardOcclusion` rather than the packer's ray bake, which took seconds a
-beard. The pack's `beard-full` entry now serves only its strand map. A beard
-grown or trimmed keeps few sets alive: the model the last 3, worker and
-client the last 4 topologies, `<Humanoid>` disposing the old geometry. The use cases decided it: a close-up portrait
-needs the style legible at a glance (cards), a beard growing during play
-needs one continuous length (no per-length pack), painted miniatures need a
-closed solid mass (no fur shader), and a character colour needs the grey
-fraction and the fork controls. Rejected: packed card sets per style and
-length (quantised length, pack growth, no growing beard), and a solid
-sculpted mesh for every figure (no strand read at portrait distance; it
-stays the miniatures' path, issue #12). The card generator is pure (base
-mesh, mask and seed; no MakeHuman bytes), so it lives in
-`src/surface/bodyHairCards.ts`, where the packer and the runtime both reach
-it.
+**Source-proxy growth.** `facialHairGrowth` is a separate selected-beard control from zero to one. At zero the evaluator omits that attachment, so no collapsed facial film reaches the renderer; at `0.5` it delegates to the exact packed source placement. Below that native point it contracts the existing free offsets continuously from a source-derived attachment-edge frame. Above it, every runtime vertex extends by its native vertical depth below one shared source-height frame; at one, the deepest source vertex reaches the morphed base-control mesh's unposed rest floor. The evaluator retains the boundary edge nearest the MHCLO weighted base-surface placement for every source boundary loop, then restores both vertices of every retained edge exactly to their face/jaw binding. A connected source component can therefore retain several card attachments rather than a single global winner. A closed source component has no exposed growth root and remains source-fixed. A runtime-only, body-front clearance proxy moves only lower vertices horizontally along that root evidence's existing normal frame, which keeps the retained source cards inspectable in front of the unposed base body without rebinding a vertex to the torso. The calculation retains the source's three base-mesh anchors, vertices and topology, and it cannot share an asset with `facialHairLength`. This is a rest-floor bound only: it does not assert posed-world drape, collision avoidance, garment contact, or a new style.
+
+**Beard controls still awaiting a source-backed rendering path.** `bodyHair.beard` resolves ten names and its length, volume, grey, fork and part values, but current rendering uses those values only for the short coat (which is capped at 25 mm). It does not cause an authored alpha attachment to be worn; `Evaluation.facialHair` remains empty for a recipe that names only `bodyHair.beard`. The current assets do not supply a source-backed mapping for every requested named cut, a per-lock white field for grey streaking, or a source basis for generic fork/part deformation. Those remain open work under issue #14.
+
+**Miniatures.** `bakeMiniature` presently bakes the body, garments, eyes and scalp colour; it deliberately excludes `Evaluation.facialHair`. There is no alpha-to-solid facial-hair bake, beard length morph target, or VAT channel yet. That is a separate miniature boundary, not evidence that the existing source attachment is a closed solid mass.
 
 **Costs.** The coat costs nothing where nothing is painted (no triangles, no
-draw). A full beard (its coat and its cards) with doubled chest, abdomen and
-back hair at 360 × 420 measured 10.52 ms a frame against 9.91 ms without
-(`e2e/bodyhair.spec.ts`, recorded; the coat alone, before the cards, measured
-8.33 against 8.29; with coverage shading, which blends rather than discards,
-9.76 against 8.70 on the software renderer). These are frame intervals on a
-desktop browser near its display's rate, so they bound the cost rather than
-measure it. A GPU timer measurement on a phone is the open item.
+draw). The historical generated-card beard timing does not describe the current
+authored facial attachments, so source-growth visual acceptance must record its
+own rendering cost rather than reuse that retired measurement.
 
 **Sheen.** At its peak, with light and view both square to the comb, the
 coat's Kajiya-Kay lobes add 0.23 to 0.34 of the hair's diffuse at a beard's
@@ -4266,10 +4187,9 @@ Milestones, in the order each is proven (built in parallel lanes; see
    texture gap remains (tight curls in the longer styles, named there).
 5. **Body and facial hair.** Implemented: body hair by region, age and recipe,
    drawn as skin layers and a shared coat (see "Body hair"), the hair pack's
-   eyebrows and eyelashes. In progress: beards, with ten styles (stubble,
-   moustache, goatee and more) and continuous length, volume and grey controls
-   (`BeardSpec`) in the recipe, whose rendering is still under visual review
-   (issue 14).
+   eyebrows, eyelashes and authored facial attachments. In progress: source
+   beard growth and the remaining issue 14 alpha-style, grey-streaking and
+   miniature requirements; the ten `BeardSpec` names remain short-coat controls.
 6. **Anthro traits.** Planned (issue 97). The coat module is shared with body
    hair so that fur can add its own regions and patterns (see "The coat").
 7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,

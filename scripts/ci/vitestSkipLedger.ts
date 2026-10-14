@@ -39,6 +39,10 @@ const EXPECTED_SKIPS: readonly ExpectedSkip[] = [
     reason: "the dedicated facial-hair inspection is disabled",
   },
   {
+    moduleSuffix: "/tests/browser/facialHairGrowthInspection.test.tsx",
+    reason: "the dedicated source-card growth inspection is disabled",
+  },
+  {
     moduleSuffix: "/tests/browser/injuryInspection.test.tsx",
     reason: "the dedicated injury inspection is disabled",
   },

@@ -160,6 +160,7 @@ createRecipe(init?: {
   };
   facialHair?: readonly string[]; // authored facial style ids; absent = none
   facialHairLength?: Readonly<Record<string, number>>; // selected beard id -> source free-offset multiplier (>= 1)
+  facialHairGrowth?: Readonly<Record<string, number>>; // selected beard id -> source-proxy growth fraction [0, 1]
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -184,6 +185,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
   facialHairLength?: Readonly<Record<string, number>>; // optional selected beard id -> source free-offset multiplier (>= 1)
+  facialHairGrowth?: Readonly<Record<string, number>>; // optional selected beard id -> source-proxy growth [0, 1]
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
@@ -585,7 +587,21 @@ continue to use their full solved source fields whenever a pose needs them.
   `recipe.facialHairLength` may opt a selected beard into a multiplier at least
   one. It retains the source mesh, its face/jaw MHCLO anchors and its authored
   free-offset vectors; one is byte-for-byte the packed placement. It rejects
-  unselected ids and moustaches.
+  unselected ids and moustaches. `recipe.facialHairGrowth` is a separate,
+  opt-in unit fraction for a selected beard: zero omits that beard's evaluated
+  mesh; `0.5` is exactly the packed source placement; and one maps each source
+  vertex's native depth below one shared source-height frame to the morphed
+  base-control mesh's unposed rest floor. Values below `0.5` contract the
+  existing free offsets continuously from source-derived attachment-edge frames.
+  At growth above the native placement, each source boundary loop's edge nearest
+  its MHCLO base-surface placement is restored exactly to its face/jaw binding.
+  A closed source component
+  has no exposed growth root and remains source-fixed. A runtime-only
+  body-front clearance proxy moves only the remaining lower vertices
+  horizontally along the root edges' existing normal frame; it preserves MHCLO
+  anchors, source vertices and faces. It cannot be combined with
+  `facialHairLength` for one id. This is a rest-floor source-proxy bound, not
+  posed-world drape, collision avoidance, or garment-contact handling.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts

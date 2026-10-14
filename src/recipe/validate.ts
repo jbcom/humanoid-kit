@@ -113,6 +113,17 @@ export function recipeProblems(recipe: unknown): string[] {
   if ("facialHair" in r && r.facialHair !== undefined) facialHairProblems(r.facialHair, p);
   if ("facialHairLength" in r && r.facialHairLength !== undefined)
     facialHairLengthProblems(r.facialHairLength, p);
+  if ("facialHairGrowth" in r && r.facialHairGrowth !== undefined)
+    facialHairGrowthProblems(r.facialHairGrowth, p);
+  if (
+    r.facialHairLength &&
+    r.facialHairGrowth &&
+    typeof r.facialHairLength === "object" &&
+    typeof r.facialHairGrowth === "object"
+  )
+    for (const id of Object.keys(r.facialHairLength))
+      if (id in r.facialHairGrowth)
+        p.push(`cannot set both facialHairLength and facialHairGrowth for ${id}`);
   if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);
   if (r.bodyArt !== undefined) bodyArtProblems(r.bodyArt, p);
   if (r.outfit !== undefined) {
@@ -153,6 +164,18 @@ function facialHairLengthProblems(lengths: unknown, p: string[]): void {
     if (id === "") p.push("facialHairLength names an empty style id");
     if (!finite(factor) || factor < 1)
       p.push(`facialHairLength.${id} must be a finite multiplier at least 1`);
+  }
+}
+
+function facialHairGrowthProblems(growth: unknown, p: string[]): void {
+  if (typeof growth !== "object" || growth === null || Array.isArray(growth)) {
+    p.push("facialHairGrowth must be an object of beard ids to unit growth");
+    return;
+  }
+  for (const [id, value] of Object.entries(growth)) {
+    if (id === "") p.push("facialHairGrowth names an empty style id");
+    if (!finite(value) || value < 0 || value > 1)
+      p.push(`facialHairGrowth.${id} must be a finite number in [0, 1]`);
   }
 }
 
