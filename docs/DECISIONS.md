@@ -205,3 +205,11 @@ Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
 this file is the index of what was decided and why.
+
+## 13. Source-derived endpoints are retained without aesthetic substitution
+
+The independent regional breast path uses evaluated MakeHuman source controls and
+targets on hm08. If a source endpoint is position-identical to MakeHuman, its
+local relief is retained rather than smoothed, sculpted, or replaced for taste.
+The acceptance requirement is source identity plus an inspected rendering, not a
+new locally authored shape.

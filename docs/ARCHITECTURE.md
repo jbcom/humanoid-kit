@@ -241,20 +241,31 @@ whose weight is equal in every region is applied uniformly; the others get one
 weight per region and are blended by the masks, so a trait set differently on the
 face and the hips blends across the neck and waist instead of tearing.
 
-### Regional source-backed breast frame
+### Regional source-backed breast tissue
 
-MakeHuman's `breast/female-*` targets are deltas around its female source frame,
-not standalone volume. Each `breastL` or `breastR` regional override may therefore
-set optional `breastPresence` in `[0, 1]`: 0 selects the male source-frame share
-and 1 the female source-frame share for that side's region mask. The evaluator
-uses that share for the ordinary MakeHuman gender-frame contributions and that
-side's breast target family, while preserving the recipe's muscle, weight,
-breast-size and firmness values. Other regions retain the figure's `gender`.
+MakeHuman's `breast/female-*` targets are deltas around its female source
+frame, not standalone volume. `breastPresence` on `breastL` or `breastR` is the
+opt-in source-derived tissue path for that side. It retains the recipe's
+`breastSize` and `breastFirmness` as MakeHuman coordinates: presence `0` gives
+the measured source-flat baseline, `1` gives source tissue at those coordinates,
+and intermediate values blend the tissue without changing either coordinate.
 
-When `breastPresence` is absent, evaluation keeps the exact legacy MakeHuman
-gender-derived source frame. It is not a volume scaler, adds no target, mesh or
-baked data, and does not alter the age policy: child, young and old breast targets
-remain the existing MakeHuman data and baby has none.
+The evaluator builds one canonical library from the loaded MakeHuman control
+frames at the current age: the female source grid at size `0`, `.5`, `.75` and
+`1` across firmness `0`, `.5` and `1`, plus the no-tissue source frame. It uses
+the hm08 topology and shipped breast helper joints to measure tissue already
+carried by the evaluated control, preserves the rest of that frame, and applies
+only the selected source tissue. The library's reach is the union of the source
+target reach and the fixed source support. There is no replacement mesh, drawn
+morph, or masked whole-body gender transfer.
+
+A recipe without `breastPresence` retains the exact legacy MakeHuman path. A
+recipe that names it waits for every reference target needed to construct that
+age's source library; staged loading fails closed rather than silently using the
+legacy path. At presence `1`, including MakeHuman's min-cup endpoint, the
+source-frame identity test holds positions to `1e-5` metres. The visual result
+at each endpoint is retained source data, including endpoints whose local relief
+is pronounced.
 
 ## Age policy
 

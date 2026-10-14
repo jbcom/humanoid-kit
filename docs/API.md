@@ -220,8 +220,9 @@ interface BeardSpec {
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
 type BreastRegionalTraitValues = Partial<RegionalMacroValues> & {
-  // breastL/breastR only. 0 = male source-frame share; 1 = female share.
-  // Absent preserves the figure's gender-derived MakeHuman source frame.
+  // breastL/breastR only. Absent retains the exact legacy MakeHuman path.
+  // 0 is the source-flat baseline; 1 applies source tissue at this side's
+  // breastSize and breastFirmness. Intermediate values blend that tissue.
   breastPresence?: number;
 };
 
