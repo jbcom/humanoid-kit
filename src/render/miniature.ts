@@ -31,6 +31,8 @@ import {
   HalfFloatType,
   InstancedBufferAttribute,
   InstancedMesh,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Matrix4,
   MeshStandardMaterial,
   type MeshStandardMaterialParameters,
@@ -205,6 +207,11 @@ class AlphaCardMaterial extends MeshStandardMaterial {
       RGBAFormat,
       UnsignedByteType,
     );
+    // Decoded image rows begin at the top; retain the live source TextureLoader convention.
+    map.flipY = true;
+    map.magFilter = LinearFilter;
+    map.minFilter = LinearMipmapLinearFilter;
+    map.generateMipmaps = true;
     map.colorSpace = SRGBColorSpace;
     map.needsUpdate = true;
     super({
@@ -299,6 +306,14 @@ class AlphaCardArchetype {
       (sum, texture) => sum + (texture.image.data as ArrayBufferView).byteLength,
       0,
     );
+    // The GPU-generated source-map pyramid is resident alongside its embedded base pixels.
+    let width = card.texture.width;
+    let height = card.texture.height;
+    while (width > 1 || height > 1) {
+      width = Math.max(1, Math.floor(width / 2));
+      height = Math.max(1, Math.floor(height / 2));
+      this.textureBytes += width * height * 4;
+    }
     const geometry = new BufferGeometry();
     geometry.setAttribute(
       "position",

@@ -28,8 +28,10 @@ export class MiniatureError extends Error {
 
 /** A decoded RGBA8 image, rows top first (`ImageData`'s layout). */
 export interface DecodedTexture {
+  /** Image rows run top to bottom, as returned by sharp or Canvas getImageData. */
   width: number;
   height: number;
+  /** Straight RGBA; preserve transparent RGB when exact filtered colour is required. */
   data: Uint8Array | Uint8ClampedArray;
 }
 
