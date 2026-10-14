@@ -592,9 +592,15 @@ The `<Humanoid>` seam, the blend clock and `RegionalContact` emission belong to
 later slices.
 
 - **Hand shape first.** `handShapeRotations` sets one hand's finger bones
-  outright to a `HAND_SHAPES` entry, mirrored for the left hand. `point` keeps
-  the index straight, curls the other fingers and tucks the thumb. Nothing
-  else moves: the fingers belong to the shape and the arm to the solver.
+  outright to a `HAND_SHAPES` entry, mirrored for the left hand. The core
+  provides `point`, `pinch`, `flat`, `cup`, `claw` and `fist`: a pointing index,
+  opposing thumb and index, an open palm, a relaxed cup, bent scratch fingers
+  and a closed hand. The caller selects the shape for its action; site contact
+  does not silently substitute one gesture for another. For `flat` and `cup`
+  contacts through `palm.L` or `palm.R`, the solver closes a rendered
+  body-facing primary-metacarpal volar support (excluding fingertips and forearm) and reports that support's gap; it does not pull
+  the palm-centre landmark through a curved torso. Nothing else moves: the
+  fingers belong to the shape and the arm to the solver.
 - **Effector and site from one skinning.** `createArmSkinnedFrameSampler` takes
   an `effector` (an affordance or landmark id; `hand.X` by default, so hand
   contact is unchanged) and the hand's `fingerBones` as declared candidates.
