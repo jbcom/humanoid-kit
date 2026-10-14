@@ -49,6 +49,18 @@ export interface FingerChannelLimit {
   maxDegrees: number;
 }
 
+/** Explicit action range relative to one extracted source BVH channel. */
+export interface FingerChannelOffsetLimit {
+  /** A source finger joint, for example `finger2-1.R`. */
+  joint: string;
+  /** A rotation channel present on that joint in the body pack's `tpose` layout. */
+  channel: RotationChannel;
+  /** Inclusive action lower bound relative to the authored source value, in degrees. */
+  minOffsetDegrees: number;
+  /** Inclusive action upper bound relative to the authored source value, in degrees. */
+  maxOffsetDegrees: number;
+}
+
 export type FingerTargetStatus = "reached" | "unreached";
 export type FingerTargetReason = "reached" | "limits" | "iteration-budget";
 
@@ -106,11 +118,18 @@ export interface FingerSurfaceTargetResult {
 
 const LAYOUT = "tpose";
 const CHANNELS: readonly RotationChannel[] = ["Xrotation", "Yrotation", "Zrotation"];
+const CHANNEL_AXES: Readonly<Record<RotationChannel, readonly [0 | 1 | 2, 1 | -1]>> = {
+  Xrotation: [0, 1],
+  Yrotation: [2, -1],
+  Zrotation: [1, 1],
+};
+const DEGREES = 180 / Math.PI;
 type MutableJointChannels = Record<string, Partial<Record<RotationChannel, number>>>;
 const frame = (): FingerSurfaceFrame => ({ position: [0, 0, 0], normal: [0, 0, 0] });
 
 const fingerJointNames = (digit: number, side: FingerSide) =>
   [1, 2, 3].map((joint) => `finger${digit}-${joint}.${side}`);
+const channelKey = (joint: string, channel: RotationChannel) => `${joint}\u0000${channel}`;
 
 /**
  * Declares every rotation channel the packed source layout exposes for one
@@ -126,21 +145,97 @@ export function fingerChannelLimits(
 ): FingerChannelLimit[] {
   if (!Number.isFinite(minDegrees) || !Number.isFinite(maxDegrees) || minDegrees > maxDegrees)
     throw new RangeError("finger target: channel bounds must be finite and ordered");
+  return fingerChannelDefinitions(rig, digit, side).map(({ joint, channel }) => ({
+    joint,
+    channel,
+    sourceDegrees: 0,
+    minDegrees,
+    maxDegrees,
+  }));
+}
+
+/**
+ * Reads an authored full-body pose back into the packed `tpose` BVH channel
+ * convention for one finger. The caller supplies every permitted action range
+ * relative to that source value; this helper never substitutes a neutral pose
+ * or universal anatomical limits.
+ */
+export function fingerChannelLimitsFromPose(
+  rig: RigData,
+  rotations: BoneRotations,
+  digit: 1 | 2 | 3 | 4 | 5,
+  side: FingerSide,
+  offsets: readonly FingerChannelOffsetLimit[],
+): FingerChannelLimit[] {
+  if (rotations.length !== rig.bones.length * 4)
+    throw new RangeError("finger target: rotations do not match the source rig");
+  const declared = fingerChannelDefinitions(rig, digit, side);
+  const offsetByChannel = new Map<string, FingerChannelOffsetLimit>();
+  for (const offset of offsets) {
+    if (
+      !Number.isFinite(offset.minOffsetDegrees) ||
+      !Number.isFinite(offset.maxOffsetDegrees) ||
+      offset.minOffsetDegrees > offset.maxOffsetDegrees
+    )
+      throw new RangeError("finger target: source-relative offsets must be finite and ordered");
+    const key = channelKey(offset.joint, offset.channel);
+    if (offsetByChannel.has(key))
+      throw new RangeError(
+        `finger target: duplicate source offset ${offset.joint}.${offset.channel}`,
+      );
+    offsetByChannel.set(key, offset);
+  }
+  if (offsetByChannel.size !== declared.length)
+    throw new RangeError("finger target: declare every source-relative finger offset");
+  const layout = layoutOf(rig);
+  const source = new Map<string, Partial<Record<RotationChannel, number>>>();
+  for (const joint of layout.joints) {
+    const wanted = declared.filter((limit) => limit.joint === joint.name);
+    if (wanted.length === 0) continue;
+    const bone = rig.bones.indexOf(joint.name);
+    if (bone < 0) throw new RangeError(`finger target: rig lacks ${joint.name}`);
+    const channels = joint.channels.filter((channel): channel is RotationChannel =>
+      CHANNELS.includes(channel as RotationChannel),
+    );
+    const values = inverseTaitBryan(
+      [
+        rotations[bone * 4] as number,
+        rotations[bone * 4 + 1] as number,
+        rotations[bone * 4 + 2] as number,
+        rotations[bone * 4 + 3] as number,
+      ],
+      channels,
+    );
+    source.set(joint.name, values);
+  }
+  return declared.map((limit) => {
+    const offset = offsetByChannel.get(channelKey(limit.joint, limit.channel));
+    const value = source.get(limit.joint)?.[limit.channel];
+    if (!offset || value === undefined)
+      throw new RangeError("finger target: source pose omitted a declared finger channel");
+    return {
+      joint: limit.joint,
+      channel: limit.channel,
+      sourceDegrees: value,
+      minDegrees: value + offset.minOffsetDegrees,
+      maxDegrees: value + offset.maxOffsetDegrees,
+    };
+  });
+}
+
+function fingerChannelDefinitions(
+  rig: RigData,
+  digit: 1 | 2 | 3 | 4 | 5,
+  side: FingerSide,
+): Array<Pick<FingerChannelLimit, "joint" | "channel">> {
   const layout = layoutOf(rig);
   const wanted = new Set(fingerJointNames(digit, side));
-  const out: FingerChannelLimit[] = [];
+  const out: Array<Pick<FingerChannelLimit, "joint" | "channel">> = [];
   for (const joint of layout.joints) {
     if (!wanted.has(joint.name)) continue;
-    for (const channel of joint.channels) {
+    for (const channel of joint.channels)
       if (CHANNELS.includes(channel as RotationChannel))
-        out.push({
-          joint: joint.name,
-          channel: channel as RotationChannel,
-          sourceDegrees: 0,
-          minDegrees,
-          maxDegrees,
-        });
-    }
+        out.push({ joint: joint.name, channel: channel as RotationChannel });
   }
   if (out.length === 0)
     throw new RangeError("finger target: source layout has no finger rotation channels");
@@ -457,6 +552,73 @@ const layoutOf = (rig: RigData) => {
   if (!layout) throw new RangeError(`finger target: pack has no ${LAYOUT} source layout`);
   return layout;
 };
+
+/**
+ * Decomposes the three distinct rotations in their authored BVH order. The
+ * returned branch keeps the middle turn within +/- 90 degrees; at gimbal lock
+ * it fixes the final turn at zero and retains the equivalent first turn.
+ */
+function inverseTaitBryan(
+  quaternion: readonly [number, number, number, number],
+  channels: readonly RotationChannel[],
+): Partial<Record<RotationChannel, number>> {
+  if (channels.length !== 3 || new Set(channels).size !== 3)
+    throw new RangeError("finger target: source finger channels must be three distinct rotations");
+  const length = Math.hypot(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+  if (!Number.isFinite(length) || length === 0)
+    throw new RangeError("finger target: source pose has a non-finite or zero quaternion");
+  const x = quaternion[0] / length;
+  const y = quaternion[1] / length;
+  const z = quaternion[2] / length;
+  const w = quaternion[3] / length;
+  const matrix = [
+    1 - 2 * (y * y + z * z),
+    2 * (x * y - z * w),
+    2 * (x * z + y * w),
+    2 * (x * y + z * w),
+    1 - 2 * (x * x + z * z),
+    2 * (y * z - x * w),
+    2 * (x * z - y * w),
+    2 * (y * z + x * w),
+    1 - 2 * (x * x + y * y),
+  ];
+  const axes = channels.map((channel) => CHANNEL_AXES[channel][0]) as [number, number, number];
+  const [firstAxis, middleAxis, finalAxis] = axes;
+  const handedness = permutationHandedness(axes);
+  const local = [
+    matrix[firstAxis * 3 + firstAxis] as number,
+    matrix[firstAxis * 3 + middleAxis] as number,
+    matrix[firstAxis * 3 + finalAxis] as number,
+    matrix[middleAxis * 3 + firstAxis] as number,
+    matrix[middleAxis * 3 + middleAxis] as number,
+    matrix[middleAxis * 3 + finalAxis] as number,
+    matrix[finalAxis * 3 + firstAxis] as number,
+    matrix[finalAxis * 3 + middleAxis] as number,
+    matrix[finalAxis * 3 + finalAxis] as number,
+  ];
+  const middle = Math.asin(Math.max(-1, Math.min(1, local[2] as number)));
+  const cosine = Math.cos(middle);
+  const first =
+    Math.abs(cosine) > 1e-7
+      ? Math.atan2(-(local[5] as number), local[8] as number)
+      : Math.atan2(local[7] as number, local[4] as number);
+  const final = Math.abs(cosine) > 1e-7 ? Math.atan2(-(local[1] as number), local[0] as number) : 0;
+  const physical = [handedness * first, handedness * middle, handedness * final];
+  const out: Partial<Record<RotationChannel, number>> = {};
+  for (let index = 0; index < channels.length; index++) {
+    const channel = channels[index] as RotationChannel;
+    out[channel] = ((physical[index] as number) / CHANNEL_AXES[channel][1]) * DEGREES;
+  }
+  return out;
+}
+
+function permutationHandedness(axes: readonly number[]): 1 | -1 {
+  let inversions = 0;
+  for (let left = 0; left < axes.length; left++)
+    for (let right = left + 1; right < axes.length; right++)
+      if ((axes[left] as number) > (axes[right] as number)) inversions++;
+  return inversions % 2 === 0 ? 1 : -1;
+}
 
 function dlsStep(
   jacobian: Float64Array,

@@ -10,8 +10,10 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { skinPose } from "../src/rig/dual.ts";
 import {
+  type FingerChannelOffsetLimit,
   type FingerSurfaceFrame,
   fingerChannelLimits,
+  fingerChannelLimitsFromPose,
   solveFingerSurfaceTarget,
 } from "../src/rig/fingerTarget.ts";
 import {
@@ -77,9 +79,150 @@ const distance = (a: readonly number[], b: readonly number[]) =>
     (a[2] as number) - (b[2] as number),
   );
 
+const sameRotation = (a: Float32Array, b: Float32Array, bone: number) =>
+  Math.abs(
+    (a[bone * 4] as number) * (b[bone * 4] as number) +
+      (a[bone * 4 + 1] as number) * (b[bone * 4 + 1] as number) +
+      (a[bone * 4 + 2] as number) * (b[bone * 4 + 2] as number) +
+      (a[bone * 4 + 3] as number) * (b[bone * 4 + 3] as number),
+  );
+
+const sourceOffsets = (limits: readonly { joint: string; channel: RotationChannel }[]) =>
+  limits.map(
+    ({ joint, channel }, index): FingerChannelOffsetLimit => ({
+      joint,
+      channel,
+      minOffsetDegrees: -8 - index,
+      maxOffsetDegrees: 13 + index,
+    }),
+  );
+
 describe("finger surface target", () => {
   const limits = fingerChannelLimits(rig, 2, "R", -75, 75);
   const pad = padReader("R");
+
+  it("extracts authored nonidentity source channels without touching the rest of the source pose", () => {
+    const source = Float32Array.from(base);
+    const sourceBefore = Float32Array.from(source);
+    const authored: Record<string, Partial<Record<RotationChannel, number>>> = {};
+    limits.forEach((limit, index) => {
+      let joint = authored[limit.joint];
+      if (!joint) {
+        joint = {};
+        authored[limit.joint] = joint;
+      }
+      joint[limit.channel] = [57, -42.1, -70, -125.9, -40.3, 127.7, 31.4, 18.6, -92.2][
+        index
+      ] as number;
+    });
+    jointChannelRotations(rig, authored, source);
+    const sourcePose = Float32Array.from(source);
+    const offsets = sourceOffsets(limits);
+    const extracted = fingerChannelLimitsFromPose(rig, source, 2, "R", offsets);
+    expect(Array.from(source)).toEqual(Array.from(sourcePose));
+    extracted.forEach((limit, index) => {
+      const authoredValue = authored[limit.joint]?.[limit.channel] as number;
+      const offset = offsets[index] as FingerChannelOffsetLimit;
+      expect(limit.sourceDegrees).toBeCloseTo(authoredValue, 4);
+      expect(limit.minDegrees).toBeCloseTo(limit.sourceDegrees + offset.minOffsetDegrees, 8);
+      expect(limit.maxDegrees).toBeCloseTo(limit.sourceDegrees + offset.maxOffsetDegrees, 8);
+    });
+    const reconstructed = Float32Array.from(source);
+    const channels: Record<string, Partial<Record<RotationChannel, number>>> = {};
+    extracted.forEach((limit) => {
+      let joint = channels[limit.joint];
+      if (!joint) {
+        joint = {};
+        channels[limit.joint] = joint;
+      }
+      joint[limit.channel] = limit.sourceDegrees;
+    });
+    jointChannelRotations(rig, channels, reconstructed);
+    for (let bone = 0; bone < rig.bones.length; bone++) {
+      const name = rig.bones[bone] as string;
+      if (name.startsWith("finger2-") && name.endsWith(".R"))
+        expect(sameRotation(reconstructed, sourcePose, bone)).toBeGreaterThan(1 - 1e-6);
+      else
+        expect(Array.from(reconstructed.subarray(bone * 4, bone * 4 + 4))).toEqual(
+          Array.from(sourcePose.subarray(bone * 4, bone * 4 + 4)),
+        );
+    }
+    expect(Array.from(sourceBefore)).not.toEqual(Array.from(sourcePose));
+  });
+
+  it("reconstructs reordered source channels across the gimbal branch", () => {
+    const reorderedRig = {
+      ...rig,
+      poses: rig.poses.map((pose) =>
+        pose.name === "tpose"
+          ? {
+              ...pose,
+              joints: pose.joints.map((joint) =>
+                joint.name.startsWith("finger2-") && joint.name.endsWith(".R")
+                  ? {
+                      ...joint,
+                      channels: joint.channels.map((channel) =>
+                        channel === "Xrotation"
+                          ? "Zrotation"
+                          : channel === "Yrotation"
+                            ? "Xrotation"
+                            : channel === "Zrotation"
+                              ? "Yrotation"
+                              : channel,
+                      ),
+                    }
+                  : joint,
+              ),
+            }
+          : pose,
+      ),
+    };
+    const reordered = fingerChannelLimits(reorderedRig, 2, "R", -75, 75);
+    const source = Float32Array.from(base);
+    const head = rig.bones.indexOf("head");
+    source[head * 4] = 0.1;
+    source[head * 4 + 3] = Math.sqrt(0.99);
+    const authored: Record<string, Partial<Record<RotationChannel, number>>> = {};
+    const values = [133, 90, -121, -146, -90, 101, 74, 28, -158];
+    reordered.forEach((limit, index) => {
+      let joint = authored[limit.joint];
+      if (!joint) {
+        joint = {};
+        authored[limit.joint] = joint;
+      }
+      joint[limit.channel] = values[index] as number;
+    });
+    jointChannelRotations(reorderedRig, authored, source);
+    const sourcePose = Float32Array.from(source);
+    const extracted = fingerChannelLimitsFromPose(
+      reorderedRig,
+      source,
+      2,
+      "R",
+      sourceOffsets(reordered),
+    );
+    const channels: Record<string, Partial<Record<RotationChannel, number>>> = {};
+    extracted.forEach((limit) => {
+      let joint = channels[limit.joint];
+      if (!joint) {
+        joint = {};
+        channels[limit.joint] = joint;
+      }
+      joint[limit.channel] = limit.sourceDegrees;
+    });
+    const reconstructed = Float32Array.from(source);
+    jointChannelRotations(reorderedRig, channels, reconstructed);
+    for (let bone = 0; bone < rig.bones.length; bone++) {
+      const name = rig.bones[bone] as string;
+      if (name.startsWith("finger2-") && name.endsWith(".R"))
+        expect(sameRotation(reconstructed, sourcePose, bone)).toBeGreaterThan(1 - 1e-5);
+      else
+        expect(Array.from(reconstructed.subarray(bone * 4, bone * 4 + 4))).toEqual(
+          Array.from(sourcePose.subarray(bone * 4, bone * 4 + 4)),
+        );
+    }
+    expect(Array.from(source)).toEqual(Array.from(sourcePose));
+  });
 
   it("moves the actual skinned index pad through only its declared source channels", () => {
     const source = Float32Array.from(base);

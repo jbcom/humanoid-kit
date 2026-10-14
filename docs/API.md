@@ -1301,6 +1301,11 @@ and expressions"). Framework-free.
   `surfaceSamples` is the deterministic CPU-sample count, and
   `wallMilliseconds` measures the synchronous CPU wall time; neither reports
   GPU work.
+  `fingerChannelLimitsFromPose` derives each declared finger channel from an
+  authored full-body pose in the packed `tpose` channel order. Its required
+  per-channel offsets are relative to that extracted source value, so callers
+  retain control of the permitted action range rather than assuming zero is
+  the source pose.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
