@@ -171,10 +171,12 @@ export function figureAtRest(
     positions: Float32Array.from(a.positions),
     normals: Float32Array.from(a.normals),
   }));
-  const facialHairRest = ev.facialHair.map((hair) => ({
-    positions: Float32Array.from(hair.positions),
-    normals: Float32Array.from(hair.normals),
-  }));
+  const facialHairRest = options.facialHair
+    ? ev.facialHair.map((hair) => ({
+        positions: Float32Array.from(hair.positions),
+        normals: Float32Array.from(hair.normals),
+      }))
+    : [];
   const masks = ev.outfit.masks;
   if (!masks) throw new Error("an evaluation without its outfit's masks");
   const outfit = model.outfit(ev.outfit.order);
