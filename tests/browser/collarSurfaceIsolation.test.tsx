@@ -44,6 +44,9 @@ import { readPage } from "./readPage.ts";
 
 const LOAD = { timeout: 300_000 };
 const SIDE = 512;
+// Real review PNGs are explicit diagnostics; GPU readback and every assertion
+// below run in both modes. Request them with `--mode collar-capture`.
+const CAPTURE_PNG = import.meta.env.MODE === "collar-capture";
 const FOCUS_BONES = ["clavicle.L", "clavicle.R", "neck01"] as const;
 
 const client = inlineWorkerClient({ subdivision: 1 }, { adultAnatomy: true });
@@ -124,7 +127,7 @@ type Capture = {
   pixels: Uint8Array;
   camera: number[];
   bones: number[];
-  screenshot: string;
+  screenshot: string | null;
   glError: number;
 };
 
@@ -453,10 +456,12 @@ async function capture(
   // The saved frame is the same Canvas main camera used for the readback, not
   // a second camera or a synthetic image assembled from the pixels.
   state.gl.render(state.scene, state.camera);
-  const screenshot = await page.screenshot({
-    element: state.gl.domElement,
-    path: `../../test-results/collar-surface-isolation/${mode}.png`,
-  });
+  const screenshot = CAPTURE_PNG
+    ? await page.screenshot({
+        element: state.gl.domElement,
+        path: `../../test-results/collar-surface-isolation/${mode}.png`,
+      })
+    : null;
   const camera = [...state.camera.matrixWorld.elements];
   const bones = Array.from(dualOf(state.scene).texture.image.data ?? []);
   return { pixels, camera, bones, screenshot, glError };
