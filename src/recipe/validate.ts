@@ -111,6 +111,8 @@ export function recipeProblems(recipe: unknown): string[] {
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
   if ("facialHair" in r && r.facialHair !== undefined) facialHairProblems(r.facialHair, p);
+  if ("facialHairLength" in r && r.facialHairLength !== undefined)
+    facialHairLengthProblems(r.facialHairLength, p);
   if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);
   if (r.bodyArt !== undefined) bodyArtProblems(r.bodyArt, p);
   if (r.outfit !== undefined) {
@@ -140,6 +142,18 @@ function facialHairProblems(facialHair: unknown, p: string[]): void {
     else if (seen.has(id)) p.push(`facialHair names ${id} twice`);
     else seen.add(id);
   });
+}
+
+function facialHairLengthProblems(lengths: unknown, p: string[]): void {
+  if (typeof lengths !== "object" || lengths === null || Array.isArray(lengths)) {
+    p.push("facialHairLength must be an object of beard ids to multipliers");
+    return;
+  }
+  for (const [id, factor] of Object.entries(lengths)) {
+    if (id === "") p.push("facialHairLength names an empty style id");
+    if (!finite(factor) || factor < 1)
+      p.push(`facialHairLength.${id} must be a finite multiplier at least 1`);
+  }
 }
 
 const LOOK_FIELDS = new Set(["tint", "roughness", "wear"]);

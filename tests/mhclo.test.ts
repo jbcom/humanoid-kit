@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateBinding, evaluateBindingWithOffsetScale } from "../src/mhclo/bound.ts";
 import { parseMhclo } from "../src/mhclo/parse.ts";
 
 const HEADER =
@@ -57,5 +58,30 @@ describe("parseMhclo", () => {
   it("rejects malformed vertex lines and a missing obj_file", () => {
     expect(() => parseMhclo(`${HEADER}verts 0\n1 2\n`)).toThrow(/1 or 9 fields/);
     expect(() => parseMhclo("name x\n")).toThrow(/obj_file/);
+  });
+});
+
+describe("evaluateBindingWithOffsetScale", () => {
+  const asset = {
+    entry: { vertexCount: 1, scale: null },
+    refVerts: Uint32Array.of(0, 1, 2),
+    weights: Float32Array.of(0.5, 0.25, 0.25),
+    offsets: Float32Array.of(0.1, -0.2, 0.3),
+  } as never;
+  const control = Float32Array.of(0, 0, 0, 2, 0, 0, 0, 4, 0);
+
+  it("keeps the bound anchor and multiplies only the authored free offset", () => {
+    const normal = evaluateBinding(asset, control, new Float32Array(3));
+    const one = evaluateBindingWithOffsetScale(asset, control, 1, new Float32Array(3));
+    const long = evaluateBindingWithOffsetScale(asset, control, 4, new Float32Array(3));
+    expect(Array.from(one)).toEqual(Array.from(normal));
+    expect(Array.from(long).map((value) => Number(value.toFixed(6)))).toEqual([0.9, 0.2, 1.2]);
+  });
+
+  it("refuses shrinking, infinity and NaN", () => {
+    for (const scale of [0.999, Number.POSITIVE_INFINITY, Number.NaN])
+      expect(() =>
+        evaluateBindingWithOffsetScale(asset, control, scale, new Float32Array(3)),
+      ).toThrow(RangeError);
   });
 });
