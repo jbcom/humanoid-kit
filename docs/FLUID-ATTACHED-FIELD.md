@@ -35,10 +35,14 @@ caller-selected initial velocity in metres per second; its bounded integrator
 accepts caller-selected gravity in metres per second squared and advances only
 an integer number of `FluidState.fixedStepSeconds` with semi-implicit Euler
 integration. It never injects, detaches, settles, or otherwise rewrites mass:
-the sum of live particle masses must stay within the existing state's
-`detachedKg` ledger. Its fixed steps advance the same `FluidState` checkpoint
-clock, so repeated calls with equal release order, velocities, gravity, and
-step count reproduce the same particle frame.
+one active particle pool owns each state's detached-particle representation,
+and its live particle mass must stay within the existing state's `detachedKg`
+ledger. `dispose()` clears that representation and permits a replacement pool;
+it never changes or settles the ledger. Its fixed steps advance the same
+`FluidState` checkpoint clock, so repeated calls with equal release order,
+velocities, gravity, and step count reproduce the same particle frame. A
+counter overflow or non-finite staged velocity or position rejects before the
+particle frame or checkpoint clock changes.
 
 `src/render/fluidParticles.ts` is a narrow Three adapter. It instances
 caller-owned geometry and material at those SI positions and adds no

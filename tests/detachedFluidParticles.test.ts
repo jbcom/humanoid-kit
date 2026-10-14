@@ -75,6 +75,34 @@ describe("DetachedFluidParticles", () => {
     expect(particles.massKg()).toBeCloseTo(0.5, 12);
     expect(state.snapshot().ledger).toMatchObject({ detachedKg: 0.5 });
     expect(state.snapshot().fixedSteps).toBe(2);
+    particles.dispose();
+  });
+
+  it("refuses a concurrent second particle pool for one detached ledger", () => {
+    const { state, release } = released();
+    const first = new DetachedFluidParticles(state, {
+      maxParticles: 1,
+      gravityMps2: [0, 0, 0],
+    });
+    first.spawn([{ release, velocityMps: [0, 0, 0] }]);
+
+    expect(
+      () =>
+        new DetachedFluidParticles(state, {
+          maxParticles: 1,
+          gravityMps2: [0, 0, 0],
+        }),
+    ).toThrow("active detached particle pool");
+    expect(first.massKg()).toBeCloseTo(state.snapshot().ledger.detachedKg, 12);
+
+    first.dispose();
+    const replacement = new DetachedFluidParticles(state, {
+      maxParticles: 1,
+      gravityMps2: [0, 0, 0],
+    });
+    replacement.spawn([{ release, velocityMps: [0, 0, 0] }]);
+    expect(replacement.massKg()).toBeCloseTo(state.snapshot().ledger.detachedKg, 12);
+    replacement.dispose();
   });
 
   it("rejects capacity and detached-ledger overclaim without changing particles or ledger", () => {
@@ -89,13 +117,37 @@ describe("DetachedFluidParticles", () => {
     expect(() => particles.spawn([{ release, velocityMps: [0, 0, 0] }])).toThrow("capacity");
     expect(particles.frame()).toEqual(before.frame);
     expect(state.snapshot()).toEqual(before.state);
+    particles.dispose();
+  });
 
-    const empty = new DetachedFluidParticles(state, {
-      maxParticles: 2,
+  it("rejects an overflowing state clock before changing the particle frame", () => {
+    const { state, release } = released();
+    const particles = new DetachedFluidParticles(state, {
+      maxParticles: 1,
       gravityMps2: [0, 0, 0],
     });
-    expect(() =>
-      empty.spawn([{ release: { ...release, massKg: 0.5000001 }, velocityMps: [0, 0, 0] }]),
-    ).toThrow("detached ledger");
+    particles.spawn([{ release, velocityMps: [1, 2, 3] }]);
+    state.advanceFixedSteps(Number.MAX_SAFE_INTEGER);
+    const before = { frame: particles.frame(), state: state.snapshot() };
+
+    expect(() => particles.stepFixed(1)).toThrow("fixed step count");
+    expect(particles.frame()).toEqual(before.frame);
+    expect(state.snapshot()).toEqual(before.state);
+    particles.dispose();
+  });
+
+  it("rejects finite inputs that would overflow motion before changing the particle frame", () => {
+    const { state, release } = released();
+    const particles = new DetachedFluidParticles(state, {
+      maxParticles: 1,
+      gravityMps2: [Number.MAX_VALUE, 0, 0],
+    });
+    particles.spawn([{ release, velocityMps: [Number.MAX_VALUE, 0, 0] }]);
+    const before = { frame: particles.frame(), state: state.snapshot() };
+
+    expect(() => particles.stepFixed(1)).toThrow("non-finite velocity");
+    expect(particles.frame()).toEqual(before.frame);
+    expect(state.snapshot()).toEqual(before.state);
+    particles.dispose();
   });
 });

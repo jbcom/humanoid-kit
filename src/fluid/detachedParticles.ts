@@ -35,6 +35,9 @@ type MutableParticle = {
   velocityMps: [number, number, number];
 };
 
+/** A state can have only one live particle representation of its detached ledger. */
+const activePools = new WeakMap<FluidState, DetachedFluidParticles>();
+
 function finiteVector(value: readonly number[], label: string): void {
   if (value.length !== 3 || value.some((component) => !Number.isFinite(component)))
     throw new FluidStateError(`${label} must have three finite components`);
@@ -69,18 +72,31 @@ export class DetachedFluidParticles {
   private readonly gravityMps2: readonly [number, number, number];
   private readonly particles: MutableParticle[] = [];
   private nextId = 0;
+  private disposed = false;
 
   constructor(state: FluidState, options: DetachedFluidParticleOptions) {
     if (!Number.isSafeInteger(options.maxParticles) || options.maxParticles < 1)
       throw new FluidStateError("fluid particle maxParticles must be a positive safe integer");
     finiteVector(options.gravityMps2, "fluid particle gravityMps2");
+    if (activePools.has(state))
+      throw new FluidStateError("fluid state already has an active detached particle pool");
     this.state = state;
     this.maxParticles = options.maxParticles;
     this.gravityMps2 = [...options.gravityMps2] as [number, number, number];
+    activePools.set(state, this);
+  }
+
+  /** Ends this renderer-neutral representation without changing the detached mass ledger. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.particles.length = 0;
+    this.disposed = true;
+    if (activePools.get(this.state) === this) activePools.delete(this.state);
   }
 
   /** Adds exact detach releases with explicit initial velocities; this never debits FluidState again. */
   spawn(spawns: readonly DetachedFluidParticleSpawn[]): readonly DetachedFluidParticle[] {
+    this.assertActive();
     this.assertLedger();
     if (this.particles.length + spawns.length > this.maxParticles)
       throw new FluidStateError("fluid particle capacity would discard a detached release");
@@ -105,35 +121,63 @@ export class DetachedFluidParticles {
 
   /** Advances an integer number of FluidState fixed steps with semi-implicit Euler integration. */
   stepFixed(steps: number): void {
+    this.assertActive();
     this.assertLedger();
     if (!Number.isSafeInteger(steps) || steps < 0)
       throw new FluidStateError("fluid particle steps must be a non-negative safe integer");
+    const stateSnapshot = this.state.snapshot();
+    if (steps > Number.MAX_SAFE_INTEGER - stateSnapshot.fixedSteps)
+      throw new FluidStateError("fluid particle fixed step count exceeds safe integer range");
     const seconds = this.state.fixedStepSeconds;
+    const nextParticles = this.particles.map((particle) => ({
+      ...particle,
+      positionM: [...particle.positionM] as [number, number, number],
+      velocityMps: [...particle.velocityMps] as [number, number, number],
+    }));
     for (let step = 0; step < steps; step++)
-      for (const particle of this.particles)
+      for (const particle of nextParticles)
         for (let axis = 0; axis < 3; axis++) {
           const velocityMps =
             (particle.velocityMps[axis] as number) + (this.gravityMps2[axis] as number) * seconds;
+          if (!Number.isFinite(velocityMps))
+            throw new FluidStateError("fluid particle integration produced a non-finite velocity");
+          const positionM = (particle.positionM[axis] as number) + velocityMps * seconds;
+          if (!Number.isFinite(positionM))
+            throw new FluidStateError("fluid particle integration produced a non-finite position");
           particle.velocityMps[axis] = velocityMps;
-          particle.positionM[axis] = (particle.positionM[axis] as number) + velocityMps * seconds;
+          particle.positionM[axis] = positionM;
         }
     this.state.advanceFixedSteps(steps);
+    this.particles.length = 0;
+    for (const particle of nextParticles) this.particles.push(particle);
   }
 
   /** Immutable particles in deterministic creation order. */
   frame(): readonly DetachedFluidParticle[] {
+    this.assertActive();
     this.assertLedger();
     return Object.freeze(this.particles.map(freezeParticle));
   }
 
   /** Conserved particle total, in kilograms; it is bounded by the state detached ledger. */
   massKg(): number {
-    return this.particles.reduce((total, particle) => total + particle.massKg, 0);
+    this.assertActive();
+    return this.particleMassKg();
   }
 
   private assertLedger(): void {
-    const massKg = this.massKg();
+    this.assertActive();
+    const massKg = this.particleMassKg();
     if (massKg - this.state.snapshot().ledger.detachedKg > FLUID_MASS_EPSILON_KG)
       throw new FluidStateError("fluid particle mass exceeds the detached ledger");
+  }
+
+  private particleMassKg(): number {
+    return this.particles.reduce((total, particle) => total + particle.massKg, 0);
+  }
+
+  private assertActive(): void {
+    if (this.disposed || activePools.get(this.state) !== this)
+      throw new FluidStateError("fluid detached particle pool is not active");
   }
 }

@@ -320,6 +320,7 @@ async function proof(): Promise<Proof> {
   );
   particles.stepFixed(4);
   const movedParticles = particles.frame();
+  particles.dispose();
   return {
     rest,
     flexed,
