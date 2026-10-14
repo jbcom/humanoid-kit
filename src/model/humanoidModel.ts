@@ -48,7 +48,7 @@ import {
   type ChestFoundation,
   type ChestFoundationContext,
 } from "../makehuman/chestFoundation/foundation.ts";
-import { bodyMesh } from "../makehuman/chestFoundation/mesh.ts";
+import { type BodyMesh, bodyMesh } from "../makehuman/chestFoundation/mesh.ts";
 import { chooseSupport, trunkMask } from "../makehuman/chestFoundation/support.ts";
 import { addCustomTargets, type CustomTarget } from "../makehuman/customTargets.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
@@ -649,9 +649,19 @@ export class HumanoidModel {
   private readonly skin: RuntimeSkinWeights<Uint8Array>;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
-  /** Source-derived chest libraries, keyed by the exact MakeHuman age. */
-  private readonly chestFoundations = new Map<number, ChestFoundation>();
-  private readonly chestFoundationContexts = new Map<number, ChestFoundationContext>();
+  /** Shared, immutable source topology for every age's chest calculation. */
+  private readonly chestMesh: BodyMesh;
+  /** Shared, immutable arm mask for every age's chest calculation. */
+  private readonly chestTrunk: Uint8Array;
+  /**
+   * Exact-age source libraries, least-recently-used last. One entry carries its
+   * context and built grid together, so an age slider cannot retain every
+   * sampled age's full source controls indefinitely.
+   */
+  private readonly chestCache = new Map<
+    number,
+    { context: ChestFoundationContext; foundation?: ChestFoundation }
+  >();
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -667,6 +677,8 @@ export class HumanoidModel {
       { skinIndex: assets.skinIndex, skinWeight: assets.skinWeight },
       options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES,
     );
+    this.chestMesh = bodyMesh(assets, assets.manifest);
+    this.chestTrunk = trunkMask(assets, assets.manifest);
     const bodyKeys = assets.manifest.bodyOcclusion?.keys;
     if (bodyKeys && bodyKeys.join() !== OCCLUSION_KEYS.map((k) => k.id).join())
       throw new AssetFormatError(
@@ -1711,36 +1723,52 @@ export class HumanoidModel {
   /** The source support and references for one active MakeHuman age. */
   private chestFoundationContext(recipe: Recipe): ChestFoundationContext {
     const age = recipe.macros.age;
-    const hit = this.chestFoundationContexts.get(age);
-    if (hit) return hit;
-    const mesh = bodyMesh(this.assets, this.assets.manifest);
+    const hit = this.chestCache.get(age);
+    if (hit) {
+      this.chestCache.delete(age);
+      this.chestCache.set(age, hit);
+      return hit.context;
+    }
     const cell = this.chestSourceControl(age, 0, 0.5, 0.5);
     const made: ChestFoundationContext = {
-      mesh,
+      mesh: this.chestMesh,
       manifest: this.assets.manifest,
       support: chooseSupport(
-        mesh,
+        this.chestMesh,
         cell,
         chestAnchors(this.assets.manifest, cell),
-        trunkMask(this.assets, this.assets.manifest),
+        this.chestTrunk,
       ),
     };
-    this.chestFoundationContexts.set(age, made);
+    this.chestCache.set(age, { context: made });
+    this.trimChestCache();
     return made;
   }
 
   /** The one source-derived library for the active MakeHuman age. */
   private chestFoundation(recipe: Recipe): ChestFoundation {
     const age = recipe.macros.age;
-    const hit = this.chestFoundations.get(age);
-    if (hit) return hit;
     const context = this.chestFoundationContext(recipe);
+    const cached = this.chestCache.get(age) as {
+      context: ChestFoundationContext;
+      foundation?: ChestFoundation;
+    };
+    if (cached.foundation) return cached.foundation;
     const made = buildChestFoundation(context, {
       female: (size, firmness) => this.chestSourceControl(age, 0, size, firmness),
       bare: () => this.chestSourceControl(age, 1, 0.5, 0.5),
     });
-    this.chestFoundations.set(age, made);
+    cached.foundation = made;
     return made;
+  }
+
+  /** Keeps the current exact age and at most two recently revisitable ages. */
+  private trimChestCache(): void {
+    while (this.chestCache.size > 3) {
+      const oldest = this.chestCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.chestCache.delete(oldest);
+    }
   }
 
   private chestSourceControl(
