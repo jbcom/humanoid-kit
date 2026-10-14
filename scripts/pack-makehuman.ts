@@ -52,6 +52,7 @@ import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
   ADULT_SPEC_TARGETS,
   ADULT_SPEC_UPSTREAM_MODIFIERS,
+  ADULT_STATE_MORPH_TARGETS,
   adultAnatomySpec,
 } from "./lib/adultAnatomySpec.ts";
 import {
@@ -543,8 +544,13 @@ async function main() {
   const adultInCore = SKIN_LAYER_TARGETS.filter(isAdultPackTarget);
   if (adultInCore.length)
     throw new Error(`body skin layers measure adult targets: ${adultInCore.join(", ")}`);
+  // A state morph of the adult spec may drive a body target (the lips under arousal): that one
+  // must be in the body pack instead.
   const missingAdultTargets = ADULT_SPEC_TARGETS.filter(
-    (n) => !isAdultPackTarget(n) || !driven.has(n) || !packed.has(n),
+    (n) =>
+      !(isAdultPackTarget(n) || ADULT_STATE_MORPH_TARGETS.has(n)) ||
+      !driven.has(n) ||
+      !packed.has(n),
   );
   if (missingAdultTargets.length)
     throw new Error(

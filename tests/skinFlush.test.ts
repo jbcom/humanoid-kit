@@ -154,6 +154,28 @@ describe("lips under cold and fear", () => {
     expect(fear.h).toBeCloseTo(rest.h, 0);
   });
 
+  it("deepen with arousal: darker and more saturated, toward red, none of it at 0 (#118)", () => {
+    const rest = lch(lipAlbedo(t, 0.5));
+    const aroused = lch(lipStateAlbedo(t, 0.5, 0, 0, 1));
+    expect(aroused.L).toBeLessThan(rest.L - 2);
+    expect(aroused.C).toBeGreaterThan(1.15 * rest.C);
+    expect(aroused.h).toBeLessThan(rest.h);
+    expect(aroused.h).toBeGreaterThan(rest.h - 15);
+    const half = lch(lipStateAlbedo(t, 0.5, 0, 0, 0.5));
+    expect(half.C).toBeGreaterThan(rest.C);
+    expect(half.C).toBeLessThan(aroused.C);
+    expect(lipStateAlbedo(t, 0.5, 0, 0, 0)).toEqual(lipAlbedo(t, 0.5));
+    const blue = { ...t, override: [0.1, 0.3, 0.7] as Rgb };
+    expect(lipStateAlbedo(blue, 0.5, 0, 0, 1)).toEqual(lipAlbedo(blue, 0.5));
+  });
+
+  it("is a layer over the lips' mask whose strength follows the stronger signal", () => {
+    expect(LIP_STATE_LAYER.paint(input({ arousal: 0.6 })).strength).toBeCloseTo(0.6, 9);
+    expect(LIP_STATE_LAYER.paint(input({ arousal: 1 })).stops).toEqual([
+      lipStateAlbedo(tone(), 0.5, 0, 0, 1),
+    ]);
+  });
+
   it("is a layer over the lips' mask whose strength follows the stronger of the two", () => {
     expect(LIP_STATE_LAYER.blend).toBe("mix");
     expect(LIP_STATE_LAYER.paint(input({})).strength).toBe(0);
