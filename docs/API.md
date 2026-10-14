@@ -1257,8 +1257,13 @@ and expressions"). Framework-free.
   CPU-skinned pad frame, and returns its measured gap to a caller-supplied
   fixed surface. Callers provide every source channel's initial value and
   action-specific bounds; the helper adds no finger geometry, no fixed curl
-  pose, and no partner or capsule policy. Its `surfaceSamples` result is the
-  deterministic count of CPU surface samples consumed by the bounded solve.
+  pose, and no partner or capsule policy. A contact's `surfaceNormal` is the
+  partner's outward normal, so the solver asks the pad to face its opposite;
+  `desiredPadNormal` is available only for an explicit non-surface facing.
+  Requested facing and position both participate in its bounded solve.
+  `surfaceSamples` is the deterministic CPU-sample count, and
+  `wallMilliseconds` measures the synchronous CPU wall time; neither reports
+  GPU work.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
