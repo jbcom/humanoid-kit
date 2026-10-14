@@ -40,7 +40,8 @@ what it proves.
   When it is anything but `true`, a site that `defaultAffordanceAdult` calls
   adult throws `AgePolicyError` before anything is solved. That is the rule
   `audienceOf` applies: a site the registry does not say is all-ages is adult.
-  So today a minor is also refused `pubic-point`, `upper-lip`, the palms and the
+  The lips and the palms are registered all-ages contact sites (a finger to
+  the lips, one hand on the other). A minor is refused `pubic-point` and the
   joint landmarks as sites, until one is registered.
 - **The knee is not built yet.** `knee.X` is a joint landmark, the joint's
   centre about 5 cm inside the leg, so a pad cannot touch it. The knee needs a

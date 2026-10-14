@@ -106,6 +106,11 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("chin", "contact", { landmark: "chin" }),
   core("crown", "contact", { landmark: "crown" }),
   core("sternum-notch", "contact", { landmark: "sternum-notch" }),
+  // A finger to the lips, and one hand on the other's palm: everyday at any age.
+  core("upper-lip", "contact", { landmark: "upper-lip" }),
+  core("lower-lip", "contact", { landmark: "lower-lip" }),
+  core("palm.L", "contact", { landmark: "palm.L" }),
+  core("palm.R", "contact", { landmark: "palm.R" }),
   ...FINGER_PADS,
 ];
 

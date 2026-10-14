@@ -272,6 +272,9 @@ describe("what a site contact accepts", () => {
     const child = figureOf(BODIES.child as Recipe);
     for (const site of SELF_CONTACT_SITES)
       expect(probe(child, "finger-pad-2.R", site), site).not.toThrow();
+    // A finger to the lips, and one hand on the other: everyday at any age.
+    for (const site of ["upper-lip", "lower-lip", "palm.L"])
+      expect(probe(child, "finger-pad-2.R", site), site).not.toThrow();
   });
 
   it("treats a figure that does not say it is adult as a minor", () => {
