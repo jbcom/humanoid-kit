@@ -2565,6 +2565,21 @@ the authored folds added there. The closure reaches its full share at a canal
 target weight of 0.1 and fades smoothly to zero as that weight reaches zero
 (`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
 
+**In a pose (2026-10-13, #77).** At rest the closure meets the lips, but a pose
+skins them: each lip keeps its own side's thigh weights, so spreading the hips,
+as in lithotomy, pulls the two sides apart and opens the slit. Each vertex of a
+closure's zone therefore follows its canal's root as far as the closure reaches
+it: on the loop its weights are the root's, across the zone they blend from its
+own to the root's by the zone's harmonic weights summed (`closureSkinning`,
+`ReservoirSkinning.closure`), times how closed the opening is. That keeps the two
+sides together under abduction: in lithotomy the vaginal walls a camera at the
+foot end can see fell from 98 vertices to 46, the anal from 20 to 4
+(`tests/canalPosed.test.ts`). The lips keep their own hip fold: the fold plays
+per side too, and accounts for the opening that remains. Blending the fold rows
+toward the root's as well closed it, but regressed the foundation's seated and
+squatting rows (penetration and fold counts on the heavy and elderly bodies),
+and is not done; `canalPosed` stays red until a fold treatment holds both.
+
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below
 and front-low across six adult body variants. These checks complement the

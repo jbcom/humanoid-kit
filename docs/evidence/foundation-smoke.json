@@ -39,10 +39,10 @@
     "measure": {
       "penetrating": 464,
       "penetratingArea": 6.601651603546088,
-      "deepest": 0.023714987962991322,
+      "deepest": 0.023740488243836882,
       "deepestParts": "trunk~trunk",
       "contacts": 5,
-      "deepestContact": 0.02351473097184638,
+      "deepestContact": 0.02351341151409276,
       "lumen": 0,
       "lumenArea": 0,
       "inverted": 179,
@@ -156,13 +156,13 @@
     "measure": {
       "penetrating": 108,
       "penetratingArea": 5.165161454669942,
-      "deepest": 0.01830050409537822,
+      "deepest": 0.0182992197715208,
       "deepestParts": "trunk~trunk",
       "contacts": 59,
       "deepestContact": 0.010755969789129106,
       "lumen": 0,
       "lumenArea": 0,
-      "inverted": 169,
+      "inverted": 168,
       "squashed": 498,
       "squashedArea": 165.0432608258453,
       "volumeOut": [],
@@ -271,7 +271,7 @@
     "measure": {
       "penetrating": 864,
       "penetratingArea": 36.623708185459236,
-      "deepest": 0.0200989278413861,
+      "deepest": 0.020098893583160023,
       "deepestParts": "trunk~trunk",
       "contacts": 482,
       "deepestContact": 0.009929516375312307,
@@ -503,12 +503,12 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 213,
-      "penetratingArea": 5.238764034629639,
-      "deepest": 0.024608213891636622,
+      "penetrating": 214,
+      "penetratingArea": 5.2992101655036095,
+      "deepest": 0.02227558965205025,
       "deepestParts": "trunk~trunk",
-      "contacts": 84,
-      "deepestContact": 0.023353445076475538,
+      "contacts": 87,
+      "deepestContact": 0.023341431825933456,
       "lumen": 0,
       "lumenArea": 0,
       "inverted": 211,
@@ -516,7 +516,7 @@
       "squashedArea": 126.15613969727013,
       "volumeOut": [],
       "worstVolume": 0.9048599670510709,
-      "folds": 94,
+      "folds": 93,
       "sharpest": 179.4447187299896,
       "seamGap": 0
     }
@@ -567,7 +567,7 @@
       "deepestContact": 0.004351068476671005,
       "lumen": 1,
       "lumenArea": 0.010611813650029944,
-      "inverted": 169,
+      "inverted": 167,
       "squashed": 1109,
       "squashedArea": 300.21784823392085,
       "volumeOut": [
