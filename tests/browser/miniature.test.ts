@@ -1,3 +1,5 @@
+import { Canvas } from "@react-three/fiber";
+import { createElement } from "react";
 import {
   AmbientLight,
   NoToneMapping,
@@ -7,8 +9,14 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { render } from "vitest-browser-react";
 import type { MiniatureBake } from "../../src/bake/miniature.ts";
-import { MiniatureCrowd, type MiniatureFigure } from "../../src/render/miniature.ts";
+import { Miniatures } from "../../src/react/Miniatures.tsx";
+import {
+  MiniatureCrowd,
+  type MiniatureFigure,
+  type MiniatureFrameStats,
+} from "../../src/render/miniature.ts";
 import { createTestRenderer } from "./gl.ts";
 
 /**
@@ -185,5 +193,75 @@ describe("the miniature runtime on the GPU", () => {
     expect(calls).toBe(2);
     expect(stats.perLevel).toEqual([0, 40]);
     crowd.dispose();
+  });
+  it("retains exact animated source pixels and multisample coverage at every body LOD", () => {
+    const bake = alphaCardBake(),
+      card = bake.alphaCards?.[0];
+    if (!card) throw new Error("missing source card");
+    // A slanted source edge plus a translated second frame exercises coverage
+    // and VAT interpolation independently of the body's LOD choice.
+    card.positions[0] = -0.473;
+    for (let v = 0; v < card.vertexCount; v++)
+      card.positions[(card.vertexCount + v) * 3] = (card.positions[v * 3] as number) + 0.6;
+    const originalTarget = target;
+    target = new WebGLRenderTarget(SIZE, SIZE, { samples: 4 });
+    const near = new MiniatureCrowd([bake], { levelPixels: [0, 0] });
+    const far = new MiniatureCrowd([bake], { levelPixels: [1e9, 0], facialHairLod: "all" });
+    const figures = [{ archetype: 0, x: 0, z: 0, clip: "slide", phase: 0.1, speed: 0.8 }];
+    try {
+      let initial: Uint8Array | undefined;
+      for (const time of [0, 0.5, 2]) {
+        const a = draw(near, figures, time),
+          b = draw(far, figures, time);
+        expect(b.stats.perLevel).toEqual([0, 1]);
+        expect(b.stats.triangles).toBe(4);
+        expect(b.calls).toBe(2);
+        expect(b.pixels).toEqual(a.pixels);
+        expect(measure(b.pixels).count).toBeGreaterThan(40);
+        if (initial) expect(b.pixels).not.toEqual(initial);
+        initial ??= b.pixels;
+      }
+      expect(far.textureBytes).toBe(near.textureBytes);
+    } finally {
+      near.dispose();
+      far.dispose();
+      target.dispose();
+      target = originalTarget;
+    }
+  });
+  it("forwards and updates the React all-LOD option", async () => {
+    const bakes = [alphaCardBake()];
+    const figures = [{ archetype: 0, x: 0, z: 0 }];
+    let last: MiniatureFrameStats | undefined;
+    const view = (facialHairLod: "near-only" | "all") =>
+      createElement(
+        "div",
+        { style: { width: 128, height: 128 } },
+        createElement(
+          Canvas,
+          { camera: { position: [0, 0.5, 5] } },
+          createElement(Miniatures, {
+            archetypes: bakes,
+            figures,
+            levelPixels: [1e9, 0],
+            facialHairLod,
+            onFrame: (stats: MiniatureFrameStats) => {
+              last = stats;
+            },
+          }),
+        ),
+      );
+    const mounted = await render(view("near-only"));
+    try {
+      await expect.poll(() => last?.triangles).toBe(2);
+      await mounted.rerender(view("all"));
+      await expect.poll(() => last?.triangles).toBe(4);
+      expect(last?.drawCalls).toBe(2);
+      expect(last?.perLevel).toEqual([0, 1]);
+      await mounted.rerender(view("near-only"));
+      await expect.poll(() => last?.triangles).toBe(2);
+    } finally {
+      await mounted.unmount();
+    }
   });
 });

@@ -29,7 +29,7 @@ export interface MiniaturesProps extends MiniatureCrowdOptions {
  * `levelPixels` or `material` object does not rebuild it every render).
  */
 export function Miniatures({ archetypes, figures, onFrame, ...options }: MiniaturesProps) {
-  const { maxFigures, triangleBudget } = options;
+  const { maxFigures, triangleBudget, facialHairLod } = options;
   const levelKey = options.levelPixels?.join(",") ?? "";
   const materialKey = options.material ? miniatureMaterialKey(options.material) : "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: rebuilt by value, through the keys.
@@ -38,10 +38,11 @@ export function Miniatures({ archetypes, figures, onFrame, ...options }: Miniatu
       new MiniatureCrowd(archetypes, {
         maxFigures,
         triangleBudget,
+        facialHairLod,
         levelPixels: options.levelPixels,
         material: options.material,
       }),
-    [archetypes, maxFigures, triangleBudget, levelKey, materialKey],
+    [archetypes, maxFigures, triangleBudget, facialHairLod, levelKey, materialKey],
   );
   useEffect(() => () => crowd.dispose(), [crowd]);
   useEffect(() => crowd.setFigures(figures), [crowd, figures]);

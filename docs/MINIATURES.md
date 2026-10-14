@@ -189,16 +189,23 @@ draw a different body from the full renderer.
    `facialHair: "alpha-cards"`. The caller supplies each decoded RGBA source
    image through `texture`; the resulting `alphaCards` carry source topology,
    UV seams, posed frames, tint and embedded RGBA pixels without a runtime URL.
-   Decoded rows run top to bottom (`sharp` or Canvas `getImageData`). The near
+   Decoded rows run top to bottom (`sharp` or Canvas `getImageData`). The
    source map uses the live image convention: flipped Y upload, linear filtering
-   and generated mipmaps. `textureBytes` includes every resident mip level.
+   and generated mipmaps. `textureBytes` includes every retained mip level.
    Use straight RGBA that preserves transparent RGB for filtered colour fidelity;
    Canvas decoding may round low-alpha RGB and discard fully transparent RGB.
-   The runtime uses an alpha-tested companion mesh only at the finest LOD. It
-   adds one draw per selected source card and its exact source triangles at that
-   LOD, so this opt-in path is outside the ordinary opaque draw and triangle
-   budgets. It preserves painted cards; it does not convert them into a solid
-   miniature representation.
+   By default the runtime draws alpha-tested companion meshes only at the finest
+   body LOD. Set `facialHairLod: "all"` on `MiniatureCrowd` or `<Miniatures>` to
+   retain the exact authored cards at every body LOD, including their baked
+   frames, clip timing, source alpha and multisample edge coverage. This reuses
+   the same card meshes, VATs and source maps; it adds no payload or textures.
+   Each selected source card adds one instanced draw per visible archetype and
+   its full source triangles per figure. These costs are included in frame
+   stats and LOD budget decisions. If even the coarsest bodies plus retained
+   cards exceed `triangleBudget`, the crowd draws them and reports the excess;
+   the budget does not cull visible figures or remove opted-in source cards.
+   This is appearance retention with full source costs, not a far optimization
+   or conversion into a solid miniature representation.
 
 ## What stays out
 
@@ -211,7 +218,7 @@ draw a different body from the full renderer.
   size; left out. The eyes stay: without them a proxy's sockets are holes, and
   a decimated face reads as a mask.
 - **Solid facial hair.** Source alpha cards can be preserved as an opt-in
-  companion payload at the finest LOD, but cannot be decimated into a solid
+  companion payload at the finest or every body LOD, but cannot be decimated into a solid
   silhouette. A source-backed solid miniature representation for distant or
   painted miniatures remains a follow-up.
 

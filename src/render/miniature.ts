@@ -77,7 +77,10 @@ export interface MiniatureFigure {
 export interface MiniatureCrowdOptions {
   /** Most figures the crowd holds (default 1024). */
   maxFigures?: number | undefined;
-  /** Triangles every figure together may draw (default 250,000, the issue's budget). */
+  /**
+   * Target triangle budget (default 250,000). Visible figures always draw at
+   * least their coarsest body and any retained cards, even if that exceeds it.
+   */
   triangleBudget?: number | undefined;
   /**
    * Per level, finest first, the smallest on-screen height (pixels) at which a
@@ -85,6 +88,12 @@ export interface MiniatureCrowdOptions {
    * takes any size.
    */
   levelPixels?: readonly number[] | undefined;
+  /**
+   * Authored facial cards at the finest body LOD (default), or every body LOD.
+   * "all" retains their full source triangle cost and baked animation; it does
+   * not simplify cards or allocate another copy of their textures.
+   */
+  facialHairLod?: "near-only" | "all" | undefined;
   /** Overrides for each archetype's `MeshStandardMaterial` (roughness, metalness...). */
   material?: MeshStandardMaterialParameters | undefined;
 }
@@ -471,6 +480,7 @@ export class MiniatureCrowd {
   private readonly archetypes: Archetype[];
   private readonly capacity: number;
   private readonly budget: number;
+  private readonly facialHairAtAllLevels: boolean;
   private readonly levelPixels: readonly number[];
   private figures: readonly MiniatureFigure[] = [];
   private readonly frustum = new Frustum();
@@ -488,6 +498,7 @@ export class MiniatureCrowd {
       throw new RangeError("every archetype must have the same number of levels");
     this.capacity = options.maxFigures ?? 1024;
     this.budget = options.triangleBudget ?? 250_000;
+    this.facialHairAtAllLevels = options.facialHairLod === "all";
     this.levelPixels =
       options.levelPixels ?? Array.from({ length: levels }, (_, k) => (k < levels - 1 ? 64 : 0));
     if (this.levelPixels.length !== levels)
@@ -499,7 +510,7 @@ export class MiniatureCrowd {
     }
   }
 
-  /** GPU bytes of every archetype's animation textures. */
+  /** Retained GPU texture bytes, including source maps and all generated mip levels. */
   get textureBytes(): number {
     return this.archetypes.reduce((s, a) => s + a.textureBytes, 0);
   }
@@ -556,7 +567,9 @@ export class MiniatureCrowd {
     let triangles = 0;
     for (const i of order) {
       const a = this.archetypes[(this.figures[i] as MiniatureFigure).archetype] as Archetype;
-      triangles += (a.triangles[coarsest] as number) + (coarsest === 0 ? a.alphaCardTriangles : 0);
+      triangles +=
+        (a.triangles[coarsest] as number) +
+        (this.facialHairAtAllLevels || coarsest === 0 ? a.alphaCardTriangles : 0);
     }
     for (const a of this.archetypes) {
       for (const m of a.meshes) m.count = 0;
@@ -571,7 +584,7 @@ export class MiniatureCrowd {
         const extra =
           (a.triangles[k] as number) -
           (a.triangles[coarsest] as number) +
-          (k === 0 ? a.alphaCardTriangles : 0);
+          (!this.facialHairAtAllLevels && k === 0 ? a.alphaCardTriangles : 0);
         if (
           (this.pixels[i] as number) >= (this.levelPixels[k] as number) &&
           triangles + extra <= this.budget
@@ -583,7 +596,7 @@ export class MiniatureCrowd {
       }
       perLevel[level] = (perLevel[level] as number) + 1;
       this.write(a, a.meshes[level] as InstancedMesh, f);
-      if (level === 0)
+      if (this.facialHairAtAllLevels || level === 0)
         for (const card of a.alphaCards) {
           this.write(a, card.mesh, f);
         }
