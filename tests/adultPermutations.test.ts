@@ -3,7 +3,12 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { appliedAnatomy } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
+import {
+  adultManifest,
+  loadAdultDetailOnlyAssets,
+  loadFixtureAssets,
+  loadOrganOnlyAssets,
+} from "./fixtures.ts";
 
 /**
  * The permutation matrix (docs/research/ADULT-SCULPT-PLAN.md, "Acceptance
@@ -178,6 +183,7 @@ describe("flaccid and erect", () => {
   // measured in arousal.test.ts, so here the whole body can be compared.
   const organOnly = loadOrganOnlyAssets();
   const surfaced = new HumanoidModel(organOnly, { subdivision: 1 });
+  const vulvaOnly = new HumanoidModel(loadAdultDetailOnlyAssets(), { subdivision: 1 });
 
   it("lengthens the organ with the state, for every gender position", () => {
     // The organ reaches further from the skin at every state than flaccid. Midway and
@@ -233,8 +239,8 @@ describe("flaccid and erect", () => {
     // magnitude and where it lies are tests/vulvaEngorgement.test.ts's.
     for (const age of AGES) {
       const recipe = createRecipe({ macros: { age, gender: 0 } });
-      const rest = surfaced.evaluate(recipe).positions.slice();
-      const aroused = surfaced.evaluate(recipe, { arousal: 1 }).positions;
+      const rest = vulvaOnly.evaluate(recipe).positions.slice();
+      const aroused = vulvaOnly.evaluate(recipe, { arousal: 1 }).positions;
       let far = 0;
       for (let v = 0; v < rest.length / 3; v++)
         far = Math.max(

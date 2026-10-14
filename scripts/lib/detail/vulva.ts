@@ -540,6 +540,64 @@ export function vulvaSkinMask(
   return { indices, weights };
 }
 
+/**
+ * How far a base vertex can lie from the generated engorgement target and
+ * still receive its inner-surface coordinate. This is a packer choice that
+ * bridges the adult detail lattice to the base-mesh atlas, not an anatomical
+ * measurement.
+ */
+export const VULVA_SKIN_COORDINATE = { reach: 0.008 } as const;
+
+/**
+ * The vulva layer's inner-to-outer coordinate on the base mesh. It derives
+ * from the generated engorgement target, which already marks the folded inner
+ * surface and its distance from the closures. Only vertices in the layer's
+ * existing mask are emitted. The coordinate is rendering data, not a measured
+ * anatomical colour boundary.
+ */
+export function vulvaSkinField(
+  lattice: AdultDetailLattice,
+  engorged: VulvaTarget,
+  control: Float32Array,
+  body: ArrayLike<number>,
+): { indices: number[]; values: number[] } {
+  const source: { point: Vec3; weight: number }[] = [];
+  for (let i = 0; i < engorged.indices.length; i++) {
+    const v = engorged.indices[i] as number;
+    if (v >= lattice.regionCount) continue;
+    const weight = Math.min(
+      1,
+      Math.hypot(
+        engorged.xyz[i * 3] as number,
+        engorged.xyz[i * 3 + 1] as number,
+        engorged.xyz[i * 3 + 2] as number,
+      ) / VULVA_ENGORGEMENT.depth,
+    );
+    if (weight > 0.01) source.push({ point: point3(lattice.positions, v), weight });
+  }
+  const indices: number[] = [];
+  const values: number[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const v = body[i] as number;
+    const p = point3(control, v);
+    let nearest = 0;
+    for (const sample of source) {
+      const distance = Math.hypot(
+        p[0] - sample.point[0],
+        p[1] - sample.point[1],
+        p[2] - sample.point[2],
+      );
+      if (distance >= VULVA_SKIN_COORDINATE.reach) continue;
+      const t = 1 - distance / VULVA_SKIN_COORDINATE.reach;
+      nearest = Math.max(nearest, sample.weight * t * t * (3 - 2 * t));
+    }
+    if (nearest <= 0) continue;
+    indices.push(v);
+    values.push(Math.round(nearest * 1000) / 1000);
+  }
+  return { indices, values };
+}
+
 /** A part's triangles in a bounding-volume hierarchy. */
 function bvhOf(part: SculptPart): MeshBVH {
   const geometry = new BufferGeometry();

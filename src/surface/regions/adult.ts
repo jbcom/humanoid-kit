@@ -27,7 +27,7 @@ import {
   AssetFormatError,
   type HumanoidAssets,
 } from "../../format/assetFormat.ts";
-import { type GenitalSite, genitalAlbedo, vulvaAlbedo } from "../genitalTone.ts";
+import { type GenitalSite, genitalAlbedo, vulvaAlbedo, vulvaInnerAlbedo } from "../genitalTone.ts";
 import {
   type SkinLayer,
   type SkinLayerFields,
@@ -62,10 +62,21 @@ function adultFields(assets: HumanoidAssets, id: string): SkinLayerFields {
         throw new AssetFormatError(`skin layer ${id}: vertex ${v} is not a base vertex`);
       mask[v] = Math.max(mask[v] as number, Math.min(1, Math.max(0, authored.weights[i] ?? 0)));
     });
-  return {
-    mask,
-    coord: spec.coordinate ? targetCoordinate(assets, spec.coordinate) : null,
-  };
+  const coord = spec.coordinate ? targetCoordinate(assets, spec.coordinate) : null;
+  const authoredCoord = spec.vertexCoord;
+  if (authoredCoord) {
+    const out = coord ? Float32Array.from(coord) : new Float32Array(mask.length);
+    authoredCoord.indices.forEach((v, i) => {
+      if (!Number.isInteger(v) || v < 0 || v >= mask.length)
+        throw new AssetFormatError(`skin layer ${id}: coordinate vertex ${v} is not a base vertex`);
+      const value = authoredCoord.values[i];
+      if (!(typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1))
+        throw new AssetFormatError(`skin layer ${id}: coordinate at vertex ${v} is not 0..1`);
+      out[v] = value;
+    });
+    return { mask, coord: out };
+  }
+  return { mask, coord };
 }
 
 /** Builds an adult layer: gated by `feature`, its data the adult pack's, its colour `paint`. */
@@ -120,13 +131,13 @@ export const TESTES_LAYER: SkinLayer = adultLayer(
 export const MOUND_LAYER: SkinLayer = adultLayer("mound-skin", "mound", sitePaint("mound", 0.6));
 
 /**
- * The vulva's skin: the body's own tone, mildly deepened (`vulvaAlbedo`), over a mask
- * the pack authors from the vulva's form with a soft falloff round it
- * (`AdultSkinLayerSpec.vertexMask`), so it has no edge of its own.
+ * The vulva's skin: the body's own tone, gently deepened (`vulvaAlbedo`), over
+ * the source-derived mask and outer-to-inner coordinate supplied by the adult
+ * pack. The two stops are modelled colour choices, not clinical calibration.
  */
 export const VULVA_LAYER: SkinLayer = adultLayer("vulva-skin", "vulva", ({ tone, signals }) => ({
   strength: 0.85,
-  stops: [vulvaAlbedo(tone, signals.arousal ?? 0)],
+  stops: [vulvaAlbedo(tone, signals.arousal ?? 0), vulvaInnerAlbedo(tone, signals.arousal ?? 0)],
 }));
 
 /**

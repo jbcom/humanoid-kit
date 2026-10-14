@@ -20,9 +20,9 @@ import { LIP } from "../src/model/canalClosure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import type { ReservoirSkinning } from "../src/model/reservoirSkin.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { adultManifest, loadOrganOnlyAssets } from "./fixtures.ts";
+import { adultManifest, loadAdultDetailOnlyAssets } from "./fixtures.ts";
 
-const assets = loadOrganOnlyAssets();
+const assets = loadAdultDetailOnlyAssets();
 const model = new HumanoidModel(assets, { subdivision: 1 });
 const anatomy = adultManifest.anatomy;
 const woman = (modifiers: Record<string, number> = {}) =>

@@ -134,6 +134,13 @@ light pink to dark brown-red or black.
 Consequence, unchanged: `genitalAlbedo` models genital colour along the melanin
 and haemoglobin axes and is labelled uncalibrated.
 
+For #118, the `vulva-skin` layer now has generated outer-to-inner coordinates
+from the existing vulva-engorgement target. `VULVA_INNER` uses density 1.80,
+haemoglobin 0.30, a haemoglobin response 0.85, and a full-state red shift of
+`[1.20, 0.55, 0.72]`; the outer `VULVA` model uses 1.25, 0.08 and 0.40. These values are a **rendering CHOICE**, not clinical
+colour calibration or a claim about a population. The coordinate only selects a
+colour stop on the existing CC0-derived surface; it adds no mesh or anatomy.
+
 ## C. Arousal-related volume change (B4 follow-up)
 
 Deliganis AV, Maravilla KR, Heiman JR et al., "Female genitalia: dynamic MR

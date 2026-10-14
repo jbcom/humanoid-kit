@@ -737,6 +737,11 @@ export interface AdultSkinLayerSpec {
    * adult surface's lattice and so has no footprint on the base to measure.
    */
   vertexMask?: { indices: number[]; weights: number[] };
+  /**
+   * A 0..1 coordinate the pack authors per base vertex, for a detail-surface
+   * layer whose inner and outer skin need different stops. Absent vertices are 0.
+   */
+  vertexCoord?: { indices: number[]; values: number[] };
 }
 
 export interface AdultAnatomyManifest {
