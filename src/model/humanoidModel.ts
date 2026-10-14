@@ -1837,14 +1837,13 @@ export class HumanoidModel {
     breastSize: number,
     breastFirmness: number,
   ): Float32Array {
-    const weights = macroTargetWeights({
-      ...DEFAULT_MACROS,
-      age,
-      gender,
-      breastSize,
-      breastFirmness,
-    });
-    const contributions = [...weights].map(([target, weight]) => ({ target, weight }));
+    // Use the same sorted, Float32-weighted source contributions as an ordinary
+    // canonical recipe. A separate macro iteration has a different accumulation
+    // order and leaves a numerical displacement even at the exact source frame.
+    const contributions = recipeContributions(
+      createRecipe({ macros: { age, gender, breastSize, breastFirmness } }),
+      this.assets.modifiers,
+    );
     return evaluateMorph(
       this.assets.positions,
       this.assets.targets,

@@ -9,7 +9,7 @@ import {
   buildChestFoundation,
   type ChestFoundationContext,
 } from "../src/makehuman/chestFoundation/foundation.ts";
-import { bodyMesh } from "../src/makehuman/chestFoundation/mesh.ts";
+import { biharmonicFill, bodyMesh } from "../src/makehuman/chestFoundation/mesh.ts";
 import { chooseSupport, trunkMask } from "../src/makehuman/chestFoundation/support.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { bodyPackData } from "./fixtures.ts";
@@ -54,6 +54,35 @@ function maxDiffOnSide(a: Float32Array, b: Float32Array, side: number) {
 }
 
 describe("chest foundation source binding", () => {
+  it("transfers source detail through a smooth boundary displacement instead of superposing frame relief", () => {
+    const free = Array.from(ctx.support.free);
+    for (const gender of [0.5, 1]) {
+      const control = lab.model.evaluate({ ...cell, macros: { ...cell.macros, gender } }).control;
+      for (const size of [0, 1]) {
+        const got = applyChestFoundation(ctx, foundation, control, { size, firmness: 0.5 });
+        const source = legacyControl(lab, cell, size, 0.5);
+        const displacement = Float32Array.from(
+          control,
+          (value, index) => value - got.scale * (canonical[index] as number),
+        );
+        const bound = biharmonicFill(mesh, displacement, free, canonical);
+        let error = 0;
+        for (const vertex of free)
+          for (let axis = 0; axis < 3; axis++) {
+            const index = vertex * 3 + axis;
+            error = Math.max(
+              error,
+              Math.abs(
+                (got.positions[index] as number) -
+                  (got.scale * (source[index] as number) + (bound[index] as number)),
+              ),
+            );
+          }
+        expect(error, `frame ${gender}, size ${size}`).toBeLessThan(1e-5);
+      }
+    }
+  });
+
   it("reproduces MakeHuman's average and maximum source controls exactly", () => {
     for (const [size, firmness] of [
       [0, 0],
@@ -86,6 +115,26 @@ describe("chest foundation source binding", () => {
 });
 
 describe("chest foundation model path", () => {
+  it("retains source identity at exact young, fractional, and old ages", () => {
+    for (const sourceAge of [1, 9, 13, 19.25, 33.4, 70, 90])
+      for (const size of [0, 0.5, 1]) {
+        const source = {
+          ...cell,
+          macros: { ...cell.macros, age: sourceAge, breastSize: size },
+        };
+        const expected = lab.model.evaluate(source).control;
+        const got = lab.model.evaluate({
+          ...source,
+          regionalMacros: { breastL: { breastPresence: 1 }, breastR: { breastPresence: 1 } },
+        }).control;
+        expect(maxDiff(got, expected), `${sourceAge}/${size}`).toBeLessThan(1e-5);
+        if (size === 0.5)
+          expect(Buffer.from(got.buffer).equals(Buffer.from(expected.buffer)), `${sourceAge}`).toBe(
+            true,
+          );
+      }
+  });
+
   it("keeps the legacy control byte-identical when chest is absent and matches source when explicit", () => {
     const legacy = lab.model.evaluate(cell).control;
     const explicit = lab.model.evaluate({
