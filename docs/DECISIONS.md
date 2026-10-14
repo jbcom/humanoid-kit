@@ -175,6 +175,22 @@ selecting by a human-versus-AI preference or an invented art direction. Decision
 9 governs asset licences, attribution and the CC0-only build profile. Source
 fidelity and current rendered proof remain necessary before acceptance.
 
+## 11. Comprehensive capabilities include coordinated multi-party animation
+
+Owner clarification, 2026-10-13: this is the definitive humanoid kit, not a
+curated slice of MakeHuman capabilities. The integration program considers all
+commercially redistributable MakeHuman ecosystem capabilities under decisions
+9 and 10. Compatibility work and staged delivery do not define permanent scope
+exclusions.
+
+Figures must be able to animate and communicate through reflective presence.
+The signaling plan must support a complex choreographed sequence with five or
+fifty participants: each figure exposes its active animation, seeks one or more
+partners when a cycle requires them, and participates in coordinating the cycle.
+This requirement extends the multi-party contract in decision 5 and
+`docs/PRESENCE.md`; it is a delivery requirement, not a claim that choreography,
+partner discovery or fifty-participant coordination is already implemented.
+
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
