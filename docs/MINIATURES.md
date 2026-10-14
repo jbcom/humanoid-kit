@@ -189,6 +189,11 @@ draw a different body from the full renderer.
    `facialHair: "alpha-cards"`. The caller supplies each decoded RGBA source
    image through `texture`; the resulting `alphaCards` carry source topology,
    UV seams, posed frames, tint and embedded RGBA pixels without a runtime URL.
+   Decoded rows run top to bottom (`sharp` or Canvas `getImageData`). The near
+   source map uses the live image convention: flipped Y upload, linear filtering
+   and generated mipmaps. `textureBytes` includes every resident mip level.
+   Use straight RGBA that preserves transparent RGB for filtered colour fidelity;
+   Canvas decoding may round low-alpha RGB and discard fully transparent RGB.
    The runtime uses an alpha-tested companion mesh only at the finest LOD. It
    adds one draw per selected source card and its exact source triangles at that
    LOD, so this opt-in path is outside the ordinary opaque draw and triangle
