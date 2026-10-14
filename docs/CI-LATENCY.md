@@ -49,6 +49,12 @@ is not directly comparable to the render Mac timings.
   test was restored exactly before its final run.
 - Capture mode passed with five actual Canvas screenshots, using the same main
   camera as readback (remote job `render-2fa37e1494f44a988da495480e6e572f`).
+- The exactly restored collar numeric test passed in 9.463 s with no skips
+  (remote job `render-423a98a214554562a8a75f41447930f6`).
+- The final full worker file passed all 20 tests with no skips in 18.81 s
+  (remote job `render-de26207abdc94e5c959e9390b14bfd72`). Its lifecycle and
+  transport cases took 1.251 s and 0.849 s respectively without instrumentation.
+  Biome and strict TypeScript also passed for the final source.
 - Focused instrumented worker assertions passed. Their command exit remained
   red because a single test file cannot satisfy whole-library coverage.
   `heavy-slot` does not forward the caller's `VITEST_COVERAGE_SHARD` variable;
