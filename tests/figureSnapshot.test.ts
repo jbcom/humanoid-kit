@@ -306,6 +306,52 @@ describe("retained completed CPU figure snapshots", () => {
     expect(() => producer.complete(bad, identity())).toThrow(/correspondence/);
   });
 
+  it("checks every word of buffer subviews and distinguishes signed zero edits", () => {
+    const { rest } = fixture(),
+      producer = createFigureSnapshotProducer(rest, options);
+    const snapshot = producer.complete(posed(rest), identity()),
+      part = first(snapshot);
+    const positions = new Float32Array(part.positions.length + 2).subarray(1, -1),
+      index = new Uint32Array(part.index.length + 2).subarray(1, -1);
+    positions.set(part.positions);
+    index.set(part.index);
+    Object.assign(part, { positions, index });
+    expect(producer.current(snapshot)).toBe(true);
+    positions[0] = -0;
+    expect(producer.current(snapshot)).toBe(false);
+    positions[0] = 0;
+    expect(producer.current(snapshot)).toBe(true);
+    positions[positions.length - 1] = 1;
+    expect(producer.current(snapshot)).toBe(false);
+    positions.set(posed(rest).parts[0]?.positions ?? []);
+    index[index.length - 1] = 0;
+    expect(producer.current(snapshot)).toBe(false);
+  });
+
+  it("does not trust shadowed typed-array buffer and byte-offset metadata", () => {
+    const { rest } = fixture(),
+      producer = createFigureSnapshotProducer(rest, options);
+    const snapshot = producer.complete(posed(rest), identity()),
+      positions = first(snapshot).positions,
+      original = positions.slice();
+    Object.defineProperty(positions, "buffer", { value: original.buffer });
+    Object.defineProperty(positions, "byteOffset", { value: original.byteOffset });
+    positions[positions.length - 1] = 1;
+    expect(producer.current(snapshot)).toBe(false);
+  });
+
+  it("rejects NaN payload edits and late rest mutations without advancing completion", () => {
+    const { rest, p } = fixture(),
+      producer = createFigureSnapshotProducer(rest, options);
+    const snapshot = producer.complete(posed(rest), identity());
+    first(snapshot).normals[first(snapshot).normals.length - 1] = NaN;
+    expect(producer.current(snapshot)).toBe(false);
+    p.rest[p.rest.length - 1] = -0;
+    expect(() => producer.complete(posed(rest), identity())).toThrow(/rest replacement/);
+    p.rest[p.rest.length - 1] = 0;
+    expect(producer.complete(posed(rest), identity()).completedFrameId).toBe(2);
+  });
+
   it("rejects detached buffers and malformed public payloads without damaging producer state", () => {
     const { rest } = fixture(),
       producer = createFigureSnapshotProducer(rest, options);

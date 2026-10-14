@@ -120,8 +120,26 @@ export function advanceFigureSnapshotCounters(
   return next;
 }
 
+// Use intrinsic accessors: caller-owned views may shadow buffer/byteOffset.
+const typedArrayPrototype = Object.getPrototypeOf(Float32Array.prototype);
+const typedBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, "buffer")?.get;
+const typedOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteOffset")?.get;
+
 const same = (a: ArrayLike<number>, b: ArrayLike<number>): boolean => {
   if (a.length !== b.length) return false;
+  // Float32/Uint32 views are word-aligned even when they are buffer subviews.
+  // Compare every word; differing float encodings still use Object.is so the
+  // signed-zero and NaN semantics stay identical to the generic comparison.
+  if (
+    (a instanceof Float32Array && b instanceof Float32Array) ||
+    (a instanceof Uint32Array && b instanceof Uint32Array)
+  ) {
+    const left = new Uint32Array(typedBuffer?.call(a), typedOffset?.call(a), a.length),
+      right = new Uint32Array(typedBuffer?.call(b), typedOffset?.call(b), b.length);
+    for (let k = 0; k < left.length; k++)
+      if (left[k] !== right[k] && !Object.is(a[k], b[k])) return false;
+    return true;
+  }
   for (let k = 0; k < a.length; k++) if (!Object.is(a[k], b[k])) return false;
   return true;
 };
@@ -297,29 +315,42 @@ function canonical(rest: FigureRest, selection: FigureSnapshotIndexSelection): C
 function bounds(
   positions: Float32Array,
   index: Uint32Array,
-  m?: Float64Array,
-): FigureSnapshotBounds | null {
-  if (index.length === 0) return null;
-  const min: [number, number, number] = [Infinity, Infinity, Infinity];
-  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  m: Float64Array,
+): { localBounds: FigureSnapshotBounds | null; worldBounds: FigureSnapshotBounds | null } {
+  if (index.length === 0) return { localBounds: null, worldBounds: null };
+  const localMin: [number, number, number] = [Infinity, Infinity, Infinity],
+    localMax: [number, number, number] = [-Infinity, -Infinity, -Infinity],
+    worldMin: [number, number, number] = [Infinity, Infinity, Infinity],
+    worldMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   for (const v of index) {
     const x = positions[v * 3] as number,
       y = positions[v * 3 + 1] as number,
       z = positions[v * 3 + 2] as number;
-    const point = m
-      ? [
-          (m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number),
-          (m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number),
-          (m[2] as number) * x + (m[6] as number) * y + (m[10] as number) * z + (m[14] as number),
-        ]
-      : [x, y, z];
-    requireValue(finite(point), "selected world bounds are nonfinite");
-    for (let axis = 0; axis < 3; axis++) {
-      min[axis] = Math.min(min[axis] as number, point[axis] as number);
-      max[axis] = Math.max(max[axis] as number, point[axis] as number);
-    }
+    const wx =
+        (m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number),
+      wy = (m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number),
+      wz = (m[2] as number) * x + (m[6] as number) * y + (m[10] as number) * z + (m[14] as number);
+    requireValue(
+      Number.isFinite(wx) && Number.isFinite(wy) && Number.isFinite(wz),
+      "selected world bounds are nonfinite",
+    );
+    localMin[0] = Math.min(localMin[0], x);
+    localMin[1] = Math.min(localMin[1], y);
+    localMin[2] = Math.min(localMin[2], z);
+    localMax[0] = Math.max(localMax[0], x);
+    localMax[1] = Math.max(localMax[1], y);
+    localMax[2] = Math.max(localMax[2], z);
+    worldMin[0] = Math.min(worldMin[0], wx);
+    worldMin[1] = Math.min(worldMin[1], wy);
+    worldMin[2] = Math.min(worldMin[2], wz);
+    worldMax[0] = Math.max(worldMax[0], wx);
+    worldMax[1] = Math.max(worldMax[1], wy);
+    worldMax[2] = Math.max(worldMax[2], wz);
   }
-  return { min, max };
+  return {
+    localBounds: { min: localMin, max: localMax },
+    worldBounds: { min: worldMin, max: worldMax },
+  };
 }
 
 function union(
@@ -572,8 +603,7 @@ export function createFigureSnapshotProducer(
           normals: value.normals.slice(),
           uvs: p.uvs?.slice() ?? null,
           index,
-          localBounds: bounds(positions, index),
-          worldBounds: bounds(positions, index, m),
+          ...bounds(positions, index, m),
         };
       });
       const nextCounters = advanceFigureSnapshotCounters(counters, {
