@@ -173,6 +173,15 @@ describe("landmarks", { timeout: 300_000 }, () => {
       expect(y("shoulder.L"), name).toBeGreaterThan(y("elbow.L"));
       expect(y("elbow.L"), name).toBeGreaterThan(y("wrist.L"));
       expect(y("hip.L"), name).toBeGreaterThan(y("knee.L"));
+      // The kneecap is the skin in front of the knee's joint, at its height, facing forward.
+      for (const side of ["L", "R"] as const) {
+        const cap = frames[`kneecap.${side}`];
+        const knee = frames[`knee.${side}`].position;
+        expect(cap.position[2] - knee[2], `${name} kneecap.${side}`).toBeGreaterThan(0.02);
+        expect(Math.abs(cap.position[1] - knee[1]), `${name} kneecap.${side}`).toBeLessThan(0.04);
+        expect(Math.abs(cap.position[0] - knee[0]), `${name} kneecap.${side}`).toBeLessThan(0.04);
+        expect(cap.normal[2], `${name} kneecap.${side}`).toBeGreaterThan(0.5);
+      }
       // The front of the body faces forward (+z) at the nipples, navel, sternum and pubis.
       for (const id of ["nipple.L", "navel", "sternum-notch", "pubic-point"] as const)
         expect(frames[id].normal[2], `${name} ${id}`).toBeGreaterThan(0.5);
