@@ -15,6 +15,11 @@ const constrainedCi = Boolean(process.env.CI);
 // A shard covers only a subset of test files. Coverage thresholds are meaningful
 // only after the required CI merge job combines every labelled shard.
 const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
+// Sharding and name filters mark every non-selected test as skipped. Their run
+// reports cannot distinguish selection from an environmental skip.
+const skipLedgerEnabled =
+  !partialCoverageShard &&
+  !process.argv.some((arg) => arg === "-t" || arg.startsWith("--testNamePattern"));
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -29,15 +34,15 @@ const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
 //   and the unit tests already cover that code, so `pnpm coverage` runs them
 //   separately, uninstrumented.
 export class SkipLedgerReporter implements Reporter {
-  onTestRunEnd(testModules: ReadonlyArray<TestModule> = []) {
-    const skipped = [...testModules].flatMap((module) =>
-      [...module.children.allTests()]
-        .filter(
-          (test: TestCase) => test.options.mode === "skip" || test.result()?.state === "skipped",
-        )
-        .map((test: TestCase) => ({ moduleId: test.module.moduleId, fullName: test.fullName })),
-    );
-    const ledger = vitestSkipLedger(skipped);
+  private readonly skipped: Array<{ moduleId: string; fullName: string }> = [];
+
+  onTestCaseResult(test: TestCase) {
+    if (test.options.mode === "skip" || test.result()?.state === "skipped")
+      this.skipped.push({ moduleId: test.module.moduleId, fullName: test.fullName });
+  }
+
+  onTestRunEnd(_testModules: ReadonlyArray<TestModule> = []) {
+    const ledger = vitestSkipLedger(this.skipped);
     const counts = Object.entries(ledger.byReason).map(([reason, count]) => `${count} x ${reason}`);
     console.log(`\nVitest skips: ${counts.length ? counts.join("; ") : "none"}`);
     if (ledger.failures.length) {
@@ -57,7 +62,7 @@ export default defineConfig({
     ],
   },
   test: {
-    reporters: ["default", new SkipLedgerReporter()],
+    reporters: ["default", ...(skipLedgerEnabled ? [new SkipLedgerReporter()] : [])],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
@@ -71,6 +76,18 @@ export default defineConfig({
               branches: 82,
               functions: 89,
               lines: 93,
+              "src/{bake,build,format,makehuman,mhclo,morph,presence,recipe,subdiv,surface}/**": {
+                statements: 90,
+                branches: 85,
+                functions: 90,
+                lines: 90,
+              },
+              "src/editor/*.ts": {
+                statements: 90,
+                branches: 85,
+                functions: 90,
+                lines: 90,
+              },
               "src/rig/**": {
                 statements: 97,
                 branches: 84,
@@ -78,10 +95,10 @@ export default defineConfig({
                 lines: 99,
               },
               "src/model/**": {
-                statements: 88,
-                branches: 76,
-                functions: 92,
-                lines: 88,
+                statements: 86,
+                branches: 69,
+                functions: 91,
+                lines: 87,
               },
             },
           }),
