@@ -1,16 +1,22 @@
 import { BufferGeometry, Float32BufferAttribute } from "three";
 import { describe, expect, it } from "vitest";
 import type { FluidCoverageSnapshot } from "../src/fluid/attachedField.ts";
-import { bindFluidWetFilmCoverage, FLUID_COVERAGE_ATTRIBUTE } from "../src/render/fluidCoverage.ts";
+import { bindFluidWetFilmCoverage } from "../src/render/fluidCoverage.ts";
 import { SkinMaterial } from "../src/render/skinMaterial.ts";
 
 const geometry = () => {
   const out = new BufferGeometry();
   out.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], 3));
+  out.setAttribute("uv", new Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
+  out.setIndex([0, 1, 2, 1, 3, 2]);
   return out;
 };
 
-const snapshot = (materialId: "water" | "sweat", vertexCoverage: readonly number[]) =>
+const snapshot = (
+  materialId: "water" | "sweat",
+  vertexCoverage: readonly number[],
+  triangles: readonly number[] = [0],
+) =>
   Object.freeze({
     version: 1 as const,
     topology: "body",
@@ -18,7 +24,20 @@ const snapshot = (materialId: "water" | "sweat", vertexCoverage: readonly number
     surface: "base" as const,
     units: Object.freeze({ mass: "kg", area: "m2", arealMassDensity: "kg/m2", position: "m" }),
     attachedKg: 0.25,
-    cells: Object.freeze([]),
+    cells: Object.freeze(
+      triangles.map((triangle) =>
+        Object.freeze({
+          triangle,
+          materialId,
+          massKg: 0.25 / triangles.length,
+          supportAreaM2: 0.5,
+          arealMassDensityKgPerM2: 0.5 / triangles.length,
+          coverage: 1 as const,
+          positionM: Object.freeze([0, 0, 0] as const),
+          normal: Object.freeze([0, 0, 1] as const),
+        }),
+      ),
+    ),
     materials: Object.freeze([
       Object.freeze({
         materialId,
@@ -28,6 +47,12 @@ const snapshot = (materialId: "water" | "sweat", vertexCoverage: readonly number
       }),
     ]),
   }) satisfies FluidCoverageSnapshot;
+
+const mask = (material: SkinMaterial) => {
+  const texture = material.hkUniforms.hkFluidCoverage.value;
+  if (!texture) throw new Error("expected a fluid coverage texture");
+  return (texture as { image: { data: Uint8Array } }).image.data;
+};
 
 describe("fluid wet-film rendering bridge", () => {
   it("keeps dry materials byte-equivalent and binds wet coverage per figure", () => {
@@ -41,11 +66,9 @@ describe("fluid wet-film rendering bridge", () => {
     bindFluidWetFilmCoverage(wet, wetGeometry, snapshot("water", [0, 0.25, 1, 0.5]));
 
     expect(dry.customProgramCacheKey()).toBe(baseline);
-    expect(dryGeometry.getAttribute(FLUID_COVERAGE_ATTRIBUTE)).toBeUndefined();
+    expect(dry.hkUniforms.hkFluidCoverage.value).toBeNull();
     expect(wet.customProgramCacheKey()).toContain("-fluid");
-    expect(Array.from(wetGeometry.getAttribute(FLUID_COVERAGE_ATTRIBUTE)?.array ?? [])).toEqual([
-      0, 0.25, 1, 0.5,
-    ]);
+    expect(mask(wet).some((value) => value === 255)).toBe(true);
 
     dryGeometry.dispose();
     wetGeometry.dispose();
@@ -66,13 +89,11 @@ describe("fluid wet-film rendering bridge", () => {
       "sweat",
     );
 
-    const first = firstGeometry.getAttribute(FLUID_COVERAGE_ATTRIBUTE);
-    const second = secondGeometry.getAttribute(FLUID_COVERAGE_ATTRIBUTE);
+    const first = mask(firstMaterial);
+    const second = mask(secondMaterial);
     expect(first).not.toBe(second);
-    expect(first?.array).not.toBe(second?.array);
-    (first?.array as Float32Array)[0] = 0.5;
-    expect(second?.getX(0)).toBe(0);
-    expect(second?.getX(3)).toBe(1);
+    first[0] = 127;
+    expect(second[0]).not.toBe(127);
 
     firstGeometry.dispose();
     secondGeometry.dispose();
@@ -104,12 +125,13 @@ describe("fluid wet-film rendering bridge", () => {
     const material = new SkinMaterial();
     const body = geometry();
     bindFluidWetFilmCoverage(material, body, snapshot("water", [1, 1, 1, 0]));
-    const attribute = body.getAttribute(FLUID_COVERAGE_ATTRIBUTE);
+    const texture = material.hkUniforms.hkFluidCoverage.value;
+    const before = Array.from(mask(material));
 
-    bindFluidWetFilmCoverage(material, body, snapshot("water", [0, 1, 1, 1]));
+    bindFluidWetFilmCoverage(material, body, snapshot("water", [0, 1, 1, 1], [1]));
 
-    expect(body.getAttribute(FLUID_COVERAGE_ATTRIBUTE)).toBe(attribute);
-    expect(Array.from(attribute?.array ?? [])).toEqual([0, 1, 1, 1]);
+    expect(material.hkUniforms.hkFluidCoverage.value).toBe(texture);
+    expect(Array.from(mask(material))).not.toEqual(before);
 
     body.dispose();
     material.dispose();

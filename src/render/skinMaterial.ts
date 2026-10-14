@@ -155,9 +155,6 @@ export const CREASE_CRUSH = { from: 0.55, to: 0.8 } as const;
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 
-/** Per-figure wet-film support coverage, supplied by `render/fluidCoverage.ts`. */
-export const FLUID_COVERAGE_ATTRIBUTE = "hkFluidCoverage";
-
 /** Existing wet-film choices that a renderer can apply to dynamic coverage. */
 export interface FluidWetFilmProfile {
   readonly roughness: number;
@@ -1119,6 +1116,8 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkAgeSurface: { value: Vector3 };
     /** Existing wet-film roughness and specular changes, selected per figure. */
     hkFluidWetFilm: { value: Vector2 };
+    /** Per-figure dynamic coverage texture; absent from the dry shader variant. */
+    hkFluidCoverage: { value: Texture | null };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -1171,16 +1170,23 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   }
 
   /**
-   * Enables a per-vertex wet film for this figure only. Passing `null` restores
-   * the exact dry shader path; coverage data remains on the figure's geometry.
+   * Enables a per-figure UV wet film. Passing `null` restores the exact dry
+   * shader path; the coverage texture remains owned by the renderer bridge.
    */
-  setFluidWetFilm(profile: FluidWetFilmProfile | null): void {
+  setFluidWetFilm(profile: FluidWetFilmProfile | null, coverage: Texture | null = null): void {
     if (profile && (!Number.isFinite(profile.roughness) || !Number.isFinite(profile.specular)))
       throw new RangeError("SkinMaterial: fluid wet-film values must be finite");
+    if (Boolean(profile) !== Boolean(coverage))
+      throw new RangeError(
+        "SkinMaterial: a wet-film profile and coverage texture must be supplied together",
+      );
     const wasEnabled = this.fluidWetFilm !== null;
     const enabled = profile !== null;
     this.fluidWetFilm = profile ? { ...profile } : null;
-    if (profile) this.hkUniforms.hkFluidWetFilm.value.set(profile.roughness, profile.specular);
+    if (profile) {
+      this.hkUniforms.hkFluidWetFilm.value.set(profile.roughness, profile.specular);
+      this.hkUniforms.hkFluidCoverage.value = coverage;
+    } else this.hkUniforms.hkFluidCoverage.value = null;
     if (wasEnabled !== enabled) this.needsUpdate = true;
   }
 
@@ -1282,6 +1288,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkAgeMap: { value: null },
       hkAgeSurface: { value: new Vector3() },
       hkFluidWetFilm: { value: new Vector2() },
+      hkFluidCoverage: { value: null },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -1339,17 +1346,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
-    const fluidVertex = this.fluidWetFilm
-      ? `\nattribute float ${FLUID_COVERAGE_ATTRIBUTE};\nvarying float vHkFluidCoverage;`
-      : "";
-    const fluidVertexValue = this.fluidWetFilm
-      ? `\n\tvHkFluidCoverage = ${FLUID_COVERAGE_ATTRIBUTE};`
-      : "";
     const fluidFragment = this.fluidWetFilm
-      ? "\nvarying float vHkFluidCoverage;\nuniform vec2 hkFluidWetFilm;"
+      ? "\nuniform vec2 hkFluidWetFilm;\nuniform sampler2D hkFluidCoverage;"
       : "";
     const fluidSurface = this.fluidWetFilm
-      ? "\n\tvec2 hkFluid = clamp( vHkFluidCoverage, 0.0, 1.0 ) * hkFluidWetFilm;"
+      ? "\n\tvec2 hkFluid = texture( hkFluidCoverage, vHkUv ).r * hkFluidWetFilm;"
       : "";
     const fluidRoughness = this.fluidWetFilm ? " + hkFluid.x" : "";
     const fluidSpecular = this.fluidWetFilm ? " + hkFluid.y" : "";
@@ -1358,13 +1359,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;${fluidVertex}`,
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;`,
       )
       // The skin's strain (docs/ARCHITECTURE.md, "Skin strain"): 1 (as at rest) and what the geometry's own strain
       // attribute adds (none where it has none: an absent attribute reads 0), then what the folds add where they reach (patchDualSkinning).
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};${fluidVertexValue}`,
+        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",

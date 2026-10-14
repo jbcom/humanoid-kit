@@ -22,12 +22,22 @@ a material response. The existing `FLUID_MASS_EPSILON_KG` ledger tolerance
 applies to the snapshot's attached-mass check as well as state and transport.
 
 `src/render/fluidCoverage.ts` binds one selected water or sweat material row from
-that snapshot to the figure's own `hkFluidCoverage` vertex attribute and enables
-the matching `SkinMaterial` shader variant. Every bind validates kilograms,
-square metres, kilograms per square metre, metres, coverage range, and the
-render geometry's vertex count. The next posed snapshot updates that attribute
-in place. A `null` snapshot, or no row for the selected material, removes the
-attribute and restores the byte-equivalent dry shader path.
+that snapshot to one per-figure, nearest-filtered UV coverage texture and enables
+the matching `SkinMaterial` shader variant. It rasterizes the occupied
+`cells[].triangle` support directly into that texture; `vertexCoverage` is
+validated as snapshot metadata but is not interpolated by the shader. This keeps
+the wet support on the selected triangles: vertex interpolation would also reach
+every face incident to a covered vertex, expanding a local field across its
+triangle fan. The source-body proof reports both counts so that this difference
+remains inspectable.
+
+Every bind validates kilograms, square metres, kilograms per square metre,
+metres, coverage range, and the render geometry's vertex count. The next posed
+snapshot updates that texture in place. A `null` snapshot, or no row for the
+selected material, disables the wet shader variant and restores the
+byte-equivalent dry path. The texture belongs to one `SkinMaterial` and its one
+body geometry, avoiding an additional vertex attribute on the already dual-skinned
+source body and preventing figures from sharing dynamic coverage state.
 
 The bridge uses the existing documented sweat-film roughness and specular
 choices from `src/surface/regions/states.ts`; the coverage field itself still

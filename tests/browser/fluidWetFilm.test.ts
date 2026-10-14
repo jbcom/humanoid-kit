@@ -31,7 +31,18 @@ function coverage(values: readonly number[]): FluidCoverageSnapshot {
     surface: "base",
     units: Object.freeze({ mass: "kg", area: "m2", arealMassDensity: "kg/m2", position: "m" }),
     attachedKg: 0.01,
-    cells: Object.freeze([]),
+    cells: Object.freeze([
+      Object.freeze({
+        triangle: 0,
+        materialId: "water",
+        massKg: 0.01,
+        supportAreaM2: 1,
+        arealMassDensityKgPerM2: 0.01,
+        coverage: 1 as const,
+        positionM: Object.freeze([0, 0, 0] as const),
+        normal: Object.freeze([0, 0, 1] as const),
+      }),
+    ]),
     materials: Object.freeze([
       Object.freeze({
         materialId: "water",
@@ -113,7 +124,7 @@ describe("the water/sweat wet-film bridge in SkinMaterial", () => {
       (count, value, index) => count + (value === dryPixels[index] ? 0 : 1),
       0,
     );
-    expect(changed).toBeGreaterThan(SIZE * SIZE);
+    expect(changed).toBeGreaterThan((SIZE * SIZE) / 2);
 
     const comparison = new Scene();
     comparison.background = new Color(0x141414);
