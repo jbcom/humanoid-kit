@@ -221,6 +221,16 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
   const corner = new Vector3();
   const ray = new Ray();
   const turned = new Vector3();
+  const hitsFromVertex = (vertex: number) =>
+    bvh.raycast(ray, DoubleSide).filter((hit) => {
+      // A ray starts on its own skin, including split UV vertices and exactly
+      // coincident closed walls. Exclude those boundary hits without skipping
+      // any positive distance to nonincident skin.
+      if (hit.distance === 0 || hit.faceIndex === undefined || hit.faceIndex === null) return false;
+      for (let k = 0; k < 3; k++)
+        if (body.weld[tri[hit.faceIndex * 3 + k] as number] === body.weld[vertex]) return false;
+      return true;
+    });
   let penetrating = 0;
   let deepest = 0;
   let deepestParts = "";
@@ -233,16 +243,16 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     v3(body.positions, v, p);
     v3(body.normals, v, n);
     if (n.lengthSq() === 0) continue;
-    ray.origin.copy(p).addScaledVector(n.normalize(), 1e-4);
-    ray.direction.copy(n);
-    const hits = bvh.raycast(ray, DoubleSide);
+    ray.origin.copy(p);
+    ray.direction.copy(n.normalize());
+    const hits = hitsFromVertex(v);
     if (hits.length % 2 === 0) continue;
     // The skin is closed but for its openings (the eyes' sockets, the mouth):
     // a ray out through one miscounts, so a second, the normal tilted 27°
     // about a fixed axis square to it, must agree.
     turned.crossVectors(n, Math.abs(n.y) < 0.9 ? UP : RIGHT).normalize();
     ray.direction.copy(n).addScaledVector(turned, 0.5).normalize();
-    if (bvh.raycast(ray, DoubleSide).length % 2 === 0) continue;
+    if (hitsFromVertex(v).length % 2 === 0) continue;
     ray.direction.copy(n);
     // Inside: the part it is inside of is the one the ray leaves through first.
     hits.sort((x, y) => x.distance - y.distance);
@@ -266,7 +276,7 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     if (depth <= PENETRATION_LIMIT || depth >= REACH) continue;
     const mine = parts[v] as BodyPart;
     // A canal's walls closing on each other: contact, inside the canal only (`isLumenContact`).
-    if (isLumenContact(body.canals, tri, v, exit, (hits[0]?.distance ?? 0) + 1e-4)) {
+    if (isLumenContact(body.canals, tri, v, exit, hits[0]?.distance ?? 0)) {
       lumen++;
       lumenArea += (areas[v] as number) * stride * CM2;
     } else if (isContact(mine, other)) {
