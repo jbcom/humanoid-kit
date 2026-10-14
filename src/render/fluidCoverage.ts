@@ -8,7 +8,11 @@ import {
   RedFormat,
   UnsignedByteType,
 } from "three";
-import type { FluidCoverageCell, FluidCoverageSnapshot } from "../fluid/attachedField.ts";
+import type {
+  FluidCoverageCell,
+  FluidCoverageSnapshot,
+  FluidDepositedCoverageSnapshot,
+} from "../fluid/attachedField.ts";
 import { SWEAT_ROUGHNESS, SWEAT_SPECULAR } from "../surface/regions/states.ts";
 import type { FluidWetFilmProfile, SkinMaterial } from "./skinMaterial.ts";
 
@@ -48,7 +52,7 @@ const validatedSupportKeys = new WeakMap<BufferGeometry, string>();
 const trackedMaterials = new WeakSet<SkinMaterial>();
 const trackedGeometries = new WeakSet<BufferGeometry>();
 
-function assertUnits(snapshot: FluidCoverageSnapshot): void {
+function assertUnits(snapshot: FluidCoverageSnapshot | FluidDepositedCoverageSnapshot): void {
   const { units } = snapshot;
   if (
     units.mass !== "kg" ||
@@ -322,7 +326,7 @@ export function releaseFluidWetFilmCoverage(material: SkinMaterial): void {
 export function bindFluidWetFilmCoverage(
   material: SkinMaterial,
   geometry: BufferGeometry,
-  snapshot: FluidCoverageSnapshot | null,
+  snapshot: FluidCoverageSnapshot | FluidDepositedCoverageSnapshot | null,
   materialId: "water" | "sweat" = "water",
 ): void {
   if (!snapshot) {

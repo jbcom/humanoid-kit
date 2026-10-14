@@ -5,6 +5,7 @@ import {
   FluidStateError,
   type FluidSurfaceAnchor,
 } from "./state.ts";
+import { assertFluidSurfaceContact, type FluidSurfaceContact } from "./surfaceContact.ts";
 
 export interface PosedSurfaceFrame {
   topology: string;
@@ -100,7 +101,45 @@ export interface AttachedFieldOptions {
   /** CHOICE: fraction per second eligible to move toward the downhill neighbour. */
   mobilityPerSecond: number;
   gravity: readonly [number, number, number];
+  /** Explicit receiver budget. Omitted means this field cannot receive deposits. */
+  maxDeposits?: number;
+  /** Explicit receiver eligibility; no material behavior is inferred from these identities. */
+  acceptedDepositMaterials?: readonly string[];
 }
+
+export interface FluidContactDepositRequest {
+  /** Unique retained record identity on the receiver. Duplicate identities reject the batch. */
+  id: string;
+  contact: FluidSurfaceContact;
+  materialId: string;
+  massKg: number;
+}
+
+/** A terminal receiver-owned deposit; anchors retain the exact selected source-pair geometry. */
+export interface FluidSurfaceDeposit {
+  readonly id: string;
+  readonly contactId: string;
+  readonly sourceFigureId: string;
+  readonly receiverFigureId: string;
+  readonly sourcePoseId: string;
+  readonly receiverPoseId: string;
+  readonly sourceGeneration: object;
+  readonly receiverGeneration: object;
+  readonly materialId: string;
+  readonly massKg: number;
+  readonly sourceAnchor: FluidSurfaceAnchor;
+  readonly anchor: FluidSurfaceAnchor;
+}
+
+export type FluidDepositedCoverageSnapshot = Omit<
+  FluidCoverageSnapshot,
+  "attachedKg" | "materials"
+> & {
+  readonly depositedKg: number;
+  readonly materials: readonly (Omit<FluidMaterialCoverage, "attachedKg"> & {
+    readonly depositedKg: number;
+  })[];
+};
 
 const finitePositive = (value: number, label: string) => {
   if (!Number.isFinite(value) || value <= 0)
@@ -254,7 +293,8 @@ function mergeCell(
 
 /** A sparse field whose mass is accounted for by its supplied FluidState only. */
 export class AttachedFluidField {
-  private readonly cells = new Map<string, AttachedFluidCell>();
+  private cells = new Map<string, AttachedFluidCell>();
+  private deposits = new Map<string, FluidSurfaceDeposit>();
   private readonly adjacent: readonly number[][];
   private readonly state: FluidState;
   private readonly options: AttachedFieldOptions;
@@ -267,14 +307,36 @@ export class AttachedFluidField {
     if (!Number.isSafeInteger(options.maxCells) || options.maxCells < 1)
       throw new FluidStateError("maxCells must be a positive safe integer");
     finiteNonNegative(options.mobilityPerSecond, "mobilityPerSecond");
+    if (
+      options.maxDeposits !== undefined &&
+      (!Number.isSafeInteger(options.maxDeposits) || options.maxDeposits < 1)
+    )
+      throw new FluidStateError("maxDeposits must be a positive safe integer when supplied");
+    const materials = options.acceptedDepositMaterials ?? [];
+    if (
+      materials.some((material) => typeof material !== "string" || !material.trim()) ||
+      new Set(materials).size !== materials.length ||
+      Boolean(options.maxDeposits) !== materials.length > 0
+    )
+      throw new FluidStateError(
+        "deposit receivers require an explicit budget and unique non-empty material eligibility",
+      );
     if (options.gravity.length !== 3 || options.gravity.some((value) => !Number.isFinite(value)))
       throw new FluidStateError("gravity must have three finite components");
     if (state.snapshot().ledger.attachedKg !== 0)
       throw new FluidStateError(
         "attached field requires a fluid state with no unplaced attached mass",
       );
+    if (state.snapshot().ledger.depositedKg !== 0)
+      throw new FluidStateError(
+        "attached field requires a fluid state with no unplaced deposited mass",
+      );
     this.state = state;
-    this.options = { ...options, gravity: [...options.gravity] as [number, number, number] };
+    this.options = {
+      ...options,
+      gravity: [...options.gravity] as [number, number, number],
+      acceptedDepositMaterials: [...materials],
+    };
     this.index = Uint32Array.from(posedFrame.index);
     this.surface = posedFrame.surface;
     this.vertexCount = posedFrame.positions.length / 3;
@@ -435,6 +497,99 @@ export class AttachedFluidField {
       .map((cell) => structuredClone(cell));
   }
 
+  /** Exact paired contact transfer, with both bounded stores staged before either ledger changes. */
+  depositOn(
+    receiver: AttachedFluidField,
+    requests: readonly FluidContactDepositRequest[],
+  ): readonly FluidSurfaceDeposit[] {
+    this.assertSynchronized();
+    receiver.assertSynchronized();
+    if (
+      receiver === this ||
+      receiver.state === this.state ||
+      receiver.state.figureId === this.state.figureId
+    )
+      throw new FluidStateError("fluid transfer requires two distinct figure states");
+    if (requests.length === 0) return Object.freeze([]);
+    if (requests.length > (receiver.options.maxDeposits ?? 0) - receiver.deposits.size)
+      throw new FluidStateError("fluid deposit capacity would discard a retained target");
+    const nextDonor = new Map(this.cells);
+    const nextReceiver = new Map(receiver.deposits);
+    const created: FluidSurfaceDeposit[] = [];
+    let transferredKg = 0;
+    for (const request of requests) {
+      if (typeof request.id !== "string" || !request.id.trim())
+        throw new FluidStateError("fluid deposit id must be non-empty");
+      if (nextReceiver.has(request.id))
+        throw new FluidStateError("fluid deposit id is already retained");
+      finitePositive(request.massKg, "fluid deposit massKg");
+      if (!receiver.options.acceptedDepositMaterials?.includes(request.materialId))
+        throw new FluidStateError("fluid deposit material is not eligible on this receiver");
+      assertFluidSurfaceContact(request.contact, this.state, receiver.state);
+      this.assertCompatibleFrame(request.contact.source.frame);
+      receiver.assertCompatibleFrame(request.contact.receiver.frame);
+      this.assertAnchor(request.contact.source.anchor);
+      receiver.assertAnchor(request.contact.receiver.anchor);
+      const anchor = request.contact.source.anchor;
+      const key = keyOf(anchor.triangle, request.materialId);
+      const cell = nextDonor.get(key);
+      if (!cell || cell.barycentric.some((weight, corner) => weight !== anchor.barycentric[corner]))
+        throw new FluidStateError(
+          "fluid contact does not select the current attached cell anchor/material",
+        );
+      if (request.massKg > cell.massKg)
+        throw new FluidStateError("cannot deposit more fluid than the attached cell contains");
+      // Both selected triangles must support real finite posed geometry before committing mass.
+      triangleCoverageGeometry(request.contact.source.frame, cell);
+      triangleCoverageGeometry(request.contact.receiver.frame, {
+        triangle: request.contact.receiver.anchor.triangle,
+        barycentric: request.contact.receiver.anchor.barycentric,
+        materialId: request.materialId,
+        massKg: request.massKg,
+      });
+      const remaining = cell.massKg - request.massKg;
+      if (remaining > 0) nextDonor.set(key, { ...cell, massKg: remaining });
+      else nextDonor.delete(key);
+      const deposit = Object.freeze({
+        id: request.id,
+        contactId: request.contact.id,
+        sourceFigureId: this.state.figureId,
+        receiverFigureId: receiver.state.figureId,
+        sourcePoseId: request.contact.source.poseId,
+        receiverPoseId: request.contact.receiver.poseId,
+        sourceGeneration: request.contact.source.generation,
+        receiverGeneration: request.contact.receiver.generation,
+        sourceAnchor: request.contact.source.anchor,
+        anchor: request.contact.receiver.anchor,
+        materialId: request.materialId,
+        massKg: request.massKg,
+      });
+      nextReceiver.set(request.id, deposit);
+      created.push(deposit);
+      transferredKg += request.massKg;
+    }
+    const ledger = this.state.snapshot().ledger;
+    const donorKg = [...nextDonor.values()].reduce((sum, cell) => sum + cell.massKg, 0);
+    const receiverKg = [...nextReceiver.values()].reduce((sum, deposit) => sum + deposit.massKg, 0);
+    if (
+      Math.abs(donorKg - (ledger.attachedKg - transferredKg)) > FLUID_MASS_EPSILON_KG ||
+      Math.abs(receiverKg - (receiver.state.snapshot().ledger.depositedKg + transferredKg)) >
+        FLUID_MASS_EPSILON_KG
+    )
+      throw new FluidStateError("fluid contact stores do not conserve paired mass");
+    const receipt = Object.freeze(created);
+    this.state.transferAttachedToDepositedKg(receiver.state, transferredKg);
+    this.cells = nextDonor;
+    receiver.deposits = nextReceiver;
+    return receipt;
+  }
+
+  /** Retained terminal deposits in deterministic identity order, with no pose or clock mutation. */
+  depositedFrame(): readonly FluidSurfaceDeposit[] {
+    this.assertSynchronized();
+    return Object.freeze([...this.deposits.values()].sort((a, b) => a.id.localeCompare(b.id)));
+  }
+
   /**
    * A stable, immutable read model for a renderer. It derives every position,
    * normal and support area from this supplied posed frame; it does not choose
@@ -443,22 +598,67 @@ export class AttachedFluidField {
   coverageSnapshot(frame: PosedSurfaceFrame): FluidCoverageSnapshot {
     this.assertSynchronized();
     this.assertCompatibleFrame(frame);
+    const { totalKg, ...data } = this.coverageData(frame, this.frame());
+    return Object.freeze({
+      ...data,
+      attachedKg: totalKg,
+      materials: Object.freeze(
+        data.materials.map(({ massKg, ...material }) =>
+          Object.freeze({ ...material, attachedKg: massKg }),
+        ),
+      ),
+    });
+  }
+
+  /** Terminal deposit support on this current pose; never reclassified as attached flow. */
+  depositedCoverageSnapshot(frame: PosedSurfaceFrame): FluidDepositedCoverageSnapshot {
+    this.assertSynchronized();
+    this.assertCompatibleFrame(frame);
+    const cells = new Map<string, AttachedFluidCell>();
+    for (const deposit of this.deposits.values()) {
+      const key = keyOf(deposit.anchor.triangle, deposit.materialId);
+      const current = cells.get(key);
+      cells.set(
+        key,
+        current
+          ? mergeCell(current, deposit.anchor.barycentric, deposit.massKg)
+          : {
+              triangle: deposit.anchor.triangle,
+              barycentric: deposit.anchor.barycentric,
+              materialId: deposit.materialId,
+              massKg: deposit.massKg,
+            },
+      );
+    }
+    const { totalKg, ...data } = this.coverageData(frame, [...cells.values()]);
+    return Object.freeze({
+      ...data,
+      depositedKg: totalKg,
+      materials: Object.freeze(
+        data.materials.map(({ massKg, ...material }) =>
+          Object.freeze({ ...material, depositedKg: massKg }),
+        ),
+      ),
+    });
+  }
+
+  private coverageData(frame: PosedSurfaceFrame, input: readonly AttachedFluidCell[]) {
     const byMaterial = new Map<
       string,
-      { attachedKg: number; coveredAreaM2: number; vertexCoverage: number[] }
+      { massKg: number; coveredAreaM2: number; vertexCoverage: number[] }
     >();
-    const cells = this.frame().map((cell) => {
+    const cells = input.map((cell) => {
       const { positionM, normal, supportAreaM2 } = triangleCoverageGeometry(frame, cell);
       let material = byMaterial.get(cell.materialId);
       if (!material) {
         material = {
-          attachedKg: 0,
+          massKg: 0,
           coveredAreaM2: 0,
           vertexCoverage: new Array<number>(this.vertexCount).fill(0),
         };
         byMaterial.set(cell.materialId, material);
       }
-      material.attachedKg += cell.massKg;
+      material.massKg += cell.massKg;
       material.coveredAreaM2 += supportAreaM2;
       const at = cell.triangle * 3;
       for (let corner = 0; corner < 3; corner++)
@@ -480,15 +680,13 @@ export class AttachedFluidField {
         normal: frozenVector(normal),
       });
     });
-    const attachedKg = cells.reduce((total, cell) => total + cell.massKg, 0);
-    if (Math.abs(attachedKg - this.state.snapshot().ledger.attachedKg) > FLUID_MASS_EPSILON_KG)
-      throw new FluidStateError("fluid coverage snapshot does not conserve attached mass");
+    const totalKg = cells.reduce((total, cell) => total + cell.massKg, 0);
     const materials = [...byMaterial]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([materialId, material]) =>
         Object.freeze({
           materialId,
-          attachedKg: material.attachedKg,
+          massKg: material.massKg,
           coveredAreaM2: material.coveredAreaM2,
           vertexCoverage: frozenNumbers(material.vertexCoverage),
         }),
@@ -504,7 +702,7 @@ export class AttachedFluidField {
         arealMassDensity: "kg/m2" as const,
         position: "m" as const,
       }),
-      attachedKg,
+      totalKg,
       cells: Object.freeze(cells),
       materials: Object.freeze(materials),
     });
@@ -557,5 +755,8 @@ export class AttachedFluidField {
     const mass = [...this.cells.values()].reduce((total, cell) => total + cell.massKg, 0);
     if (Math.abs(mass - this.state.snapshot().ledger.attachedKg) > FLUID_MASS_EPSILON_KG)
       throw new FluidStateError("attached field mass is not synchronized with fluid ledger");
+    const deposited = [...this.deposits.values()].reduce((sum, deposit) => sum + deposit.massKg, 0);
+    if (Math.abs(deposited - this.state.snapshot().ledger.depositedKg) > FLUID_MASS_EPSILON_KG)
+      throw new FluidStateError("retained deposits are not synchronized with fluid ledger");
   }
 }
