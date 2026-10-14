@@ -23,9 +23,10 @@ export const RECIPE_VERSION = 1 as const;
 export type RegionalMacroValues = Omit<MacroValues, "age">;
 
 /**
- * A breast region's optional source-frame choice. `breastPresence` is not a
- * macro: in `breastL` and `breastR` it selects the existing MakeHuman source
- * frame (0 = male share, 1 = female share) beneath that side's breast targets.
+ * A breast region's optional source-tissue blend. `breastPresence` is not a
+ * macro: in `breastL` and `breastR`, 0 selects the measured source-flat baseline
+ * and 1 selects the requested MakeHuman breast tissue independently of frame.
+ * Breast size retains its source min/base/max range; presence is a separate axis.
  */
 export type BreastRegionalTraitValues = Partial<RegionalMacroValues> & {
   breastPresence?: number;
