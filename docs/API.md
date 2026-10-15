@@ -1299,7 +1299,11 @@ and expressions"). Framework-free.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or
-  non-arm-only trial poses. `createHandContact` (Interactions, below) is what
+  non-arm-only trial poses. Its explicit `resetSource(generation, rotations)`
+  replaces the copied full-body baseline and recomputes dynamic skin shares
+  while retaining skinning scratch for the same immutable geometry. Invalid
+  reset inputs preserve the previous baseline. Supplied folds remain fixed;
+  rebuild the sampler when those folds change. `createHandContact` (Interactions, below) is what
   drives them from an interaction's contact, and `<Humanoid handContact>`
   applies that to a live figure.
 - Internal rig helper: `src/rig/fingerTarget.ts` is not an exported package

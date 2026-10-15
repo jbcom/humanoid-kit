@@ -212,6 +212,54 @@ describe("arm skinned-frame sampler", { timeout: 300_000 }, () => {
     );
   });
 
+  it("refreshes its full-body source without stale shares and rejects invalid resets atomically", () => {
+    const recipe = createRecipe({ macros: { age: 30, height: 0.8 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const generation = {};
+    const source = IDENTITY_POSE(rest.names.length);
+    const input = {
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: source,
+      armBones: armChain(rest, "R"),
+      side: "R" as const,
+    };
+    const sampler = createArmSkinnedFrameSampler(input);
+    const before = new Uint8Array(source.buffer).slice();
+    for (const name of ["seated", "tpose", "benchmark", "seated"]) {
+      const changed = bodyPoseRotations(rigData(assets), name);
+      sampler.resetSource(generation, changed);
+      const fresh = createArmSkinnedFrameSampler({ ...input, sourceRotations: changed });
+      expect(sampler.frame(generation, changed, frameOut())).toEqual(
+        fresh.frame(generation, changed, frameOut()),
+      );
+      const accepted = Float32Array.from(changed);
+      changed.fill(0);
+      expect(sampler.frame(generation, accepted, frameOut())).toEqual(
+        fresh.frame(generation, accepted, frameOut()),
+      );
+      const invalid = Float32Array.from(accepted);
+      invalid[invalid.length - 1] = NaN;
+      expect(() => sampler.resetSource(generation, invalid)).toThrow(
+        "source rotations must be finite",
+      );
+      expect(() => sampler.resetSource({}, accepted)).toThrow("generation is stale");
+      expect(() => sampler.resetSource(generation, new Float32Array(1))).toThrow(
+        "source rotations do not match",
+      );
+      expect(sampler.frame(generation, accepted, frameOut())).toEqual(
+        fresh.frame(generation, accepted, frameOut()),
+      );
+    }
+    expect(new Uint8Array(source.buffer)).toEqual(before);
+  });
+
   it("copies its source baseline and preserves output when candidate validation fails", () => {
     const recipe = createRecipe({ macros: { age: 30 } });
     const evaluation = model.evaluate(recipe);
