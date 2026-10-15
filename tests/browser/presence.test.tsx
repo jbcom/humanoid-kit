@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Component, type ReactNode, useRef } from "react";
-import type { Group, Scene as ThreeScene } from "three";
+import { type Group, Scene as ThreeScene } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import {
@@ -382,6 +382,22 @@ describe("the stage's pooled contact shadow", () => {
     return null;
   }
   const quad = () => out.scene?.getObjectByName("hk-ground-contact");
+  function currentSettledScene(
+    scene: ThreeScene | undefined,
+    previousScene: ThreeScene | undefined,
+    figureSettled: boolean,
+  ) {
+    return scene !== undefined && scene !== previousScene && figureSettled;
+  }
+
+  it("rejects stale scenes and current figures that have not settled", () => {
+    const previousScene = new ThreeScene();
+    const currentScene = new ThreeScene();
+    expect(currentSettledScene(undefined, previousScene, true)).toBe(false);
+    expect(currentSettledScene(previousScene, previousScene, true)).toBe(false);
+    expect(currentSettledScene(currentScene, previousScene, false)).toBe(false);
+    expect(currentSettledScene(currentScene, previousScene, true)).toBe(true);
+  });
 
   it(
     "follows the figures wherever they are, and leaves the floor below a raised one alone",
@@ -414,15 +430,27 @@ describe("the stage's pooled contact shadow", () => {
     "shadows only the figures that publish presence",
     async () => {
       const registry = createPresenceRegistry();
+      const previousScene = out.scene;
+      let figureSettled = false;
       await render(
         <Scene registry={registry}>
           <Probe />
           <StudioStage />
-          <Humanoid recipe={average} position={[0, 0.82, 0]} />
+          <Humanoid
+            recipe={average}
+            position={[0, 0.82, 0]}
+            onSettled={() => {
+              figureSettled = true;
+            }}
+          />
         </Scene>,
       );
-      await new Promise((r) => setTimeout(r, 1500));
+      await expect
+        .poll(() => currentSettledScene(out.scene, previousScene, figureSettled), LOAD)
+        .toBe(true);
+      await expect.poll(quad, LOAD).toBeDefined();
       expect(quad()).toBeDefined();
+      expect(registry.all()).toEqual([]);
       expect(quad()?.visible).toBe(false);
     },
     LOAD.timeout,
