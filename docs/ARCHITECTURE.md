@@ -3559,6 +3559,13 @@ picking and culling follow the reaching arm. Without a clip, a static figure is
 re-posed every frame only while the constraint has weight, and once more when it
 returns to idle.
 
+Measured presence workspaces retain private sampler and posed-skeleton scratch
+for one immutable evaluation, rig and landmark/skin generation. Each changed
+source pose explicitly resets both sampler baselines, including dynamic skin
+shares; returned workspace numbers are newly owned values. Pose comparisons
+use copied rotation values so a caller may reuse its animation output buffer.
+Replacing geometry, weights, anchors or rig data rebuilds that scratch.
+
 **Cached site contacts.** `createSiteContactConstraint` is deliberately outside the
 current `<Humanoid>` frame pass. It retains only a full solve for one immutable
 source-pose generation, evaluated geometry generation, target object and shape.
