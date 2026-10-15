@@ -66,11 +66,17 @@ describe("the pelvic refinement the adult pack asks for", () => {
     // layout's (held to the generator in adultReservoirs.test.ts), so they are taken as shipped.
     const patches = adultManifest.anatomy?.surface?.patches;
     expect(patches?.length, "the reservoirs' smooth loops").toBe(4);
-    // The vulva layer's mask is the generator's, held to it in vulva.test.ts.
-    const vulvaMask = adultManifest.anatomy?.skinLayers.find(
-      (l) => l.id === "vulva-skin",
-    )?.vertexMask;
-    const spec = adultAnatomySpec(assets, undefined, undefined, patches, vulvaMask);
+    // Both source-derived atlas fields are held to their generators in
+    // vulva.test.ts and vulvaInnerColour.test.ts, as in adultStack.test.ts.
+    const vulva = adultManifest.anatomy?.skinLayers.find((l) => l.id === "vulva-skin");
+    const spec = adultAnatomySpec(
+      assets,
+      undefined,
+      undefined,
+      patches,
+      vulva?.vertexMask,
+      vulva?.vertexCoord,
+    );
     expect(spec.surface).toEqual({ faces: r.faces, levels: r.levels, patches });
     // Its detail (the generated targets' pin) is held to the generator in moundPack.test.ts.
     const { detail: _detail, reservoirs: _reservoirs, ...rest } = adultManifest.anatomy ?? {};
