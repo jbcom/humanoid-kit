@@ -121,7 +121,41 @@ function tint(id: string): number[] {
 const expected = (colour: HairColour) =>
   hairTint(agedHairColour(colour, baseline.macros.age, "scalp"));
 
+function diagnostic<T>(read: () => T): { value: T } | { error: string } {
+  try {
+    return { value: read() };
+  } catch (error) {
+    return { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+  }
+}
+
+it("keeps failed diagnostic reads from masking the original assertion", () => {
+  expect(diagnostic(() => [0, 1])).toEqual({ value: [0, 1] });
+  expect(
+    diagnostic(() => {
+      throw new Error("missing live mesh");
+    }),
+  ).toEqual({
+    error: "Error: missing live mesh",
+  });
+  const original = new Error("original settlement assertion");
+  let caught: unknown;
+  try {
+    try {
+      throw original;
+    } finally {
+      diagnostic(() => {
+        throw new Error("telemetry output failure");
+      });
+    }
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBe(original);
+});
+
 it("routes independent colours through the actual live Humanoid worker path without resource or source changes", async () => {
+  const initialSettled = settled;
   await page.viewport(760, 720);
   await client.ready;
   const screen = await render(
@@ -129,7 +163,7 @@ it("routes independent colours through the actual live Humanoid worker path with
       <Fixture recipe={baseline} />
     </HumanoidProvider>,
   );
-  await expect.poll(() => settled, { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect.poll(() => settled, { timeout: 60_000 }).toBeGreaterThan(initialSettled);
   expect(settledEvaluation).toBe(evaluated);
   await expect.poll(() => tint(BEARD)).toEqual(expected(BLACK));
   const portraitBounds = new Box3();
@@ -173,22 +207,26 @@ it("routes independent colours through the actual live Humanoid worker path with
       expect(updates).toHaveLength(1);
       expect(updates[0]?.recipe).toEqual(recipe);
     } finally {
-      console.info("facial-colour transition", {
-        phase,
-        requestRange: [requestStart, requests.length],
-        evaluateRequests: requests
-          .slice(requestStart)
-          .filter((request) => request.type === "evaluate"),
-        settlements: [before, settled],
-        newEvaluation: evaluated !== previousEvaluation,
-        exactSettlement: settledEvaluation === evaluated,
-        beardTint: tint(BEARD),
-        moustacheTint: tint(MOUSTACHE),
-        resourcesUnchanged: ids.every((id) => {
-          const old = original.get(id);
-          return mesh(id).geometry === old?.geometry && mesh(id).material === old?.material;
+      diagnostic(() =>
+        console.info("facial-colour transition", {
+          phase,
+          requestRange: [requestStart, requests.length],
+          evaluateRequests: requests
+            .slice(requestStart)
+            .filter((request) => request.type === "evaluate"),
+          settlements: [before, settled],
+          newEvaluation: evaluated !== previousEvaluation,
+          exactSettlement: settledEvaluation === evaluated,
+          beardTint: diagnostic(() => tint(BEARD)),
+          moustacheTint: diagnostic(() => tint(MOUSTACHE)),
+          resourcesUnchanged: diagnostic(() =>
+            ids.every((id) => {
+              const old = original.get(id);
+              return mesh(id).geometry === old?.geometry && mesh(id).material === old?.material;
+            }),
+          ),
         }),
-      });
+      );
     }
   }
   function expectUnchangedSource() {
@@ -236,6 +274,6 @@ it("routes independent colours through the actual live Humanoid worker path with
   await expect.poll(() => tint(MOUSTACHE)).toEqual(expected(BLACK));
   expect(tint(BEARD)).toEqual(original.get(BEARD)?.colour);
   expectUnchangedSource();
-  expect(settled).toBe(4);
+  expect(settled - initialSettled).toBe(4);
   await screen.unmount();
 }, 120_000);
