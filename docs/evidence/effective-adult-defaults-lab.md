@@ -42,14 +42,15 @@ The post-render receipt measures the figure's actual projected `Box3` bounds;
 it fits the Canvas camera to the measured figure before reporting bounds. This
 is visibility evidence for the diagnostic stage, not a sculpt-quality verdict.
 
-The same flow passes on the render pool with silent headless Metal:
+The same flow passed on macOS with silent headless Metal. To reproduce it on
+a Mac with an Apple GPU and installed Chromium:
 
 ```text
-heavy-slot --remote-render --render-host <render-host> --context gate -- \
-  pnpm exec playwright test --project=adult-defaults-lab e2e/effective-adult-defaults.spec.ts
+HK_GPU=macos-hardware-metal PW_HEADLESS=1 pnpm exec playwright test --project=adult-defaults-lab e2e/effective-adult-defaults.spec.ts
 ```
 
-Receipt: `render-fd8bd9fb0b2d4b54b24c3f663df7cc33` (1/1, 6.6 s).
+Historical result: 1/1 passed in 6.6 s. Original routing receipts and artifacts
+are retained privately, not distributed with this document.
 
 ## Limits
 

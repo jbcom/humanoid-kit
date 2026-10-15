@@ -8,7 +8,6 @@
  * Root runs it manually after reviewing this branch:
  *
  *   HK_BODY_HAIR_RESPONSE_OUT="$HOME/.cache/hk-body-hair-response" \
- *     heavy-slot --priority --rule hardware --reason "Issue #21 body-hair visual gate" \
  *     pnpm exec playwright test e2e/sheets/body-hair-response.sheet.ts --project sheets
  *
  * Every page uses `openSilentGame`; it cannot change saved audio settings.

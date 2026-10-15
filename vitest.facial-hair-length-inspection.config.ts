@@ -2,8 +2,8 @@ import { mergeConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import base from "./vitest.config.ts";
 
-// `heavy-slot` forwards documented browser state only, so the review fixture
-// enables its explicit gate here instead of relying on a local shell variable.
+// The review fixture enables its explicit gate in this config so the browser
+// receives it without relying on shell environment propagation.
 export default mergeConfig(
   base,
   defineConfig({

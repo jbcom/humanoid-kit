@@ -27,8 +27,8 @@ docs/dist/
 .agent-state/session-state/
 .agent-state/
 .claude/
-# Artifacts the shared heavy-slot broker returns from remote renders. Adult
-# sheets among them are moved out to ~/.cache/hk-adult as soon as they return.
+# Local render artifacts are never public package inputs. Adult review
+# sheets among them are moved to a private cache after inspection.
 .heavy-slot/
 # The contact-sheet job the `sheets` Playwright project renders (e2e/sheets/).
 .sheets/

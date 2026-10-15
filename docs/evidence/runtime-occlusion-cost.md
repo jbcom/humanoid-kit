@@ -22,9 +22,9 @@ seven non-rest corners with the rest baseline, then projects to render
 vertices. It is not a cached full posed bake. Source hashing, output hashing,
 correctness assertions and asset loading stay outside the timed calls.
 
-The host was `_gitea_render@192.168.1.201`, reporting `MBJobsSlice1.local`,
-Apple M2 Max, Darwin arm64 and Node 26.11.1. The job was
-`render-3a373130a6df4565b5b433078b7a63c8`, exit 0. This shared-pool observation
+The runner used an Apple M2 Max, Darwin arm64 and Node 26.11.1; the command
+exited 0. Private routing and job identifiers are omitted from this public report;
+the exact originals are retained in private recovery storage. This shared-runner observation
 is not uncontended: one-minute load average was 9.66 before and 11.03 after on
 12 logical CPUs. Scheduling, JIT and allocation/GC effects are included.
 Process CPU is user plus system CPU from `process.cpuUsage()`; it can exceed
@@ -80,13 +80,14 @@ recommendation for every attachment set or pose.
 ## Reproduction and scope
 
 ```sh
-heavy-slot --remote-run --render-host 192.168.1.201 --out docs/evidence \
-  node scripts/research/runtime-occlusion-cost.ts \
+node scripts/research/runtime-occlusion-cost.ts \
   f8c43f33bed8ee535a87e0fe1d31eb9b24359443
 ```
 
-Pass the exact local source commit as the argument; remote snapshots omit Git
-metadata. The receipt includes script and source-buffer hashes, host details,
+Use Node 26 on macOS arm64 for a platform-matched comparison, with the repository
+source packs available. Pass the exact checked-out source commit as the argument.
+The original run used a source snapshot without Git metadata. The public receipt
+retains script and source-buffer hashes, platform details,
 load context, raw wall/user/system CPU samples and all assertions. A 180-second
 sample budget stops after a completed pair if the requested nine pairs become
 too costly; this run completed all nine. An earlier run failed receipt

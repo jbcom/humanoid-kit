@@ -40,31 +40,26 @@ is not directly comparable to the render Mac timings.
 ## Verification
 
 - Removing only the worker handler's post-yield `superseded()` call produced
-  RED: a completed `folds` response instead of the required `AbortError`
-  (remote job `render-3e8d9fcc7e9e4ace9c1db5704e7f1c58`). The source file was
-  then restored byte-for-byte.
+  RED: a completed `folds` response instead of the required `AbortError`. The source file was then restored byte-for-byte.
 - Forcing the collar normal map to remain enabled in every ablation produced
   RED in ordinary numeric mode: `pore-normal contribution: expected 0 to be
-  greater than 0` (remote job `render-19d00ece95ed4c2baa0ccbe1ef012545`). The
-  test was restored exactly before its final run.
+  greater than 0`. The test was restored exactly before its final run.
 - Capture mode passed with five actual Canvas screenshots, using the same main
-  camera as readback (remote job `render-2fa37e1494f44a988da495480e6e572f`).
-- The exactly restored collar numeric test passed in 9.463 s with no skips
-  (remote job `render-423a98a214554562a8a75f41447930f6`).
-- The final full worker file passed all 20 tests with no skips in 18.81 s
-  (remote job `render-de26207abdc94e5c959e9390b14bfd72`). Its lifecycle and
+  camera as readback.
+- The exactly restored collar numeric test passed in 9.463 s with no skips.
+- The final full worker file passed all 20 tests with no skips in 18.81 s. Its lifecycle and
   transport cases took 1.251 s and 0.849 s respectively without instrumentation.
   Biome and strict TypeScript also passed for the final source.
 - Focused instrumented worker assertions passed. Their command exit remained
   red because a single test file cannot satisfy whole-library coverage.
-  `heavy-slot` does not forward the caller's `VITEST_COVERAGE_SHARD` variable;
-  these runs are timing diagnostics, not complete coverage-gate evidence.
+  Those diagnostic runs did not receive the caller's `VITEST_COVERAGE_SHARD`
+  variable; they are timing diagnostics, not complete coverage-gate evidence.
   Canonical CI retains the existing explicit shard environment and merged
   coverage thresholds.
 
-The images and full phase logs are retained under `.heavy-slot/remote-artifacts/`
-for the listed jobs in the isolated checkout. Screenshots are diagnostic
-artifacts; numerical feature assertions remain the acceptance gate.
+The images, original routing receipts and full phase logs are retained privately;
+they are not distributed with this report. Screenshots are diagnostic artifacts;
+numerical feature assertions remain the acceptance gate.
 
 ## Recommendations
 
@@ -75,11 +70,12 @@ artifacts; numerical feature assertions remain the acceptance gate.
 For a fresh review capture, run:
 
 ```sh
-heavy-slot --render-host 192.168.1.201 pnpm exec vitest run \
+HK_GPU=macos-hardware-metal PW_HEADLESS=1 pnpm exec vitest run \
   --project browser tests/browser/collarSurfaceIsolation.test.tsx \
   --mode collar-capture
 ```
 
-The five PNGs are returned under the remote job's
+This command requires macOS with an Apple GPU and installed Chromium.
+The five PNGs are written under the test run's
 `test-results/collar-surface-isolation/` directory. Ordinary browser runs omit
 these diagnostic PNGs without omitting any test or assertion.

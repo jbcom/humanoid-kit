@@ -63,7 +63,7 @@ calls an R3F hook. It intentionally does
 **not** accept a gap as physical contact while the real clip/IK is absent.
 
 ```sh
-heavy-slot pnpm exec playwright test e2e/sheets/handshake.sheet.ts --project sheets
+pnpm exec playwright test e2e/sheets/handshake.sheet.ts --project sheets
 ```
 
 The command is silent through `openSilentGame`; root should use the headed
