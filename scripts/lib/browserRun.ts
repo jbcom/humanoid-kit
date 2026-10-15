@@ -11,13 +11,11 @@ export interface BrowserRun {
  * from the environment the run was started in. First match wins:
  *
  * 1. `HK_GPU` and `HK_HEADED=1`: a person's explicit override.
- * 2. heavy-slot's priority lane on the owner's Mac (`HEAVY_PRIORITY=1`) sets
- *    `HEAVY_BROWSER_GPU` and `HEAVY_BROWSER_HEADLESS` (`1` headless, `0` headed for
- *    hardware proof); `PW_HEADLESS=1` alone also means headless. The project opts in
- *    to the lane in package.json (`heavySlot.priorityLane`), promising exactly this.
- * 3. The render Macs (`heavy-slot --remote-render` sets `HEAVY_RENDER_HOST`) have a GPU
- *    but no window session: headless, through ANGLE Metal, about 20 times faster than
- *    SwiftShader.
+ * 2. A runner can supply `HEAVY_BROWSER_GPU` and `HEAVY_BROWSER_HEADLESS`
+ *    (`1` headless, `0` headed for hardware proof); `PW_HEADLESS=1` alone also
+ *    means headless. These runner overrides do not require a particular CLI.
+ * 3. A macOS runner with `HEAVY_RENDER_HOST` set defaults to headless ANGLE Metal
+ *    for its Apple GPU without requiring a window session.
  * 4. Other CI has no GPU worth trusting and no window: headless SwiftShader.
  * 5. Locally: a headed window on the native GPU, so what is tested is what people see.
  *

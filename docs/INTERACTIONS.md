@@ -406,7 +406,7 @@ is deliberately separate from the pure unit geometry checks.
    hand on the runtime's target (see "Hand contact constraint"). The lab
    supplies no arm pose, marker offset or target of its own.
 4. The review fixture is `e2e/sheets/handshake.sheet.ts`. A reviewer runs it
-   explicitly with `heavy-slot --remote-render pnpm exec playwright test
+   explicitly with `pnpm exec playwright test
    e2e/sheets/handshake.sheet.ts --project sheets -g <row>`; it is not part of
    ordinary browser testing. It fails before saving a cell unless the route is
    muted, both adult recipes draw their clothes, the animation package

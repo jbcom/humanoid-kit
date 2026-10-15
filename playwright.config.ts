@@ -6,9 +6,9 @@ import { browserRun } from "./scripts/lib/browserRun.ts";
  * build (vite preview) in headed Chromium through game-harness: native GPU
  * locally (Metal on macOS), so what is tested is what people see.
  *
- * Unattended runs have no window session and run headless: the render Macs on
- * their GPU through ANGLE Metal, other CI on SwiftShader; heavy-slot's priority
- * lane picks for itself (scripts/lib/browserRun.ts has the whole rule). A runner
+ * Unattended runners can select headless execution through PW_HEADLESS=1:
+ * macOS Apple GPUs support HK_GPU=macos-hardware-metal, while other CI defaults
+ * to SwiftShader (scripts/lib/browserRun.ts has the environment rules). A runner
  * exposing /dev/dri can set HK_GPU=linux-hardware-vulkan. HK_GPU and HK_HEADED=1
  * override.
  *

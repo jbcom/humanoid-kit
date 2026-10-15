@@ -1,11 +1,11 @@
 /**
  * The adults-only coverage battery: an honest inventory of what the kit can show
  * today, one test per row of the matrix, for the integrator to judge. Like the other
- * sheets it runs against the playground's dev server through the `sheets` project, so
- * on the agents' machines it goes to the render pool (the file goes first: `--project`
- * takes every name after it):
+ * sheets it runs against the playground's dev server through the `sheets` project.
+ * See CONTRIBUTING.md for Chromium/GPU requirements (the file goes first because
+ * `--project` takes every name after it):
  *
- *   heavy-slot pnpm exec playwright test e2e/sheets/coverage-battery.sheet.ts --project sheets [-g "01 "]
+ *   pnpm exec playwright test e2e/sheets/coverage-battery.sheet.ts --project sheets [-g "01 "]
  *
  * Rows, by test name:
  *   01 male genitals with pubic hair (density 0 / 1 / 2 and the default, flaccid and erect)
@@ -22,7 +22,7 @@
  * is ever drawn for an age the policy does not allow. The run records no trace, video
  * or failure screenshot.
  *
- * Sheets are written to the test output the render pool returns (and to
+ * Sheets are written to the test output (and to
  * `HK_COVERAGE_OUT` when a local run sets it); they are never committed or published.
  * Move them to `~/.cache/hk-coverage` as soon as they return.
  */

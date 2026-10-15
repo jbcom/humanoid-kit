@@ -1,11 +1,11 @@
 /**
- * Contact sheets for visual review, rendered by Playwright so the render pool
- * runs them like any browser job:
+ * Contact sheets for visual review, rendered by Playwright with installed
+ * Chromium and the GPU settings documented in CONTRIBUTING.md:
  *
- *   heavy-slot --remote-render pnpm exec playwright test --project sheets [-g <sheet>]
+ *   pnpm exec playwright test --project sheets [-g <sheet>]
  *
  * The job is one JSON file, `.sheets/job.json` (gitignored; `HK_SHEETS_JOB` names
- * another for a local run, the pool forwarding no environment):
+ * another job file when set in the local environment):
  *
  *   { "sheets": [{ "name": "groin-seated-below",
  *                  "query": "adult&pose=seated&cam=0,0.55,0.35,0,0.8,0.05&span=0.3",
@@ -17,7 +17,7 @@
  * createRecipe inputs or a repository path to a JSON file of one; an entry's `$pose`
  * key poses that figure (a `HumanoidPose`) and its `$signals` key sets its skin state.
  * Each sheet is one test, named by its sheet, so `-g` picks sheets; each writes
- * `<name>.png` to its test output (test-results/), which the pool returns. The page
+ * `<name>.png` to its test output (test-results/). The page
  * renders every recipe in turn and waits for each figure to be evaluated and drawn,
  * so a sheet never shows a stale or half-loaded figure. Where the shot reports notes
  * of what it drew (`window.hkShotNotes`), each figure's are written beside the sheet,

@@ -14,7 +14,7 @@ skin curvature, gap, no unwanted lengthening and per-figure displacement.
 The pack was regenerated successfully with:
 
 ```text
-heavy-slot pnpm pack:data <makehuman-data> <adult-sysassets>
+pnpm pack:data <makehuman-data> <adult-sysassets>
 ```
 
 The vaginal slit uses its own loop's length; the anal slit is 3 mm long. The
@@ -26,13 +26,12 @@ revised harmonic solver and all other interrupted lane edits are preserved.
 | --- | --- |
 | Typecheck | Pass after API transition |
 | Changed-file Biome checks | Pass |
-| Full unit suite on `.201` | 1,615 passed, two failed, one skipped; 166 files |
+| Full unit suite on a macOS runner | 1,615 passed, two failed, one skipped; 166 files |
 | Canal visibility within that suite | Six adult body variants passed from below and front-low |
-| Corrected placement/closure tests on `.201` | 15/15 passed, receipt `render-e95ad07b805f41da96118bd1524af21a` |
-| Fresh close-up on `.202`, retries disabled | 1/1 passed, receipt `render-62de0830e18c4b98be8799e3ab3138b0` |
+| Corrected placement/closure tests on a macOS runner | 15/15 passed |
+| Fresh close-up on a macOS runner, retries disabled | 1/1 passed |
 
-The full suite receipt is `render-12d60bfea9b8467d9d2c976c73475982`. Its
-two failures were:
+The full suite had two failures:
 
 - `adultReservoirs`: a placement comparison included the closure stencils
   added later by the packer. Placement still compares exactly; a separate
@@ -40,8 +39,7 @@ two failures were:
   The focused rerun passed.
 - `foundationSmoke`: f-slim seated squashed area was 83.8818878027986 cm²
   against a baseline of 83.84622203957953 cm² (plus 0.001 rounding slack).
-  The baseline and tolerances were not loosened. The diagnostic rerun,
-  `render-e78c6c99cf8e49ce9b6b6b11d2cc9eb6`, uses soft assertions and found
+  The baseline and tolerances were not loosened. The diagnostic rerun uses soft assertions and found
   13 regressed checks across nine posed rows. Failures remain failures.
 
 | Body and pose | Regressed checks |
@@ -56,7 +54,7 @@ two failures were:
 | m-heavy squat | Inverted triangles |
 | f-elder squat | Squashed area, folds |
 
-The first close-up job, `render-ee57499004844b1c958722961264a261`, was flaky:
+The first close-up job was flaky:
 its first attempt returned two Vite `504 Outdated Optimize Dep` responses
 before passing on retry. Its trace showed late discovery of
 `three-mesh-bvh` and `three/examples/jsm/environments/RoomEnvironment.js`,
@@ -72,9 +70,9 @@ and a clean render job do not establish the required surface quality. This
 lane must not land on integration until those seams and the no-worse-row
 regressions are resolved and the poses are freshly judged.
 
-Artifacts remain under this checkout's
-`.heavy-slot/remote-artifacts/<receipt>/`, including the complete phase logs,
-PNG sheets and the first-run trace. Every browser job used the silent harness;
+Complete phase logs, PNG sheets, original routing receipts and the first-run
+trace remain in private recovery storage; they are not public attachments.
+Every browser job used the silent harness;
 these were headless Metal review renders, not final headed gameplay proof.
 
 ## Concurrent work discovered

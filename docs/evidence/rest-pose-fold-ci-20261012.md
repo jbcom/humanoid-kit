@@ -21,7 +21,7 @@ existing adult fixture:
 
 ## Measurements
 
-Commands were run on the `.201` Mac with `heavy-slot --remote-test`; no
+Commands were run on a macOS runner with the underlying Vitest commands; no
 timeouts, coverage thresholds, assertions, or visual tolerances changed.
 
 | Witness | PR 24 baseline | REST-only candidate | Change |
@@ -30,15 +30,15 @@ timeouts, coverage thresholds, assertions, or visual tolerances changed.
 | `foundationLandmarks` adult-form invariant | 185.533 s | 1.828 s | -99.0% |
 | `phallus` pack target witness | 201.848 s | 198.351 s | -1.7% |
 
-Baseline remote artifact: `render-b07329c6fb074ba39dbb94bb459adbfa`.
-Candidate remote artifact: `render-b68d70e2f90841fc8a956bb26ab547c6`.
+Original baseline and candidate routing receipts and artifacts are retained
+privately, not distributed with this report.
 The candidate's focused test selection passed all 31 behavior tests, but its
 command exits 1 because a two-file selection cannot satisfy the repository's
 global 90/90/90/85 coverage thresholds. That exit is expected for this
 measurement and is not a green full coverage gate.
 
-The specific REST regression was rerun separately on `.201` as
-`render-2ab17547d59f46cbb1ee62d3146427d6`: 6/6 tests passed in 18.76 s.
+The specific REST regression was rerun separately on macOS:
+6/6 tests passed in 18.76 s.
 
 ## Remaining CI work
 

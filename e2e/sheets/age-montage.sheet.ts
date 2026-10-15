@@ -1,10 +1,10 @@
 /**
  * The age-progression montage: what the kit does BY DEFAULT as a figure ages, for the
  * integrator to judge. Like the other sheets it runs against the playground's dev
- * server through the `sheets` project, so on the agents' machines it goes to the
- * render pool (the file goes first: `--project` takes every name after it):
+ * server through the `sheets` project (see CONTRIBUTING.md for Chromium/GPU
+ * requirements; the file goes first because `--project` takes every name after it):
  *
- *   heavy-slot pnpm exec playwright test e2e/sheets/age-montage.sheet.ts --project sheets [-g adult|under-18]
+ *   pnpm exec playwright test e2e/sheets/age-montage.sheet.ts --project sheets [-g adult|under-18]
  *
  * The recipe is the default one with only the kit's own brown hair colour
  * (`HAIR_COLOURS.brown`) and brown iris (`IRIS_PALETTE`) set, one short hair style and
@@ -28,7 +28,7 @@
  * the run records no trace, video or failure screenshot, so an uncovered figure under
  * 18 is never on screen or on disk.
  *
- * Sheets are written to the test output the render pool returns (and to `HK_MONTAGE_OUT`
+ * Sheets are written to the test output (and to `HK_MONTAGE_OUT`
  * when a local run sets it); they are never committed or published. Move them to
  * `~/.cache/hk-montage` as soon as they return. Per sex
  * and group: `<sex>-<group>.png` (front over three-quarter, whole figure, one camera
