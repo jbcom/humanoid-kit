@@ -29,6 +29,21 @@ lifting its straight fingers 15° from the local tangent plane; the lift keeps
 the source fingers out of a curved surface without moving the contact centre or
 changing the measured gap.
 
+Broad palms first try the nominal goal: the site plus the requested standoff
+(1 mm by default). If every closing heading collides, placement may use the
+caller's existing positional tolerance (4 mm by default) along the measured
+site normal. Clearance depths propose up to six outward corrections for an
+existing heading; each correction consumes that tolerance and is solved and
+tested again on the final indexed skin. A tilted hand frame does not change
+the direction of this positional correction or the collision rays.
+Acceptance still requires the full hand to pass the unchanged 2 mm penetration
+limit, the original goal error and orientation bounds, and the default contact
+to stay within 5 mm of the site. `report.gap` always measures the original goal;
+the target is never relabelled to make an outward correction look exact.
+If no tested correction fits those bounds, the nominal diagnostic pose and
+`body-collision` result remain; the bounded correction budget does not establish
+that the whole admissible contact region is geometrically unreachable.
+
 ## Slice 1 as built
 
 - **Approach orientation.** The finger is not posed along the reverse of the

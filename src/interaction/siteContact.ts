@@ -724,9 +724,10 @@ function solveRounds(
       n,
       [at.normal[0], at.normal[1], at.normal[2]],
       goal,
+      broadPatch ? tolerance : 0,
       pole,
       bones,
-      (seed, finger, anchor, out) =>
+      (seed, finger, anchor, out, target) =>
         solveArmTarget({
           rest,
           rotations: seed,
@@ -744,7 +745,7 @@ function solveRounds(
           },
           // A point contact has always closed by position after its approach seed.
           // Broad palms retain their measured face through the final DLS solve.
-          target: broadPatch ? { position: goal, orientation: finger } : { position: goal },
+          target: broadPatch ? { position: target, orientation: finger } : { position: target },
           iterations,
           tolerance,
           out,
@@ -968,6 +969,8 @@ interface BodyProbe {
   poseAfterDls(rotations: BoneRotations): void;
   /** The refitted final-arm skin, measured by the foundation's two-ray inside test. */
   sunkAfterDls(p: V3, outward: V3): number;
+  /** Local outward correction estimate only; never an acceptance predicate. */
+  outwardStepAfterDls(p: V3, outward: V3, depth: number): number;
   dispose(): void;
 }
 
@@ -1075,6 +1078,13 @@ function bodyProbe(
       final.bvh.refit();
     },
     sunkAfterDls: (p, outward) => finalSunk(p, outward),
+    outwardStepAfterDls(p, outward, depth) {
+      const nearest = final.closest(p);
+      const projection = nearest && dot(outward, nearest.normal);
+      return projection && projection > 0
+        ? (depth - PENETRATION_LIMIT) / projection
+        : Number.POSITIVE_INFINITY;
+    },
     dispose() {
       source.dispose();
       final.dispose();
@@ -1111,6 +1121,7 @@ type CloseHand = (
   finger: Quat,
   anchor: V3,
   out: BoneRotations,
+  target: V3,
 ) => ArmTargetResult;
 
 /** Scores a hand-skin domain after DLS in the actual posed wrist frame. */
@@ -1122,18 +1133,29 @@ function postDlsCollision(
   outward: V3,
   body: BodyProbe,
   bones: PosedBonesScratch,
-): number {
+  proposeStep: boolean,
+): { collision: number; step: number } {
   const posed = posedBonesInto(rest, rotations, bones);
   body.poseAfterDls(rotations);
   const head = pointAt(posed.heads, wrist);
   const world = quatAt(posed.world, wrist);
   let collision = 0;
+  let step = 0;
   for (let i = 0; i < skin.length; i += 3) {
     const p = rotate(world, skin[i] as number, skin[i + 1] as number, skin[i + 2] as number);
-    collision += body.sunkAfterDls([head[0] + p[0], head[1] + p[1], head[2] + p[2]], outward);
+    const point: V3 = [head[0] + p[0], head[1] + p[1], head[2] + p[2]];
+    const depth = body.sunkAfterDls(point, outward);
+    collision += depth;
+    if (proposeStep && depth > 0)
+      step = Math.max(step, body.outwardStepAfterDls(point, outward, depth));
   }
-  return collision;
+  return { collision, step };
 }
+
+/** Bounded local residual corrections, not an expansion of the contact region. */
+const CLEARANCE_CORRECTIONS = 6;
+/** One micrometre outward numerical separation consumes the caller's tolerance. */
+const CLEARANCE_SEPARATION = 0.000001;
 
 /**
  * The broad-contact point is the volar primary-metacarpal support furthest
@@ -1187,6 +1209,7 @@ function placeHand(
   n: V3,
   siteNormal: V3,
   goal: V3,
+  residual: number,
   pole: ArmPole,
   bones: PosedBonesScratch,
   close: CloseHand,
@@ -1252,11 +1275,13 @@ function placeHand(
           CLEARANCE_WEIGHT *
           body.sunk([at[0] + p[0], at[1] + p[1], at[2] + p[2]], held.clearance[i / 3] as number);
       }
-      const result = close(candidate, finger, anchor, closed);
+      const result = close(candidate, finger, anchor, closed, goal);
       candidates.push({
         finger,
         anchor,
         vertex,
+        // Collision rays and clearance-step projections share the measured
+        // site normal, independently of this hand heading or pitch.
         outward: siteNormal,
         rotations: Float32Array.from(closed),
         result,
@@ -1269,14 +1294,9 @@ function placeHand(
       a.score - b.score,
   );
   let fallback: PlacedHand | null = null;
-  for (const candidate of candidates) {
-    // An orientation/position miss is never an acceptable contact, so it cannot
-    // win by being collision-free. The exact collision query is reserved for
-    // contact-closing headings, and stops at the first safe one in the stable
-    // heading order; if none is safe, every closing heading is measured before
-    // returning the least-penetrating diagnostic pose.
-    if (candidate.result.status !== "reached") continue;
-    const sampledCollision = postDlsCollision(
+  const blocked: { candidate: (typeof candidates)[number]; step: number }[] = [];
+  const measure = (candidate: (typeof candidates)[number]) => {
+    const sampled = postDlsCollision(
       rest,
       candidate.rotations,
       wrist,
@@ -1284,21 +1304,31 @@ function placeHand(
       candidate.outward,
       body,
       bones,
+      residual > 0,
     );
+    return sampled.collision === 0
+      ? postDlsCollision(
+          rest,
+          candidate.rotations,
+          wrist,
+          held.fullSkin,
+          candidate.outward,
+          body,
+          bones,
+          residual > 0,
+        )
+      : sampled;
+  };
+  for (const candidate of candidates) {
+    // An orientation/position miss is never an acceptable contact, so it cannot
+    // win by being collision-free. The exact collision query is reserved for
+    // contact-closing headings, and stops at the first safe one in the stable
+    // heading order; if none is safe, every closing heading is measured before
+    // returning the least-penetrating diagnostic pose.
+    if (candidate.result.status !== "reached") continue;
     // The stride sample cheaply rejects almost every bad heading. A candidate it
     // clears is accepted only after the same indexed test covers every hand vertex.
-    const collision =
-      sampledCollision === 0
-        ? postDlsCollision(
-            rest,
-            candidate.rotations,
-            wrist,
-            held.fullSkin,
-            candidate.outward,
-            body,
-            bones,
-          )
-        : sampledCollision;
+    const { collision, step } = measure(candidate);
 
     const placed: PlacedHand = { ...candidate, collision };
     if (collision === 0) {
@@ -1306,6 +1336,43 @@ function placeHand(
       return placed;
     }
     if (!fallback || collision < fallback.collision) fallback = placed;
+    blocked.push({ candidate, step });
+  }
+  // Exact nominal contacts retain first choice. Only a broad palm with no safe
+  // nominal heading may use its already-declared positional tolerance to clear
+  // the body. Local tangent estimates propose steps; every new pose is closed,
+  // refitted and tested against the original target and indexed skin again.
+  for (const { candidate, step } of blocked) {
+    let offset = 0;
+    let correction = step;
+    let seed = candidate.rotations;
+    for (let attempt = 0; attempt < CLEARANCE_CORRECTIONS; attempt++) {
+      offset += correction + CLEARANCE_SEPARATION;
+      if (!(offset < residual)) break;
+      const target: V3 = [
+        goal[0] + offset * siteNormal[0],
+        goal[1] + offset * siteNormal[1],
+        goal[2] + offset * siteNormal[2],
+      ];
+      const rotations = new Float32Array(shaped.length);
+      const result = close(seed, candidate.finger, candidate.anchor, rotations, target);
+      if (result.status !== "reached") break;
+      const pose = posedBonesInto(rest, rotations, bones);
+      const head = pointAt(pose.heads, wrist);
+      const anchor = rotate(quatAt(pose.world, wrist), ...candidate.anchor);
+      if (
+        distance([head[0] + anchor[0], head[1] + anchor[1], head[2] + anchor[2]], goal) > residual
+      )
+        break;
+      const moved = { ...candidate, rotations, result };
+      const measured = measure(moved);
+      if (measured.collision === 0) {
+        out.set(rotations);
+        return { ...moved, collision: 0 };
+      }
+      correction = measured.step;
+      seed = rotations;
+    }
   }
   if (fallback) {
     out.set(fallback.rotations);

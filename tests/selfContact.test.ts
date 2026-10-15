@@ -317,6 +317,52 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
       else expect(inside, "strict full-hand collision remains red").toBeGreaterThan(0);
     });
 
+  it("uses only allowed goal residual to clear every rendered flat-chest hand vertex", () => {
+    const figure = figureOf(FLAT_CHEST);
+    for (const tolerance of [0.004, 0.0001]) {
+      const out = new Float32Array(BONES * 4);
+      const report = solveSiteContact({
+        figure,
+        source: standing,
+        effector: "palm.R",
+        site: "nipple.R",
+        shape: "flat",
+        tolerance,
+        out,
+      });
+      const posed = surfacePoser(model, FLAT_CHEST)(out);
+      const site = landmarks(model, posed)["nipple.R"];
+      const support = report.contact?.position;
+      if (!support) throw new Error("missing source support");
+      const nominalGoal = site.position.map((v, k) => v + 0.001 * (site.normal[k] as number));
+      const inside = handInside(posed, "R", site.normal);
+      expect(vertexParts(posed).filter((part) => part === "hand.R")).toHaveLength(6837);
+      expect(report.gap, "report retains the original 1mm goal").toBeCloseTo(
+        dist(support, nominalGoal),
+        6,
+      );
+      expect(report.gap, "never move outside the caller's goal tolerance").toBeLessThanOrEqual(
+        tolerance,
+      );
+      expect(dist(support, site.position), "original skin contact bound").toBeLessThan(GAP);
+      expect(report.orientationError, "original arm orientation bound").toBeLessThanOrEqual(0.035);
+      if (tolerance === 0.004) {
+        expect(
+          inside,
+          "all 6837 actual rendered hand vertices must clear the unchanged 2mm limit",
+        ).toBe(0);
+        expect(report.status, report.reason).toBe("reached");
+        expect(report.collision).toBe(0);
+      } else {
+        expect(report.status, "insufficient positional allowance must fail closed").toBe(
+          "unreached",
+        );
+        expect(report.reason).toBe("body-collision");
+        expect(inside).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("sees a finger pushed into the face: the penetration check is not vacuous", () => {
     const { inside } = touch(
       BODIES["slim woman"] as Recipe,
