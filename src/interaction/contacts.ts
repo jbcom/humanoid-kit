@@ -1,8 +1,8 @@
 /**
  * The hand-to-hand contact solve (docs/INTERACTIONS.md, "Alignment on bodies of
  * any size"): where two figures' hands meet, fitted to both bodies' measures.
- * Pure functions of two presences, framework-free, and allocation-free: each
- * writes into the `out` it is given.
+ * Framework-free numeric helpers reuse caller outputs and module scratch
+ * vectors. Geometry publication and runtime caching have separate costs.
  */
 import type { FigureMeasures, FigurePresence, HandWorkspace, Vec3 } from "../presence/presence.ts";
 
@@ -53,6 +53,7 @@ export function armStretch(presence: FigurePresence, point: Vec3): number {
   return reach > 0 ? Math.hypot(dx, dy, dz) / reach : Number.POSITIVE_INFINITY;
 }
 
+/** Envelope membership only: `fitted` does not certify joint limits or collision clearance. */
 export type GripWorkspaceStatus = "fitted" | "uncertified" | "outside-workspace";
 
 /** Minimum bend retained by contact planning; the solver still measures its final pose. */

@@ -235,6 +235,7 @@ interface ContactInfo {
   sideA: "L" | "R";
   sideB: "L" | "R";
   slotClock: number;
+  slotRevision: number | undefined;
   slotA: SlotPlacement;
   slotB: SlotPlacement;
   reference: Vec3;
@@ -483,7 +484,11 @@ export function createInteractions(
     const br = i.definition.roles.find((role) => role.name === contact.b);
     if (!a?.handWorkspaces || !b?.handWorkspaces || !ar?.slot || !br?.slot)
       return requestedSlotInto(i, r, out);
-    if (contact.slotClock !== clock) {
+    if (
+      contact.slotClock !== clock ||
+      presence.revision === undefined ||
+      contact.slotRevision !== presence.revision
+    ) {
       if (!requestedSlotInto(i, ar, contact.slotA) || !requestedSlotInto(i, br, contact.slotB))
         return null;
       contact.reference[0] = refFrame.x;
@@ -509,6 +514,7 @@ export function createInteractions(
           contact.reference,
         );
       contact.slotClock = clock;
+      contact.slotRevision = presence.revision;
     }
     const fitted = contact.a === r.name ? contact.slotA : contact.slotB;
     for (let k = 0; k < 3; k++) {
@@ -779,6 +785,7 @@ export function createInteractions(
             sideA: an.endsWith(".L") ? "L" : "R",
             sideB: bn.endsWith(".L") ? "L" : "R",
             slotClock: NaN,
+            slotRevision: undefined,
             slotA: { position: [0, 0, 0], facing: [0, 0, 1] },
             slotB: { position: [0, 0, 0], facing: [0, 0, 1] },
             reference: [0, 0, 0],

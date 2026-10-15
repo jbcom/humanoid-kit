@@ -227,6 +227,7 @@ The runtime's contact planner consumes only the published numbers. Custom
 presences and rest-only publishers can omit this metadata; their contact plans
 are explicitly `uncertified`, rather than being inferred from the average
 `measures.reach`. `PresenceRegistry.revision` changes on publication/removal so
-contact targets follow a new placement even before the next registry tick.
+contact targets and fitted slots follow new placement or geometry even before
+the next registry tick.
 See [measured hand workspaces](INTERACTIONS.md#measured-hand-workspaces) for the
 planning envelope and its acceptance boundaries.

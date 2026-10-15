@@ -543,7 +543,9 @@ No fitting moves a figure: the consumer still walks it to `slot(role)`.
 `outside-workspace`. Missing geometry retains the legacy target and reports
 `uncertified`; an empty envelope retains the requested target and reports
 `outside-workspace`. Both roles read the same cached plan for the same presence
-publication. Publishing movement invalidates the target even between ticks.
+publication. Publishing movement or geometry invalidates both slots and the
+contact target even between ticks. Registries without a publication revision
+recompute on each request.
 These are planning-envelope results. They do not certify anatomical joint
 limits, the elbow's final side, body clearance, finger contact, or skin
 nonpenetration. The unchanged arm constraint still measures its actual final

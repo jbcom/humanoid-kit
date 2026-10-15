@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fitGripMeeting, fitGripSlots, gripWorkspaceRadius } from "../src/interaction/contacts.ts";
+import type { InteractionDefinition } from "../src/interaction/definition.ts";
+import { createInteractions, type SlotPlacement } from "../src/interaction/runtime.ts";
 import { clonePresence, placePresence } from "../src/presence/fromEvaluation.ts";
 import {
   createPresenceRegistry,
@@ -86,6 +88,67 @@ describe("measured hand workspace planning", () => {
     expect(sb.position[0]).toBeLessThan(0.6);
     expect([a, b]).toEqual(before);
   });
+  it.each([true, false])(
+    "replans both slots after same-tick geometry publication (revision available: %s)",
+    (revisioned) => {
+      const registry = createPresenceRegistry();
+      const published = revisioned
+        ? registry
+        : new Proxy(registry, {
+            get: (target, key, receiver) =>
+              key === "revision" ? undefined : Reflect.get(target, key, receiver),
+          });
+      const runtime = createInteractions(published, { seed: 1, clipLength: () => 1 });
+      const definition: InteractionDefinition = {
+        id: "measured-pair",
+        tags: [],
+        audience: "all",
+        roles: ["a", "b"].map((name) => ({
+          name,
+          takes: "figure",
+          uses: ["arm.R", "hand.R"],
+          slot: {
+            offset: [0, 0, { of: name, measure: "reach", times: -0.7 }],
+            yaw: 0,
+            tolerance: 0.05,
+          },
+          track: { act: { clip: "shake" } },
+        })),
+        reference: { between: ["a", "b"] },
+        contacts: [{ name: "grip", a: "a:hand.R", b: "b:hand.R", during: ["act"] }],
+      };
+      runtime.define([definition]);
+      registry.set(figure("a", -3));
+      registry.set(figure("b", 3));
+      const interaction = runtime.propose(definition.id, { a: "a", b: "b" });
+      registry.tick(0);
+      registry.tick(0.1);
+      expect(interaction.phase).toBe("approach");
+      const before = interaction.slot("a") as SlotPlacement;
+      const smaller = figure("a", -3);
+      const hand = smaller.handWorkspaces?.R as HandWorkspace;
+      hand.upperLength = 0.2;
+      hand.forearmLength = 0.16;
+      registry.set(smaller);
+      // No tick: a new publication must replace the shared plan immediately,
+      // even when the opposite role is the first reader of that publication.
+      const afterB = interaction.slot("b") as SlotPlacement;
+      const afterA = interaction.slot("a") as SlotPlacement;
+      expect(Math.abs(afterA.position[0])).toBeLessThan(Math.abs(before.position[0]));
+      const expectedA: SlotPlacement = { position: [-0.7 * 0.65, 0, 0], facing: [1, 0, 0] };
+      const expectedB: SlotPlacement = { position: [0.7 * 0.65, 0, 0], facing: [-1, 0, 0] };
+      expect(fitGripSlots(smaller, figure("b", 3), "R", "R", expectedA, expectedB, [0, 0, 0])).toBe(
+        true,
+      );
+      for (let k = 0; k < 3; k++) {
+        expect(afterA.position[k]).toBeCloseTo(expectedA.position[k] as number, 12);
+        expect(afterB.position[k]).toBeCloseTo(expectedB.position[k] as number, 12);
+      }
+      expect(interaction.slot("a")).toEqual(afterA);
+      expect(interaction.slot("b")).toEqual(afterB);
+      runtime.detach();
+    },
+  );
   it("invalidates publication caches and removes geometry omitted by a later publication", () => {
     const registry = createPresenceRegistry(),
       p = figure("a", 0);
