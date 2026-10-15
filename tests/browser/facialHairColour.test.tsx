@@ -12,6 +12,7 @@ import {
 import { afterAll, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import type { Evaluation } from "../../src/model/humanoidModel.ts";
 import {
   Humanoid,
   HumanoidProvider,
@@ -53,9 +54,10 @@ const independent = createRecipe({
   },
 });
 let group: Group | null = null;
-let changeRecipe: (recipe: Recipe) => void;
 let changeYaw: (yaw: number) => void;
 let settled = 0;
+let evaluated: Evaluation | null = null;
+let settledEvaluation: Evaluation | null = null;
 let portraitCentre: Vector3 | null = null;
 function Aim({ yaw }: { yaw: number }) {
   const camera = useThree((state) => state.camera) as PerspectiveCamera;
@@ -68,10 +70,8 @@ function Aim({ yaw }: { yaw: number }) {
   });
   return null;
 }
-function Fixture() {
-  const [recipe, setRecipe] = useState(baseline);
+function Fixture({ recipe }: { recipe: Recipe }) {
   const [yaw, setYaw] = useState(0);
-  changeRecipe = setRecipe;
   changeYaw = setYaw;
   return (
     <Canvas
@@ -88,7 +88,11 @@ function Fixture() {
           group = value;
         }}
         recipe={recipe}
-        onSettled={() => {
+        onEvaluated={(evaluation) => {
+          evaluated = evaluation;
+        }}
+        onSettled={(evaluation) => {
+          settledEvaluation = evaluation;
           settled++;
         }}
       />
@@ -122,10 +126,11 @@ it("routes independent colours through the actual live Humanoid worker path with
   await client.ready;
   const screen = await render(
     <HumanoidProvider client={client}>
-      <Fixture />
+      <Fixture recipe={baseline} />
     </HumanoidProvider>,
   );
   await expect.poll(() => settled, { timeout: 60_000 }).toBeGreaterThan(0);
+  expect(settledEvaluation).toBe(evaluated);
   await expect.poll(() => tint(BEARD)).toEqual(expected(BLACK));
   const portraitBounds = new Box3();
   for (const id of ["short02", BEARD, MOUSTACHE]) {
@@ -149,32 +154,62 @@ it("routes independent colours through the actual live Humanoid worker path with
       },
     ]),
   );
-  const before = settled;
-  changeRecipe(independent);
-  await expect.poll(() => settled, { timeout: 60_000 }).toBeGreaterThan(before);
+  async function updateRecipe(phase: string, recipe: Recipe) {
+    const before = settled;
+    const previousEvaluation = evaluated;
+    const requestStart = requests.length;
+    // rerender flushes React's update with act before observing the worker or material.
+    // Each colour assertion must observe this recipe's completed evaluation.
+    try {
+      await screen.rerender(
+        <HumanoidProvider client={client}>
+          <Fixture recipe={recipe} />
+        </HumanoidProvider>,
+      );
+      await expect.poll(() => settled, { timeout: 60_000 }).toBeGreaterThan(before);
+      expect(evaluated).not.toBe(previousEvaluation);
+      expect(settledEvaluation).toBe(evaluated);
+      const updates = requests.slice(requestStart).filter((request) => request.type === "evaluate");
+      expect(updates).toHaveLength(1);
+      expect(updates[0]?.recipe).toEqual(recipe);
+    } finally {
+      console.info("facial-colour transition", {
+        phase,
+        requestRange: [requestStart, requests.length],
+        evaluateRequests: requests
+          .slice(requestStart)
+          .filter((request) => request.type === "evaluate"),
+        settlements: [before, settled],
+        newEvaluation: evaluated !== previousEvaluation,
+        exactSettlement: settledEvaluation === evaluated,
+        beardTint: tint(BEARD),
+        moustacheTint: tint(MOUSTACHE),
+        resourcesUnchanged: ids.every((id) => {
+          const old = original.get(id);
+          return mesh(id).geometry === old?.geometry && mesh(id).material === old?.material;
+        }),
+      });
+    }
+  }
+  function expectUnchangedSource() {
+    for (const id of ids) {
+      const old = original.get(id);
+      if (!old) throw new Error(`Missing original facial colour geometry for ${id}`);
+      expect(mesh(id).geometry).toBe(old.geometry);
+      expect(mesh(id).material).toBe(old.material);
+      expectSameArray(mesh(id).geometry.index?.array ?? [], old.index, {
+        what: `${id} source indices after colour change`,
+      });
+      expectSameArray(mesh(id).geometry.getAttribute("uv").array, old.uvs, {
+        what: `${id} source UVs after colour change`,
+      });
+      if (id !== BEARD && id !== MOUSTACHE) expect(tint(id)).toEqual(old.colour);
+    }
+  }
+  await updateRecipe("independent white/red", independent);
   await expect.poll(() => tint(BEARD)).toEqual(expected(HAIR_COLOURS.white as HairColour));
   await expect.poll(() => tint(MOUSTACHE)).toEqual(expected(HAIR_COLOURS.red as HairColour));
-  expect(
-    requests.some(
-      (request) =>
-        request.type === "evaluate" &&
-        JSON.stringify(request.recipe.facialHairColour) ===
-          JSON.stringify(independent.facialHairColour),
-    ),
-  ).toBe(true);
-  for (const id of ids) {
-    const old = original.get(id);
-    if (!old) throw new Error(`Missing original facial colour geometry for ${id}`);
-    expect(mesh(id).geometry).toBe(old?.geometry);
-    expect(mesh(id).material).toBe(old?.material);
-    expectSameArray(mesh(id).geometry.index?.array ?? [], old.index, {
-      what: `${id} source indices after colour change`,
-    });
-    expectSameArray(mesh(id).geometry.getAttribute("uv").array, old.uvs, {
-      what: `${id} source UVs after colour change`,
-    });
-    if (id !== BEARD && id !== MOUSTACHE) expect(tint(id)).toEqual(old?.colour);
-  }
+  expectUnchangedSource();
   if (CAPTURE_PNG)
     for (const [view, yaw] of [
       ["front", 0],
@@ -187,7 +222,8 @@ it("routes independent colours through the actual live Humanoid worker path with
       );
       await page.screenshot({ path: `../../test-results/facial-colour-live/${view}.png` });
     }
-  changeRecipe(
+  await updateRecipe(
+    "restore black beard",
     createRecipe({
       ...independent,
       facialHairColour: { ...independent.facialHairColour, [BEARD]: BLACK },
@@ -195,8 +231,11 @@ it("routes independent colours through the actual live Humanoid worker path with
   );
   await expect.poll(() => tint(BEARD)).toEqual(expected(BLACK));
   expect(tint(MOUSTACHE)).toEqual(expected(HAIR_COLOURS.red as HairColour));
-  changeRecipe(baseline);
+  expectUnchangedSource();
+  await updateRecipe("restore baseline", baseline);
   await expect.poll(() => tint(MOUSTACHE)).toEqual(expected(BLACK));
   expect(tint(BEARD)).toEqual(original.get(BEARD)?.colour);
+  expectUnchangedSource();
+  expect(settled).toBe(4);
   await screen.unmount();
 }, 120_000);
