@@ -74,6 +74,8 @@ export * from "./model/rigidFit.ts";
 export * from "./model/skinQuality.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/fromEvaluation.ts";
+export type { HandWorkspaceGeometry } from "./presence/handWorkspace.ts";
+export * from "./presence/posed.ts";
 export * from "./presence/presence.ts";
 export * from "./random.ts";
 export * from "./recipe/agePolicy.ts";

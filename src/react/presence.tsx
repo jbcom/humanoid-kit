@@ -26,6 +26,7 @@ import {
   placePresence,
   presenceFromEvaluation,
 } from "../presence/fromEvaluation.ts";
+import type { HandWorkspaceGeometry } from "../presence/handWorkspace.ts";
 import { type PosedRig, presenceFromPose } from "../presence/posed.ts";
 import {
   createPresenceRegistry,
@@ -125,6 +126,7 @@ export interface PresenceSource {
   recipe: Recipe;
   joints: PresenceJoints;
   pose?: { rig: PosedRig; rotations: BoneRotations } | undefined;
+  hands?: HandWorkspaceGeometry | undefined;
 }
 
 const worldPosition = new Vector3();
@@ -179,6 +181,7 @@ export function usePublishPresence(
               rig: s.pose.rig,
               rotations: s.pose.rotations,
               placement: at,
+              ...(s.hands && { hands: s.hands }),
             })
           : presenceFromEvaluation({
               evaluation: s.evaluation,

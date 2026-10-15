@@ -210,3 +210,24 @@ bent arm measures what a straight one does.
   seen, which is millimetres, not the limb-scale error of the old rest bounds.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.
+
+### Optional measured hand geometry
+
+`FigurePresence.handWorkspaces` carries per-side numeric contact geometry from
+`presenceFromPose({ ..., hands: { anchors, skinIndex, skinWeight } })`. Use the
+anchors and skin weights of the same evaluated surface, including evaluated
+skin overrides. The shoulder socket is in world space; upper-arm/forearm spans
+and the wrist-to-grip offset in the grip frame follow that evaluated body.
+`placePresence` and `clonePresence` preserve these fields without sharing
+mutable coordinate arrays. Republishing a figure without the optional data
+removes its previous workspace.
+
+The adapter caches repeated evaluation, rig, geometry and source-pose reads.
+The runtime's contact planner consumes only the published numbers. Custom
+presences and rest-only publishers can omit this metadata; their contact plans
+are explicitly `uncertified`, rather than being inferred from the average
+`measures.reach`. `PresenceRegistry.revision` changes on publication/removal so
+contact targets and fitted slots follow new placement or geometry even before
+the next registry tick.
+See [measured hand workspaces](INTERACTIONS.md#measured-hand-workspaces) for the
+planning envelope and its acceptance boundaries.
