@@ -13,6 +13,7 @@ import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts"
 import { sampleClip } from "../src/animation/clip.ts";
 import { loadAnimationLibrary } from "../src/animation/library.ts";
 import { type FrameOut, frameOut, landmarkAnchors } from "../src/foundation/landmarks.ts";
+import { fitGripMeeting, gripMeeting, gripWorkspaceRadius } from "../src/interaction/contacts.ts";
 import type { InteractionDefinition } from "../src/interaction/definition.ts";
 import {
   createHandContact,
@@ -24,6 +25,7 @@ import { createInteractions, type Interaction } from "../src/interaction/runtime
 import type { Evaluation } from "../src/model/humanoidModel.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { placePresence, presenceJoints } from "../src/presence/fromEvaluation.ts";
+import { measuredHandWorkspaces } from "../src/presence/handWorkspace.ts";
 import {
   groundOffsetOf,
   type PosedRig,
@@ -40,6 +42,7 @@ import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
 import { armChain } from "../src/rig/armTarget.ts";
 import { skinPose } from "../src/rig/dual.ts";
 import { posedBones, type RestBones, restBones, rigData } from "../src/rig/pose.ts";
+import { mul, type Quat } from "../src/rig/quat.ts";
 import { poseShare, skinDualShare } from "../src/rig/skinShare.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -130,6 +133,11 @@ function body(id: string, macros: Recipe["macros"] extends infer M ? Partial<M> 
     rig,
     rotations: idle,
     placement: { id, position: [0, 0, 0], facing: [0, 0, 1] },
+    hands: {
+      anchors,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+    },
   });
   const lift = groundOffsetOf(posedControl(rig, evaluation, idle), rig.skin.bodyVertices);
   const world = new Group();
@@ -378,6 +386,81 @@ describe("hand contact constraint", { timeout: 600_000 }, () => {
         expect(Math.abs(mb.shoulderHeight - p.b.posed.measures.shoulderHeight)).toBeLessThan(0.01);
       });
 
+  it("plans against measured palms and bend reserve, not the old scalar reach target", () => {
+    const a = body("a", PAIRS[0]?.a ?? {}),
+      b = body("b", PAIRS[0]?.b ?? {});
+    const legacyA = placePresence(a.posed, {
+      id: "a",
+      position: [-0.7 * a.posed.measures.reach, 0, 0],
+      facing: [1, 0, 0],
+    });
+    const legacyB = placePresence(b.posed, {
+      id: "b",
+      position: [0.7 * b.posed.measures.reach, 0, 0],
+      facing: [-1, 0, 0],
+    });
+    const oldTarget = gripMeeting(legacyA, legacyB, [0, 0, 0]);
+    const oldWorkspace = legacyA.handWorkspaces?.R;
+    if (!oldWorkspace) throw new Error("no measured hand workspace");
+    expect(dist(oldWorkspace.shoulder, oldTarget)).toBeGreaterThan(
+      gripWorkspaceRadius(oldWorkspace),
+    );
+    expect(fitGripMeeting(legacyA, legacyB, "R", "R", [0, 0, 0])).toBe("outside-workspace");
+    const p = pair(handshake("R"), a, b);
+    p.tick(0.4);
+    const target = p.interaction.contactTarget("grip", "responder");
+    if (!target) throw new Error("no planned grip");
+    expect(p.interaction.contactWorkspaceStatus?.("grip", "initiator")).toBe("fitted");
+    expect(p.interaction.contactTarget("grip", "initiator")).toEqual(target);
+    for (const who of [a, b]) {
+      const workspace = p.registry.get(who.id)?.handWorkspaces?.R;
+      if (!workspace) throw new Error("workspace was lost during placement");
+      expect(dist(workspace.shoulder, target)).toBeLessThanOrEqual(
+        gripWorkspaceRadius(workspace) + 1e-8,
+      );
+    }
+    const pa = p.registry.get(a.id),
+      pb = p.registry.get(b.id);
+    if (!pa || !pb) throw new Error("pair left presence");
+    const scratch: Vec3 = [0, 0, 0];
+    let clock = performance.now();
+    for (let i = 0; i < 10000; i++) gripMeeting(pa, pb, scratch);
+    const scalarMilliseconds = performance.now() - clock;
+    clock = performance.now();
+    for (let i = 0; i < 10000; i++) fitGripMeeting(pa, pb, "R", "R", scratch);
+    console.log(
+      `grip planning 10000 reads: scalar=${scalarMilliseconds.toFixed(3)} ms, measured=${(performance.now() - clock).toFixed(3)} ms`,
+    );
+    // Evaluation/pose identity reuses the two sampled frames; planning samples no mesh.
+    const geometry = {
+      anchors,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+    };
+    const first = measuredHandWorkspaces(a.evaluation, a.rest, idle, geometry, a.lift);
+    const started = performance.now();
+    for (let i = 0; i < 100; i++)
+      expect(measuredHandWorkspaces(a.evaluation, a.rest, idle, geometry, a.lift)).toBe(first);
+    console.log(
+      `cached measured hand workspace: ${(performance.now() - started).toFixed(3)} ms for 100 reads`,
+    );
+    const mutable = Float32Array.from(idle);
+    expect(measuredHandWorkspaces(a.evaluation, a.rest, mutable, geometry, a.lift)).toBe(first);
+    const root = (armChain(a.rest, "R")[0] as number) * 4;
+    const before = [...first.R.shoulder];
+    mutable.set(
+      mul(
+        [0, Math.sin(0.025), 0, Math.cos(0.025)],
+        Array.from(mutable.slice(root, root + 4)) as unknown as Quat,
+      ),
+      root,
+    );
+    const changed = measuredHandWorkspaces(a.evaluation, a.rest, mutable, geometry, a.lift);
+    expect(changed).not.toBe(first);
+    expect(changed.R.shoulder).not.toEqual(before);
+    expect(first.R.shoulder).toEqual(before);
+  });
+
   it("follows a moving contact as both figures are carried along together", () => {
     const p = pair(handshake("R"), body("a", PAIRS[0]?.a ?? {}), body("b", PAIRS[0]?.b ?? {}));
     const ca = createHandContact();
@@ -539,6 +622,7 @@ describe("hand contact constraint", { timeout: 600_000 }, () => {
     expect(r.report.state).toBe("holding");
     expect(r.report.status).toBe("unreached");
     expect(r.report.reason).toBe("geometrically-unreachable");
+    expect(p.interaction.contactWorkspaceStatus?.("grip", "initiator")).toBe("outside-workspace");
     expect(r.report.geometricallyReachable).toBe(false);
     const gap = dist(r.hand.position, target);
     expect(gap).toBeGreaterThan(0.3);

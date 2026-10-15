@@ -1315,6 +1315,17 @@ export function Humanoid({
   /** Private support input follows the same evaluated surface that the renderer draws. */
   const supportAnchors = useRef<SurfaceAnchors | null>(null);
   const supportFolds = useRef<{ surface: "base" | "adult"; folds: SurfaceFold[] } | null>(null);
+  const publishHandGeometry = useCallback(() => {
+    const source = presenceSource.current;
+    if (!source || !ready) return;
+    const ev = source.evaluation;
+    const anchors = supportAnchors.current?.[ev.surface];
+    const topology = ev.surface === "adult" ? adultSurface : ready.topology.body;
+    presenceSource.current = {
+      ...source,
+      hands: anchors && topology ? { anchors, ...skinOfEvaluation(ev, topology) } : undefined,
+    };
+  }, [ready, adultSurface]);
   /**
    * Gives the affordances the figure `ev` of `evaluated` as it is drawn: its rest
    * surface and skin weights, and the live pose, fold and lifted group. With a
@@ -1365,6 +1376,7 @@ export function Humanoid({
         end();
         if (!live) return;
         supportAnchors.current = anchors;
+        publishHandGeometry();
         affordances?.setAnchors(anchors);
         // Landmark data arrives outside React; wake a demand canvas so its anchors can place themselves.
         invalidate();
@@ -1382,7 +1394,7 @@ export function Humanoid({
       // arrive the frames are null rather than these anchors read on its figure.
       affordances?.setAnchors(null);
     };
-  }, [client, affordances, ready, report, settle, invalidate]);
+  }, [client, affordances, ready, report, settle, invalidate, publishHandGeometry]);
   // The joint folds (docs/ARCHITECTURE.md, "The hip fold", "The knee fold") are solved for
   // the figure when a hip or a knee is flexed far enough to need them, in the worker between
   // other requests; until they arrive, or when the figure changes shape, the last ones stay.
@@ -1846,6 +1858,7 @@ export function Humanoid({
                 : undefined,
             }
           : null;
+        publishHandGeometry();
         // The skin's bones over this figure's rest, and the affordances on it, from now:
         // a frame read before the next render is of the figure drawn.
         writePoseRef.current(ev);
@@ -1878,6 +1891,7 @@ export function Humanoid({
     wear,
     feedAffordances,
     writePoseRef,
+    publishHandGeometry,
   ]);
 
   // Settled: the evaluation is written and everything it brought has loaded and been drawn.

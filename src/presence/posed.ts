@@ -20,6 +20,7 @@ import {
   placePresence,
   soleFootprints,
 } from "./fromEvaluation.ts";
+import { type HandWorkspaceGeometry, measuredHandWorkspaces } from "./handWorkspace.ts";
 import type { FigurePresence, Vec3 } from "./presence.ts";
 
 /** What posing a figure needs from the rig: the main thread has it from `ReadyInfo.rig`. */
@@ -147,6 +148,7 @@ export function presenceFromPose(input: {
   rig: PosedRig;
   rotations: BoneRotations;
   placement: Placement;
+  hands?: HandWorkspaceGeometry;
 }): FigurePresence {
   const { evaluation, recipe, joints, rig, rotations, placement } = input;
   const posed = posedControl(rig, evaluation, rotations);
@@ -174,6 +176,15 @@ export function presenceFromPose(input: {
       bounds: { min, max },
       footprint: contact ?? { points: feet, radius: FALLBACK_FOOT_RADIUS },
       ...traits,
+      ...(input.hands && {
+        handWorkspaces: measuredHandWorkspaces(
+          evaluation,
+          restBonesFrom(rig.bones, rig.parents, evaluation.boneHeads),
+          rotations,
+          input.hands,
+          lift,
+        ),
+      }),
     },
     placement,
   );

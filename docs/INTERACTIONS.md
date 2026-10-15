@@ -510,13 +510,53 @@ non-overlapping output buffers. This seam deliberately makes an integration
 choose when it has a final live hand frame to close, rather than quietly moving
 a marker.
 
+### Measured hand workspaces
+
+A scalar arm length is insufficient to place a paired grip. The shoulder is
+beside the body centre, the palm is offset from the wrist, its orientation
+uses some reach, and the elbow needs room to bend. An unequal-height pair can
+satisfy the old scalar reach estimate while its requested palm frame and elbow
+bend are geometrically incompatible.
+
+`presenceFromPose` accepts optional `hands` geometry: the evaluated surface's
+landmark anchors and its actual render `skinIndex`/`skinWeight`. It samples the
+two grip frames, then publishes numeric `handWorkspaces.L/R`: the physical
+shoulder socket, upper-arm and forearm spans, and wrist-to-palm offset in the
+grip frame. The adapter caches immutable evaluation/rig/skin/anchor inputs and
+compares the actual source pose. It never skins the full render mesh to plan a
+contact. Publish from the composed source pose before applying this contact;
+feeding a previous contact result back as its source changes the planning input.
+`placePresence` transforms sockets with the figure and preserves frame-local
+palm offsets. `Humanoid` forwards its existing surface geometry to posed presence;
+rest-only or custom presences without it remain uncertified.
+
+For measured pairs, the runtime fits both requested within-reach ground slots
+about their pinned reference, then computes one shared grip in their overlap.
+The outer envelope reserves a 15-degree elbow bend and subtracts the measured
+palm-offset length, allowing room for any palm orientation. The authored slot
+factors and scalar `reach` measurement are unchanged. Explicit beyond-reach
+slots (for example, three reaches from the reference) keep their requested
+positions, so impossible external requests remain visible to the arm solver.
+No fitting moves a figure: the consumer still walks it to `slot(role)`.
+
+`contactWorkspaceStatus(contact, role)` reports `fitted`, `uncertified`, or
+`outside-workspace`. Missing geometry retains the legacy target and reports
+`uncertified`; an empty envelope retains the requested target and reports
+`outside-workspace`. Both roles read the same cached plan for the same presence
+publication. Publishing movement invalidates the target even between ticks.
+These are planning-envelope results. They do not certify anatomical joint
+limits, the elbow's final side, body clearance, finger contact, or skin
+nonpenetration. The unchanged arm constraint still measures its actual final
+position and orientation, reports failure, and never stretches a segment.
+
 ### Hand contact constraint
 
 `createHandContact(options?)` (framework-free, `src/interaction/handContact.ts`)
 turns a running interaction's hand-to-hand contact into an arm pose on one
-figure. `<Humanoid presence handContact={{ interaction, role, contact }}>` owns
-one and applies it every frame; a framework-free renderer calls
-`update(input)` itself.
+figure. A framework-free renderer owns one and calls `update(input)` itself.
+The current React `Humanoid` publishes presence geometry but does not expose a
+`handContact` prop or apply this constraint. A caller integrating the helper
+must write its output pose to the renderer and the other pose readers together.
 
 **Use cases.** Two figures of any heights shake right hands or left hands;
 they hold the grip while both are carried along (a moving contact); the
@@ -548,10 +588,10 @@ policy; a target is placed out of one figure's reach.
    (`endReason`) drops it in the same frame, with no blend.
 6. At weight 0 the output is the source pose byte for byte: the figure is
    back on its animation.
-7. One pose for every reader: `<Humanoid>` writes the constrained rotations
-   before the skeleton, the occlusion keys, the skin's dual quaternions (which
-   the body, garments, shadows, CPU picking and `HumanoidAffordances` frames
-   read) and the presence pose, so none of them disagree.
+7. One pose for every reader: the integrating renderer must write constrained
+   rotations before the skeleton, occlusion keys, skin dual quaternions,
+   picking, affordance frames and posed presence. This remains an integration
+   requirement; helper unit tests do not establish a React hand-contact binding.
 
 **Decisions.**
 
