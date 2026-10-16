@@ -147,6 +147,56 @@ describe("facial source cards in miniature bakes", { timeout: 120_000 }, () => {
     );
   });
 
+  it("preserves native source data and legacy bytes beside an independent caller grey field", () => {
+    const selected = createRecipe({ facialHair: [ID, "moustache-viking"] });
+    const options = {
+      body: "surface" as const,
+      lods: [400],
+      facialHair: "alpha-cards" as const,
+      texture: sourceTexture,
+    };
+    const native = bakeMiniature(model, selected, options);
+    const sourceSha256 = model.assets.hair?.styles.get(ID)?.sha256;
+    if (!sourceSha256) throw new Error("source style missing");
+    const registry = {
+      streak: { sourceSha256, width: 2, height: 2, data: new Uint8Array([0, 128, 255, 0]) },
+    };
+    const maskedRecipe = createRecipe({
+      ...selected,
+      facialHairGrey: { [ID]: { mask: "streak", amount: 0.5 } },
+    });
+    expect(() => bakeMiniature(model, maskedRecipe, options)).toThrow(/mask.*streak.*missing/);
+    const masked = bakeMiniature(model, maskedRecipe, {
+      ...options,
+      facialHairGreyMasks: registry,
+    });
+    const card = masked.alphaCards?.[0];
+    expect(card?.grey?.data).toEqual(registry.streak.data);
+    expect(card?.grey?.data.buffer).not.toBe(registry.streak.data.buffer);
+    expect({ ...card, grey: undefined }).toEqual({ ...native.alphaCards?.[0], grey: undefined });
+    expect(masked.alphaCards?.[1]).toEqual(native.alphaCards?.[1]);
+    expect({ ...masked, alphaCards: native.alphaCards }).toEqual(native);
+    const encoded = encodeMiniature(masked);
+    expect(decodeMiniature(encoded).alphaCards).toEqual(masked.alphaCards);
+    expect(registry.streak.data).toEqual(new Uint8Array([0, 128, 255, 0]));
+    const zero = createRecipe({
+      ...selected,
+      facialHairGrey: { [ID]: { mask: "streak", amount: 0 } },
+    });
+    expect(
+      encodeMiniature(bakeMiniature(model, zero, { ...options, facialHairGreyMasks: registry })),
+    ).toEqual(encodeMiniature(native));
+    const tags = model.assets.hair?.styles.get(ID)?.tags;
+    const entry = model.assets.hair?.styles.get(ID);
+    if (!entry || !tags) throw new Error("source entry missing");
+    try {
+      entry.tags = [];
+      expect(() => model.evaluate(maskedRecipe)).toThrow(/not a beard or moustache/);
+    } finally {
+      entry.tags = tags;
+    }
+  });
+
   it("round-trips alpha cards in v2 and continues to read an equivalent v1 opaque bake", () => {
     const cards = bakeMiniature(model, recipe, {
       body: "surface",

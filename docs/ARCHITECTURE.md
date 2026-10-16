@@ -3195,7 +3195,46 @@ and a full beard each change the face, the full beard more than the goatee,
 chest hair shows against the same chest bare, and a child asked for a full beard
 grows none.
 
-**Facial hair (current, issue #14).** The hair pack now carries authored MakeHuman facial attachments. A recipe selects them explicitly through `facialHair`; each keeps its source vertices, faces, texture alpha, face/jaw MHCLO anchors and hair colour. `facialHairColour` is an optional map of selected authored beard and moustache ids to complete `HairColour` values. Recipe validation checks selected ids, pigment ranges and linear-RGB replacements; model evaluation checks the loaded facial entry's beard/moustache tags. A shared renderer-free resolver applies the existing scalp ageing clock to each requested colour, falling back exactly to the recipe's scalp colour when absent. The live `HairMesh` and miniature alpha-card bake both consume it. This is uniform greying and tint only; scalp, brows, lashes and body coat retain their existing colour routes. No source texture, alpha, geometry, UV or VAT changes are involved, and a baked colour change needs another archetype rather than per-instance facial recolouring. `facialHairLength` is the existing explicit source-free-offset multiplier for a selected beard: one is the exact packed placement, and a value above one expands every authored free-offset axis. It is not a named style generator and does not apply to moustaches.
+**Facial hair (current, issue #14).** The hair pack now carries authored MakeHuman facial attachments. A recipe selects them explicitly through `facialHair`; each keeps its source vertices, faces, texture alpha, face/jaw MHCLO anchors and hair colour. `facialHairColour` is an optional map of selected authored beard and moustache ids to complete `HairColour` values. Recipe validation checks selected ids, pigment ranges and linear-RGB replacements; model evaluation checks the loaded facial entry's beard/moustache tags. A shared renderer-free resolver applies the existing scalp ageing clock to each requested colour, falling back exactly to the recipe's scalp colour when absent. The live `HairMesh` and miniature alpha-card bake both consume it. This resolver remains uniform greying and tint; optional caller UV fields can mix its result toward the existing unpigmented target, as described below. Scalp, brows, lashes and body coat retain their existing colour routes. No source texture, alpha, geometry, UV or VAT changes are involved, and a baked colour change needs another archetype rather than per-instance facial recolouring. `facialHairLength` is the existing explicit source-free-offset multiplier for a selected beard: one is the exact packed placement, and a value above one expands every authored free-offset axis. It is not a named style generator and does not apply to moustaches.
+
+**Caller UV greying fields (source implementation, 2026-10-16).**
+`facialHairGrey` adds per-selected-style `{ mask, amount }` requests without
+changing `HairColour.grey`, the ageing floor or existing uniform overrides.
+Decoded `FacialHairGreyMasks` stay outside the JSON recipe and worker geometry
+messages. Each linear R8 raster is pinned to the packed style's existing SHA;
+`HairTopology.sourceSha256` carries that identity through the existing topology
+reply. Live and miniature materials mix the legacy tint toward the unpigmented
+target with `q = amount * mask` before multiplying the exact source RGB; source
+alpha, UVs, binding and animated frames remain intact. Dyed overrides also
+mix toward that same target (albedo 0.55, tint 1.375); an override brighter than
+the target may darken, while an unpigmented natural-white base stays unchanged. Sampling uses top-first rows, the existing map
+UVs, linear filtering, clamp-to-edge and no mask mipmaps or sRGB decode.
+
+Missing or invalid explicit masks fail rather than choosing a procedural field.
+Dimensions must safely address the exact bytes; device limits are checked by the
+renderer, with no core downsampling or arbitrary dimension cap. Each live
+installation copies and owns its texture; replacement and unmount dispose it.
+Registry-only updates settle independently of shape evaluation; errors hide the
+requested card and suppress successful settling until corrected. A masked card
+requires its source RGBA map as well as its mask: it stays hidden while that
+map is pending or failed. Source readiness/error is recorded before releasing
+the load's settle hold. Registry replacement retries a failed load on the same
+mesh, including activation after an earlier unmasked source failure. That passive
+status tracking does not change unmasked visibility or error/settle behavior, and
+successful source maps are retained when masks change. Mask validation cannot
+clear a source error, and superseded replies cannot install stale textures. Miniature
+baking copies bytes and stores an optional mask, amount, frozen target tint and
+source pin per alpha card. Its runtime owns/counts that R8 texture separately.
+HKMB reuses aligned sections and writes v3 only for active fields: old readers
+must reject rather than ignore required appearance data. Unmasked output stays
+byte-identical v2, and the new decoder reads v1/v2/v3. No hair-pack schema,
+packer, source asset or source texture changes are involved.
+
+This is caller-mask support, not source-authored packaged streak availability
+or full issue #14 acceptance. Source UV overlap restricts physical placement;
+no left/right/chin/lock meaning is inferred from atlas coordinates. A useful
+visible stripe on retained source hair still needs inspected real-source UV and
+live/miniature evidence; analytic shader checks cannot establish that mapping.
 
 **Source-proxy growth.** `facialHairGrowth` is a separate selected-beard control from zero to one. At zero the evaluator omits that attachment, so no collapsed facial film reaches the renderer; at `0.5` it delegates to the exact packed source placement. Below that native point it contracts the existing free offsets continuously from a source-derived attachment-edge frame. Above it, every runtime vertex extends by its native vertical depth below one shared source-height frame; at one, the deepest source vertex reaches the morphed base-control mesh's unposed rest floor. The evaluator retains the boundary edge nearest the MHCLO weighted base-surface placement for every source boundary loop, then restores both vertices of every retained edge exactly to their face/jaw binding. A connected source component can therefore retain several card attachments rather than a single global winner. A closed source component has no exposed growth root and remains source-fixed. A runtime-only, body-front clearance proxy moves only lower vertices horizontally along that root evidence's existing normal frame, which keeps the retained source cards inspectable in front of the unposed base body without rebinding a vertex to the torso. The calculation retains the source's three base-mesh anchors, vertices and topology, and it cannot share an asset with `facialHairLength`. This is a rest-floor bound only: it does not assert posed-world drape, collision avoidance, garment contact, or a new style.
 

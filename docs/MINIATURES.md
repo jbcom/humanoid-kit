@@ -238,3 +238,34 @@ draw a different body from the full renderer.
    archetypes, VAT bytes and encoded size per archetype.
 4. A stress lab: 500 figures in the playground (`?miniatures=500`), its
    capture and a frame-time measurement against one figure (done).
+
+## Optional facial UV greying fields
+
+With `facialHair: "alpha-cards"`, `bakeMiniature` accepts the same decoded
+`facialHairGreyMasks` registry as `<Humanoid>`. Recipe entries select a caller
+mask key and additive whitening amount per beard/moustache; each mask pins the
+packed style checksum and samples its retained source UVs. The bake keeps source
+RGBA and all topology/animation bytes exact, copying the separate R8 field into
+`MiniatureAlphaCard.grey` with its amount, unpigmented target tint and source pin.
+Missing/invalid requested masks throw `MiniatureError`, including an explicit
+zero amount with a missing reference. Absence, valid zero amounts and all-zero
+fields retain the legacy bake. The default still omits all facial cards.
+
+Masked output uses HKMB v3 because the v2 schema has no required-extension
+mechanism: an unknown field under v2 would silently lose the appearance on old
+readers. The encoder reuses aligned sections and writes v2 unchanged when no
+active field exists. The decoder reads v1/v2/v3 and validates mask dimensions,
+section size/bounds, checksum, amount and tint. Earlier v2 decoders reject v3 at
+the version guard. New readers also reject mask fields relabelled as v1/v2.
+Do not strip masks to downgrade a bake. Baked mask buffers belong to the bake,
+appear once in `miniatureTransferables`, and never alias caller registry bytes.
+
+The runtime uses the same linear pigment equation as live hair before source
+RGB multiplication, while retaining its existing miniature lighting model.
+One extra R8 texture costs `width * height` GPU bytes, without mask mipmaps;
+it is counted and disposed with its card archetype. Device texture limits are
+checked before drawing, without resizing the mask. Existing source geometry,
+UV overlap and near-only/default versus all-LOD selection remain unchanged.
+Changing the field requires another archetype bake. The kit does not currently
+supply packaged source-authored streak masks; caller-mask capability and actual
+source-asset visual acceptance are distinct.

@@ -160,6 +160,7 @@ createRecipe(init?: {
   };
   facialHair?: readonly string[]; // authored facial style ids; absent = none
   facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
+  facialHairGrey?: FacialHairGreyRecipe; // selected id -> caller UV mask key and additive amount
   facialHairLength?: Readonly<Record<string, number>>; // selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // selected beard id -> source-proxy growth fraction [0, 1]
   bodyHair?: BodyHairRecipe;
@@ -186,6 +187,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
   facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
+  facialHairGrey?: FacialHairGreyRecipe; // selected id -> caller UV mask key and additive amount
   facialHairLength?: Readonly<Record<string, number>>; // optional selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // optional selected beard id -> source-proxy growth [0, 1]
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
@@ -617,9 +619,72 @@ ceiling a universal geometry guarantee.
   rejected. Missing entries retain the scalp colour exactly. Both paths use
   `agedHairColour(colour, age, "scalp")` and `hairTint`: age is a grey floor,
   while a linear-RGB `override` replaces the pigment model. This is uniform
-  colour only, and leaves scalp, brows, lashes and body coat unchanged. The
+  colour; optional UV-localized whitening is described below. Both leave scalp, brows, lashes and body coat unchanged. The
   same resolved tint is stored per source card by `bakeMiniature`; changing it
   requires another archetype bake, not per-instance recolouring.
+  `facialHairGrey?: Readonly<Record<string, { mask: string; amount: number }>>`
+  optionally names a caller-authored UV mask and finite mix amount in `[0, 1]` per
+  selected beard/moustache. `createRecipe` copies these plain-JSON requests;
+  absent means the exact legacy path. `HairTopology.sourceSha256` exposes the
+  selected packed style's existing checksum, including its UV layout.
+
+  `FacialHairGreyMask` is `{ sourceSha256, width, height, data }`:
+  `sourceSha256` pins `HairStyleEntry.sha256`; dimensions are positive safe
+  integers, their product is safe, and `data` is a `Uint8Array` or
+  `Uint8ClampedArray` of exactly that many bytes. One linear weight per texel,
+  rows top first: zero preserves the base tint; 255 selects the unpigmented
+  target. `FacialHairGreyMasks` is an immutable key-to-mask record, supplied
+  through `<Humanoid facialHairGreyMasks={masks}>` or
+  `bakeMiniature(..., { facialHair: "alpha-cards", facialHairGreyMasks: masks })`.
+  Obtain the style pin from `assets.hair.styles.get(id).sha256` or its loaded
+  topology. The caller decodes its own mask; the kit supplies no packaged
+  source-authored streak masks. Repeated source UVs repeat the field and cannot
+  independently select physical locks that share those UVs.
+
+  `resolveFacialHairGrey(recipe, id, sourceSha256, masks?)` validates a referenced
+  mask and returns `ResolvedFacialHairGrey` (mask, amount, frozen target `tint`),
+  or `null` for absence, a valid zero amount or an all-zero field.
+  `assertFacialHairGreyMask(mask)` validates its decoded data. Both report
+  `FacialHairGreyError`; missing registry/key, invalid bytes or a mismatched
+  style pin never silently become uniform greying. Even amount zero validates
+  its explicit reference. Model evaluation checks selected facial tags without
+  receiving mask bytes. Runtime rendering checks the actual device's texture
+  limit and rejects oversized maps rather than resizing them; the core has no
+  invented dimension cap. Unused registry entries do nothing.
+
+  The shared blend is `q = amount * sampledByte / 255`,
+  `T = (1 - q) * hairTint(facialHairColour(recipe, id)) + q * W`, with
+  `W = hairTint({ ...colour, grey: 1, override: null })`.
+  `facialHairGreyTint(base, target, amount, sample)` exposes the same linear-RGB
+  mix (sample is normalized to `[0, 1]`). Scalar grey and ageing still set the
+  uniform base exactly; an explicit mask mixes toward the existing unpigmented
+  target, including dyed overrides. That target is albedo 0.55 (tint 1.375), so
+  a brighter dyed override may darken; an unpigmented natural-white base stays unchanged.
+  The source RGB multiplies `T` afterward; alpha, geometry, UVs and animation
+  remain unchanged. Live sheen uses the same field. This is continuous pigment
+  mixing, not an individual-fibre classifier. Live and miniature lighting
+  models differ even though their pigment field agrees.
+
+  Replace the registry/byte descriptor to update a live appearance; in-place
+  mutation is unsupported. Installed textures own copies, are disposed on
+  replacement/deselection/unmount, and never detach caller bytes. Registry-only
+  updates invalidate and settle without shape evaluation. Invalid live requests
+  are reported through `onError`, hide the requested card and suppress successful
+  `onSettled` until corrected. Explicit masked cards also stay hidden while
+  their required source RGBA map is pending or failed; a corrected registry
+  replacement retries a failed source load without remounting or shape evaluation.
+  Facial source-load status is remembered even when unmasked, so activating a
+  mask after an earlier source failure also retries that load on the same mesh;
+  already loaded source maps are retained when masks change.
+  Successful mask validation alone never clears a source-map failure. Superseded
+  source replies are disposed rather than installed. Miniature errors throw `MiniatureError` when
+  preserving the requested card; the existing default still omits all facial cards.
+  Baked `MiniatureAlphaCard.grey` stores owned bytes plus amount, target tint and
+  pin; changing them requires a new archetype. Masked bakes use HKMB v3; unmasked
+  bakes retain exact v2 bytes. New readers accept v1/v2/v3; previous v2 readers
+  reject masked v3 explicitly. `miniatureTransferables` includes owned mask
+  buffers once and never the original registry's storage.
+
   A brow is lifted `DECAL_LIFT`
   (2 mm) off the skin along its normal, since the smooth body surface can
   swallow a decal bound to the coarse mesh at the brow ridge.

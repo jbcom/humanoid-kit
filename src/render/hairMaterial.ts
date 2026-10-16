@@ -37,6 +37,7 @@
  */
 import {
   type BufferGeometry,
+  type DataTexture,
   DoubleSide,
   Float32BufferAttribute,
   LinearSRGBColorSpace,
@@ -47,7 +48,9 @@ import {
   Vector4,
   type WebGLProgramParametersWithUniforms,
 } from "three";
+import type { ResolvedFacialHairGrey } from "../surface/facialHairGrey.ts";
 import { type HairColour, hairTint } from "../surface/hairTone.ts";
+import { patchFacialHairGrey } from "./facialHairGrey.ts";
 import { patchOcclusionFragment } from "./occlusion.ts";
 import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 
@@ -290,6 +293,23 @@ const TANGENT = `
 	}`;
 
 export class HairMaterial extends MeshPhysicalMaterial {
+  private greyActive = false;
+  private readonly greyUniforms = {
+    hkGreyMap: { value: null as DataTexture | null },
+    hkGreyAmount: { value: 0 },
+    hkGreyTint: { value: new Vector3() },
+  };
+
+  /** The caller owns the optional texture and releases it on replacement/unmount. */
+  setGrey(grey: ResolvedFacialHairGrey | null, map: DataTexture | null): void {
+    const active = grey !== null && map !== null;
+    if (active !== this.greyActive) this.needsUpdate = true;
+    this.greyActive = active;
+    this.greyUniforms.hkGreyMap.value = map;
+    this.greyUniforms.hkGreyAmount.value = grey?.amount ?? 0;
+    if (grey) this.greyUniforms.hkGreyTint.value.set(...grey.tint);
+  }
+
   /**
    * Strand-lobe parameters, shared with the shader: strength of the figure's
    * highlight (x, lower for fluffy styles), the white lobe's strength (y) and
@@ -539,12 +559,16 @@ ${CELL_KEEP}`,
         "#include <transmission_fragment>",
         `${SPECULAR_BUDGET}\n#include <transmission_fragment>`,
       );
+    if (this.greyActive) {
+      Object.assign(shader.uniforms, this.greyUniforms);
+      patchFacialHairGrey(shader, true);
+    }
     patchOcclusionFragment(shader, HAIR_OCCLUSION_FLOOR);
     patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
-    return `humanoid-kit-hair-6|${SHADOW_FILTER_KEY}`;
+    return `humanoid-kit-hair-6|${SHADOW_FILTER_KEY}${this.greyActive ? "|uv-grey-1" : ""}`;
   }
 }
 
