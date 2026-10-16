@@ -1245,7 +1245,10 @@ and expressions"). Framework-free.
   alone, `skinPositionsDual` dual quaternion skinning alone, and
   `skinPositionsBlended(…, share)` the mix at any share (a number, or one per
   bone); `skinNormalsBlended` and `skinNormalsDual` give the matching normals,
-  and `skinPose` / `skinVertex` skin one vertex at a time.
+  and `skinPose` / `skinVertex` skin one vertex at a time. For folded normals,
+  both CPU and GPU normalize the mixed linear/dual base before adding the fold
+  normal changes, then normalize the sum. Each normalization leaves a zero
+  vector unchanged.
 - `SKIN_DUAL_SHARE` is each limb bone's share of dual quaternion skinning (0 is
   linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
   a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
