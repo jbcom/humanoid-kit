@@ -1,5 +1,6 @@
 /** Analytic pigment parity and actual Humanoid lifecycle; source-asset visual acceptance is separate. */
 import { Canvas } from "@react-three/fiber";
+import type { ChromiumGpuMode } from "game-harness/chromium";
 import {
   DataTexture,
   FloatType,
@@ -17,7 +18,7 @@ import {
   UnsignedByteType,
   WebGLRenderTarget,
 } from "three";
-import { expect, it, vi } from "vitest";
+import { expect, inject, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { decodeMiniature, encodeMiniature } from "../../src/bake/format.ts";
@@ -38,6 +39,12 @@ import type {
 import { srgbToLinear } from "../../src/surface/skinTone.ts";
 import { createTestRenderer, releaseTestRenderer } from "./gl.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
+
+declare module "vitest" {
+  interface ProvidedContext {
+    browserGpuMode: ChromiumGpuMode;
+  }
+}
 
 function albedoOnly(material: Material): void {
   const compile = material.onBeforeCompile.bind(material);
@@ -169,6 +176,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
   let evaluations = 0,
     settlements = 0;
   const errors: Error[] = [];
+  const evaluated = Promise.withResolvers<void>();
   const client = inlineWorkerClient({ subdivision: 0 }, { hair: true });
   await client.ready;
   const id = "beard-long-scruffy";
@@ -188,7 +196,10 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
               group = value;
             }}
             onError={(error) => errors.push(error)}
-            onEvaluated={() => evaluations++}
+            onEvaluated={() => {
+              evaluations++;
+              evaluated.resolve();
+            }}
             onSettled={() => settlements++}
           />
         </HumanoidProvider>
@@ -210,8 +221,12 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     if (!found) throw new Error("facial card missing");
     return found;
   }
+  const started = performance.now();
   const screen = await render(<Fixture />);
   try {
+    // Canvas mounts a separate async React root after the DOM render completes.
+    await evaluated.promise;
+    console.info("facial-grey-missing-mask-evaluated", performance.now() - started);
     await expect.poll(() => errors.length).toBeGreaterThan(0);
     expect(settlements).toBe(0);
     expect(card().visible).toBe(false);
@@ -282,6 +297,8 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   const settledMaps: boolean[] = [];
   let sourcePending = false,
     allowSource = false;
+  let evaluated = Promise.withResolvers<void>();
+  let started = performance.now();
   let rejectSource: ((error: Error) => void) | undefined;
   const errors: Error[] = [];
   let gpu = "";
@@ -321,7 +338,10 @@ it("holds a masked card through deferred source-map rejection and registry-only 
               group = value;
             }}
             onError={(error) => errors.push(error)}
-            onEvaluated={() => evaluations++}
+            onEvaluated={() => {
+              evaluations++;
+              evaluated.resolve();
+            }}
             onSettled={() => {
               settlements++;
               settledMaps.push((card().material as HairMaterial).map !== null);
@@ -353,11 +373,21 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   const screen = await render(<Fixture masks={registry} />);
   let activeScreen = screen;
   try {
+    await evaluated.promise;
+    console.info("facial-grey-source-loader-evaluated", performance.now() - started);
     await expect.poll(() => sourcePending).toBe(true);
     await expect.poll(() => evaluations).toBe(1);
-    expect(gpu).toMatch(/Apple|Metal/i);
-    expect(gpu).not.toMatch(/SwiftShader|llvmpipe|software/i);
-    console.info("facial-grey-source-loader-native-gpu", JSON.stringify({ gpu, sourceSha256 }));
+    const gpuMode = inject("browserGpuMode");
+    expect(gpu).not.toMatch(/^$|unavailable/i);
+    if (gpuMode === "software") expect(gpu).toMatch(/SwiftShader/i);
+    else {
+      if (gpuMode === "macos-hardware-metal") expect(gpu).toMatch(/Apple|Metal/i);
+      expect(gpu).not.toMatch(/SwiftShader|llvmpipe|software/i);
+    }
+    console.info(
+      "facial-grey-source-loader-native-gpu",
+      JSON.stringify({ gpuMode, gpu, sourceSha256 }),
+    );
     expect
       .soft(card().visible, "a masked card must remain hidden while its source RGBA is pending")
       .toBe(false);
@@ -400,9 +430,13 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     await screen.unmount();
     allowSource = false;
     sourcePending = false;
+    evaluated = Promise.withResolvers<void>();
+    started = performance.now();
     rejectSource = undefined;
     const previousSettlements = settlements;
     activeScreen = await render(<Fixture masks={registry} masked={false} />);
+    await evaluated.promise;
+    console.info("facial-grey-unmasked-source-loader-evaluated", performance.now() - started);
     await expect.poll(() => sourcePending).toBe(true);
     const unmaskedMesh = card();
     rejectCurrentSource("controlled initially unmasked source rejection");
