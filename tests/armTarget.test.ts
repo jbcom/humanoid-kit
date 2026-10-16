@@ -9,9 +9,9 @@ import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts"
 import { type FrameOut, frameOut, landmarkAnchors } from "../src/foundation/landmarks.ts";
 import { type Evaluation, HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
-import { armChain, armTip, solveArmTarget } from "../src/rig/armTarget.ts";
+import { type ArmTip, armChain, armTip, solveArmTarget } from "../src/rig/armTarget.ts";
 import { skinPose } from "../src/rig/dual.ts";
-import { IDENTITY_POSE, posedBones, restBones, rigData } from "../src/rig/pose.ts";
+import { IDENTITY_POSE, posedBones, type RestBones, restBones, rigData } from "../src/rig/pose.ts";
 import { poseShare, skinDualShare } from "../src/rig/skinShare.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -191,7 +191,452 @@ function elbowSide(
   return b[0] * c[0] + b[1] * c[1] + b[2] * c[2];
 }
 
+function syntheticArm() {
+  const chain = [0, 1, 2, 3, 4, 5];
+  const rest: RestBones = {
+    names: chain.map((index) => `joint-${index}`),
+    parents: Int16Array.from([-1, 0, 1, 2, 3, 4]),
+    heads: Float32Array.from(chain.flatMap((index) => [index, 0, 0])),
+    order: Int16Array.from(chain),
+  };
+  const source = IDENTITY_POSE(chain.length);
+  const tip: ArmTip = { position: [1, 0, 0], orientation: [0, 0, 0, 1] };
+  return { rest, chain, source, tip };
+}
+
+function rigidFrame(
+  rest: RestBones,
+  rotations: Float32Array,
+  chain: readonly number[],
+  tip: ArmTip,
+) {
+  const posed = posedBones(rest, rotations);
+  const wrist = chain.at(-1) as number;
+  const q = new Quaternion().fromArray(posed.world, wrist * 4);
+  const position = new Vector3(...tip.position)
+    .applyQuaternion(q)
+    .add(new Vector3(...point(posed.heads, wrist)))
+    .toArray();
+  const orientation = q.multiply(new Quaternion(...(tip.orientation ?? [0, 0, 0, 1]))).toArray();
+  return { position, orientation };
+}
+
+const xRoll = (degrees: number): [number, number, number, number] => [
+  Math.sin((degrees * Math.PI) / 360),
+  0,
+  0,
+  Math.cos((degrees * Math.PI) / 360),
+];
+const normalizedAngle = (a: readonly number[], b: readonly number[]) =>
+  new Quaternion().fromArray(a).normalize().angleTo(new Quaternion().fromArray(b).normalize());
+const rotationBytes = (values: Float32Array) =>
+  new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
+
 describe("arm target constraints", { timeout: 300_000 }, () => {
+  it("reaches a legal axial roll beyond the wrist budget without moving the contact", () => {
+    const chain = [0, 1, 2, 3, 4, 5];
+    const rest: RestBones = {
+      names: [
+        "shoulder01.R",
+        "upperarm01.R",
+        "upperarm02.R",
+        "lowerarm01.R",
+        "lowerarm02.R",
+        "wrist.R",
+        "other-root",
+        "other-child",
+      ],
+      parents: Int16Array.from([-1, 0, 1, 2, 3, 4, -1, 6]),
+      heads: Float32Array.from([
+        0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0, 0, 4, 0, 0, 5, 0, 0, 2, 3, 4, 2, 4, 4,
+      ]),
+      order: Int16Array.from([0, 1, 2, 3, 4, 5, 6, 7]),
+    };
+    const source = IDENTITY_POSE(rest.names.length);
+    // Non-chain rotations are deliberately non-identity so preservation has
+    // content beyond retaining zero-filled storage.
+    source.set([0, 0, Math.sin(0.17), Math.cos(0.17)], 6 * 4);
+    source.set([0, Math.sin(0.23), 0, Math.cos(0.23)], 7 * 4);
+    const tip = {
+      position: [1, 0, 0] as const,
+      orientation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const radians = (degrees: number) => (degrees * Math.PI) / 180;
+    const roll = (degrees: number): [number, number, number, number] => [
+      Math.sin(radians(degrees) / 2),
+      0,
+      0,
+      Math.cos(radians(degrees) / 2),
+    ];
+    const target = { position: [6, 0, 0] as const, orientation: roll(120) };
+    // These are the existing default source-angle budgets, not replacements
+    // passed into the solver. The regression must exercise its defaults.
+    const budgets = [130, 35, 35, 150, 50, 85].map(radians);
+    const inputsBefore = structuredClone({ rest, source, chain, tip, target, budgets });
+    const bytes = (values: Float32Array | Int16Array) =>
+      new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
+    const measure = (rotations: Float32Array) => {
+      const posed = posedBones(rest, rotations);
+      const wrist = chain.at(-1) as number;
+      const q = new Quaternion().fromArray(posed.world, wrist * 4);
+      const position = new Vector3(...tip.position)
+        .applyQuaternion(q)
+        .add(new Vector3(...point(posed.heads, wrist)))
+        .toArray();
+      return { position, orientation: q.toArray() };
+    };
+    const assertPreserved = (rotations: Float32Array) => {
+      expect({ rest, source, chain, tip, target, budgets }).toEqual(inputsBefore);
+      expect(bytes(source)).toEqual(bytes(inputsBefore.source));
+      expect(bytes(rest.heads)).toEqual(bytes(inputsBefore.rest.heads));
+      expect(bytes(rest.parents)).toEqual(bytes(inputsBefore.rest.parents));
+      expect(bytes(rest.order)).toEqual(bytes(inputsBefore.rest.order));
+      expect(bytes(rotations.subarray(6 * 4))).toEqual(bytes(source.subarray(6 * 4)));
+      chain.forEach((bone, index) => {
+        expect(
+          quatAngle(
+            source.subarray(bone * 4, bone * 4 + 4),
+            rotations.subarray(bone * 4, bone * 4 + 4),
+          ),
+        ).toBeLessThanOrEqual((budgets[index] as number) + 1e-6);
+      });
+      segmentLengths(rest, rotations, chain).forEach((length) => {
+        expect(length).toBe(1);
+      });
+      const measured = measure(rotations);
+      expect(dist(measured.position, point(posedBones(rest, rotations).heads, 5))).toBe(1);
+      return measured;
+    };
+
+    // Construct a legal solution independently of the solver. Both turns are
+    // about the collinear arm axis, so their sum changes only the final roll.
+    const legal = Float32Array.from(source);
+    legal.set(roll(45), 4 * 4);
+    legal.set(roll(75), 5 * 4);
+    const control = assertPreserved(legal);
+    expect(dist(control.position, target.position)).toBe(0);
+    expect(quatAngle(control.orientation, target.orientation)).toBeLessThan(0.001);
+
+    const result = solveArmTarget({ rest, rotations: source, chain, tip, target, tolerance: 1e-6 });
+    const measured = assertPreserved(result.rotations);
+    expect(result.segmentLengths).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(result.geometricallyReachable).toBe(true);
+    expect(result.distance).toBeLessThanOrEqual(1e-6);
+    expect(dist(measured.position, target.position)).toBeLessThanOrEqual(1e-6);
+    expect(
+      result.status,
+      JSON.stringify({
+        distance: result.distance,
+        orientationError: result.orientationError,
+        localAngles: chain.map((bone) =>
+          quatAngle(
+            source.subarray(bone * 4, bone * 4 + 4),
+            result.rotations.subarray(bone * 4, bone * 4 + 4),
+          ),
+        ),
+      }),
+    ).toBe("reached");
+    expect(result.orientationError).not.toBeNull();
+    expect(result.orientationError).toBeLessThanOrEqual(0.035);
+    expect(quatAngle(measured.orientation, target.orientation)).toBeLessThanOrEqual(0.035);
+    expect(
+      chain
+        .slice(0, -1)
+        .some(
+          (bone) =>
+            quatAngle(
+              source.subarray(bone * 4, bone * 4 + 4),
+              result.rotations.subarray(bone * 4, bone * 4 + 4),
+            ) > 0.01,
+        ),
+    ).toBe(true);
+  });
+
+  it("preserves the source when the measured roll already satisfies the orientation tolerance", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    const before = Float32Array.from(source);
+    let samples = 0;
+    const target = { position: [6, 0, 0] as const, orientation: xRoll(1) };
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target,
+      iterations: 1,
+      limits: [0, 0, 0, 0, 50, 0].map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+      effector: (rotations) => {
+        samples++;
+        return rigidFrame(rest, rotations, chain, tip);
+      },
+    });
+    expect(result.status).toBe("reached");
+    expect(result.orientationError).toBeGreaterThan(0.01);
+    expect(result.orientationError).toBeLessThanOrEqual(0.035);
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(before));
+    expect(rotationBytes(source)).toEqual(rotationBytes(before));
+    // With one legacy iteration, only the initial ancestor measurement is
+    // added. No proposal or subsequent ancestor is sampled after satisfaction.
+    expect(samples).toBe(15);
+  });
+
+  it("stops sampling ancestors after the first accepted roll meets the public tolerance", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    let samples = 0;
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target: { position: [6, 0, 0], orientation: xRoll(120) },
+      iterations: 1,
+      effector: (rotations) => {
+        samples++;
+        return rigidFrame(rest, rotations, chain, tip);
+      },
+    });
+    expect(result.status).toBe("reached");
+    expect(result.orientationError).toBeLessThanOrEqual(0.035);
+    expect(result.rotations[4 * 4]).toBeGreaterThan(0.1);
+    expect(rotationBytes(result.rotations.subarray(0, 4 * 4))).toEqual(
+      rotationBytes(source.subarray(0, 4 * 4)),
+    );
+    // One ancestor baseline, one accepted proposal, then final result sampling.
+    expect(samples).toBe(16);
+  });
+
+  it("uses the public quaternion metric for satisfaction at a tight orientation tolerance", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    const orientationTolerance = 1e-5;
+    const target = { position: [6, 0, 0] as const, orientation: xRoll((1e-6 * 180) / Math.PI) };
+    const effector = (rotations: Float32Array) => {
+      const frame = rigidFrame(rest, rotations, chain, tip);
+      // Valid within sampler validation's unit allowance, but its norm error
+      // makes the public metric larger than this deliberately tight threshold.
+      frame.orientation = frame.orientation.map((component) => component * (1 - 1e-7)) as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      return frame;
+    };
+    const before = effector(source);
+    expect(normalizedAngle(before.orientation, target.orientation)).toBeLessThan(
+      orientationTolerance,
+    );
+    expect(quatAngle(before.orientation, target.orientation)).toBeGreaterThan(orientationTolerance);
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target,
+      effector,
+      iterations: 1,
+      orientationTolerance,
+      limits: [0, 0, 0, 0, 50, 0].map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+    });
+    const measured = effector(result.rotations);
+    // A normalized satisfaction check would incorrectly skip this legal
+    // improvement even though final status still reports above tolerance.
+    expect(result.rotations[4 * 4]).toBeGreaterThan(0);
+    expect(normalizedAngle(measured.orientation, target.orientation)).toBeLessThan(
+      normalizedAngle(before.orientation, target.orientation),
+    );
+    expect(result.orientationError).toBe(quatAngle(measured.orientation, target.orientation));
+    expect(result.orientationError).toBeGreaterThan(orientationTolerance);
+    expect(result.distance).toBe(0);
+    expect(result.status).toBe("unreached");
+  });
+
+  it("composes ancestor roll through a rotated parent and a nonidentity tip frame", () => {
+    const { rest, chain, tip } = syntheticArm();
+    rest.names.push("parent");
+    rest.parents = Int16Array.from([6, 0, 1, 2, 3, 4, -1]);
+    rest.heads = Float32Array.from([...rest.heads, 0, 0, 0]);
+    rest.order = Int16Array.from([6, ...chain]);
+    const source = IDENTITY_POSE(rest.names.length);
+    const parent = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.7);
+    source.set(parent.toArray(), 6 * 4);
+    const tipOrientation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.4);
+    tip.orientation = tipOrientation.toArray();
+    const position = rigidFrame(rest, source, chain, tip).position;
+    const orientation = parent
+      .clone()
+      .multiply(new Quaternion(...xRoll(120)))
+      .multiply(tipOrientation)
+      .toArray();
+    const before = Float32Array.from(source);
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target: { position, orientation },
+      tolerance: 1e-6,
+    });
+    const measured = rigidFrame(rest, result.rotations, chain, tip);
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(dist(measured.position, position)).toBeLessThanOrEqual(1e-6);
+    expect(normalizedAngle(measured.orientation, orientation)).toBeLessThanOrEqual(0.035);
+    expect(result.orientationError).toBeLessThanOrEqual(0.035);
+    expect(source).toEqual(before);
+    expect(rotationBytes(result.rotations.subarray(6 * 4))).toEqual(
+      rotationBytes(before.subarray(6 * 4)),
+    );
+  });
+
+  it("rolls back the exact local state when a source-budget clamp moves the rigid endpoint", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    source.set(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 2).toArray(), 0);
+    const target = { position: [6, 0, 0] as const, orientation: xRoll(120) };
+    const samples: { rotations: Float32Array; distance: number; error: number }[] = [];
+    const effector = (rotations: Float32Array) => {
+      const frame = rigidFrame(rest, rotations, chain, tip);
+      samples.push({
+        rotations: Float32Array.from(rotations),
+        distance: dist(frame.position, target.position),
+        error: normalizedAngle(frame.orientation, target.orientation),
+      });
+      return frame;
+    };
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target,
+      effector,
+      limits: [90, 0, 0, 0, 0, 85].map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+      tolerance: 1e-6,
+    });
+    const rejected = samples.findIndex((sample) => (sample.rotations[0] as number) > 0.01);
+    expect(rejected).toBeGreaterThan(0);
+    const before = samples[rejected - 1];
+    const candidate = samples[rejected];
+    if (!before || !candidate) throw new Error("missing clamped twist proposal");
+    expect(before.distance).toBeLessThanOrEqual(1e-6);
+    expect(candidate.distance).toBeGreaterThan(1e-6);
+    expect(candidate.error).toBeLessThan(before.error);
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(before.rotations));
+    expect(result.distance).toBeLessThanOrEqual(1e-6);
+    expect(result.status).toBe("unreached");
+  });
+
+  it("rejects measured contact motion even when the proposed twist preserves the rigid tip", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    const target = { position: [6, 0, 0] as const, orientation: xRoll(120) };
+    const samples: { rotations: Float32Array; frame: ReturnType<typeof rigidFrame> }[] = [];
+    const effector = (rotations: Float32Array) => {
+      const frame = rigidFrame(rest, rotations, chain, tip);
+      frame.position[1] += (rotations[4 * 4] as number) * 0.1;
+      samples.push({ rotations: Float32Array.from(rotations), frame });
+      return frame;
+    };
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target,
+      effector,
+      limits: [0, 0, 0, 0, 50, 85].map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+      tolerance: 1e-6,
+    });
+    const rejected = samples.findIndex((sample) => (sample.rotations[4 * 4] as number) > 0.01);
+    expect(rejected).toBeGreaterThan(0);
+    const before = samples[rejected - 1];
+    const candidate = samples[rejected];
+    if (!before || !candidate) throw new Error("missing measured-contact twist proposal");
+    expect(dist(rigidFrame(rest, candidate.rotations, chain, tip).position, target.position)).toBe(
+      0,
+    );
+    expect(dist(candidate.frame.position, target.position)).toBeGreaterThan(1e-6);
+    expect(normalizedAngle(candidate.frame.orientation, target.orientation)).toBeLessThan(
+      normalizedAngle(before.frame.orientation, target.orientation),
+    );
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(before.rotations));
+    expect(result.distance).toBe(0);
+    expect(result.status).toBe("unreached");
+  });
+
+  it("rejects a contact-preserving root twist that reverses the declared elbow side", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    rest.heads.set([3, 1, 0], 3 * 3);
+    rest.heads.set([4, 1, 0], 4 * 3);
+    const target = { position: [6, 0, 0] as const, orientation: xRoll(120) };
+    const pole = [3, 1, 0] as const;
+    const candidates: Float32Array[] = [];
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target,
+      pole,
+      limits: [130, 0, 0, 0, 0, 0].map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+      tolerance: 1e-6,
+      effector: (rotations) => {
+        if ((rotations[0] as number) > 0.1) candidates.push(Float32Array.from(rotations));
+        return rigidFrame(rest, rotations, chain, tip);
+      },
+    });
+    expect(candidates).toHaveLength(1);
+    const candidate = candidates[0];
+    if (!candidate) throw new Error("missing pole-reversing twist proposal");
+    const frame = rigidFrame(rest, candidate, chain, tip);
+    expect(dist(frame.position, target.position)).toBeLessThanOrEqual(1e-6);
+    expect(normalizedAngle(frame.orientation, target.orientation)).toBeLessThan(0.001);
+    expect(elbowSide(rest, source, chain, target.position, pole)).toBeGreaterThan(0);
+    expect(elbowSide(rest, candidate, chain, target.position, pole)).toBeLessThan(0);
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(source));
+    expect(result.status).toBe("unreached");
+  });
+
+  it("keeps an orthogonal half-turn with zero axial projection finite and deterministic", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    const input = {
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target: {
+        position: [6, 0, 0] as const,
+        orientation: [0, 1, 0, 0] as [number, number, number, number],
+      },
+      limits: chain.map(() => ({ maxRadians: 0 })),
+      tolerance: 1e-6,
+    };
+    // Allow ancestor twist, while the wrist cannot hide the zero projection.
+    input.limits[4] = { maxRadians: (50 * Math.PI) / 180 };
+    const first = solveArmTarget(input);
+    const second = solveArmTarget(input);
+    expect(rotationBytes(first.rotations)).toEqual(rotationBytes(source));
+    expect(rotationBytes(second.rotations)).toEqual(rotationBytes(first.rotations));
+    expect([...first.rotations].every(Number.isFinite)).toBe(true);
+    expect(first.distance).toBe(0);
+    expect(first.orientationError).toBe(Math.PI);
+    expect(first.status).toBe("unreached");
+  });
+
+  it("preserves the position-only quarter-turn result byte for byte", () => {
+    const { rest, chain, source, tip } = syntheticArm();
+    const result = solveArmTarget({
+      rest,
+      rotations: source,
+      chain,
+      tip,
+      target: { position: [0, 6, 0] },
+      limits: chain.map((_, index) => ({ maxRadians: index === 0 ? Math.PI : 0 })),
+      tolerance: 1e-6,
+    });
+    const expected = Float32Array.from(source);
+    expected.set([0, 0, Math.SQRT1_2, Math.SQRT1_2], 0);
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(expected));
+    expect(result.status).toBe("reached");
+  });
+
   it("puts both unequal-height adults' final skinned right hands on the same shared target", () => {
     const tallRecipe = createRecipe({ macros: { age: 25, gender: 0.85, height: 0.8 } });
     const shortRecipe = createRecipe({ macros: { age: 25, gender: 0.15, height: 0.2 } });
