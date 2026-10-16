@@ -1,5 +1,5 @@
 /**
- * Age surface: the creases an old face, neck and hands carry at rest.
+ * Age surface: the creases an old face and the backs of the hands carry at rest.
  *
  * Fine lines are finer than the base mesh: a forehead line is a millimetre or
  * two across, the forehead's vertices a centimetre apart. A per-vertex field
@@ -7,9 +7,9 @@
  * spurious segments wherever neighbouring vertices fell to different lines). So
  * the creases are a texture in the body's own UV space, baked at pack time
  * (`scripts/lib/ageSurfaceMap.ts`) from the CC0 MakeHuman old-skin photographs,
- * which are painted in that same space, with procedural neck lines where the
- * photographs have none. Sampled at the body's UVs, the creases ride the mesh
- * through every expression, pose and morph.
+ * which are painted in that same space. The neck stays neutral because these
+ * photographs provide no reliable neck-crease signal. Sampled at the body's
+ * UVs, the creases ride the mesh through every expression, pose and morph.
  *
  * The map is a signed crease height per texel (0.5 is flat, below is a groove),
  * one channel per source photograph: red the old man's, green the old woman's.

@@ -33,7 +33,7 @@ captured asset page:
 `age-surface.webp` (2048², `scripts/lib/ageSurfaceMap.ts`) is a crease height in the body's UV space,
 derived from two photographs of the MakeHuman system assets pack (makehuman_system_assets_cc0.zip,
 "System assets, shared under CC0"): each one's luminance band-passed to crease scale and masked to the
-face, the backs of the hands and the neck, whose lines are procedural. Red is the first source, green the second.
+face and the backs of the hands. The neck remains neutral. Red is the first source, green the second.
 
 | Channel | Source | SHA-256 | Licence |
 | --- | --- | --- | --- |
@@ -69,4 +69,4 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyes_high-poly_brown_eye.webp | `82343d661e02db8c6fd8e4ea526c8f8c5fdcdf74f96107f9af3401af86ac5b53` |
 | teeth_base_teeth.webp | `90f929b92d2e1a92716a87e646d92cdc97be7e407899835cc6c64e7f0e8e502a` |
 | tongue_base_tongue01_diffuse.webp | `45fa5424bd0039d17abc6f4d26cf0acdf27e0e15ad37c794f3a165ee7f3e0c9f` |
-| age-surface.webp | `959b9743eb678ea0a6ee663a771a41cf0e2824679ea6359f789d387b75914d15` |
+| age-surface.webp | `87e9f152d745f332fe54d1229d7bbee956695edb60d29bb54cb41065ddb2688a` |

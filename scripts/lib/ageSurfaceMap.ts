@@ -1,6 +1,6 @@
 /**
  * Bakes the age surface map (`src/surface/ageSurface.ts`): the creases of an old
- * face, neck and hands as a signed height in the body's UV space.
+ * face and backs of the hands as a signed height in the body's UV space.
  *
  * Source: MakeHuman's CC0 old-skin photographs (`AGE_SURFACE_SOURCES`), which are
  * painted in the hm08 base mesh's own UV layout, so a texel of the map and of the
@@ -11,9 +11,8 @@
  * are no crease and far darker or lighter (a lash line, a nostril) cannot
  * dominate. Only skin that ages visibly keeps it: the face below the hairline
  * and in front of the ears, without the eyes' openings, brows, lips and mouth;
- * the backs of the hands without the nails. The neck, which the photographs
- * show almost smooth, gets procedural horizontal lines from the mesh's own 3D
- * positions, so they run on round the neck across the UV seam.
+ * the backs of the hands without the nails. The neck stays neutral: these
+ * photographs do not support a repeatable neck-crease signal.
  *
  * Everything is rasterised from the base mesh at the map's size, so the map is a
  * function of the pack's mesh and the two source files alone.
@@ -58,8 +57,6 @@ const smoothstep = (lo: number, hi: number, x: number) => {
 export interface AgeRegions {
   /** Face skin that creases with age, 0..1 per base vertex. */
   face: Float32Array;
-  /** The neck, where the procedural lines go. */
-  neck: Float32Array;
   /** The backs of the hands and fingers. */
   hand: Float32Array;
 }
@@ -116,7 +113,6 @@ export function ageRegions(assets: HumanoidAssets): AgeRegions {
     return best;
   };
   const face = new Float32Array(n);
-  const neck = new Float32Array(n);
   const hand = new Float32Array(n);
   for (let v = 0; v < n; v++) {
     const x = P[v * 3] as number;
@@ -152,11 +148,10 @@ export function ageRegions(assets: HumanoidAssets): AgeRegions {
         (1 - smoothstep(0.05, 0.25, enclosed[v] as number)) *
         (1 - smoothstep(0.05, 0.4, lips[v] as number)) *
         (1 - clamp01(mouth[v] as number));
-    neck[v] = (zones.neck[v] as number) * (1 - (head[v] as number) * front);
     hand[v] =
       (handZone[v] as number) * (1 - (zones.palm[v] as number)) * (1 - clamp01(nails[v] as number));
   }
-  return { face, neck, hand };
+  return { face, hand };
 }
 
 /** Per-texel values rasterised from the base mesh's body faces at the map's UVs. */
@@ -374,48 +369,6 @@ export function grooveHeight(signal: number, full: number): number {
   return -Math.tanh(1.3 * t);
 }
 
-/** The neck's horizontal lines (necklace lines), by height above the neck's base joint at its front. */
-export const NECK_LINES = [
-  { at: 0.0085, depth: 0.85 },
-  { at: 0.0195, depth: 1 },
-  { at: 0.031, depth: 0.7 },
-] as const;
-/** A neck line's half-width (Gaussian sigma) and how far its middle sags at the front, metres. */
-export const NECK_LINE_WIDTH = 0.0017;
-export const NECK_LINE_SAG = 0.004;
-
-/**
- * The neck lines' height at a point of the neck (signed, -1 the floor of a
- * line), from its rest position: horizontal grooves round the front and sides,
- * each with a soft roll of skin above it, sagging a little at the front and
- * wandering slowly round the neck, gone by the nape.
- */
-export function neckLines(
-  x: number,
-  y: number,
-  z: number,
-  base: readonly [number, number, number],
-  axisZ: number,
-): number {
-  const theta = Math.atan2(x, z - axisZ);
-  const front = Math.cos(theta);
-  const reach = smoothstep(-0.35, 0.25, front);
-  if (reach <= 0) return 0;
-  let h = 0;
-  NECK_LINES.forEach((line, i) => {
-    const centre =
-      base[1] +
-      line.at -
-      NECK_LINE_SAG * front * front * (front > 0 ? 1 : 0) +
-      0.0012 * Math.sin(2.1 * theta + 1.9 * i) +
-      0.0006 * Math.sin(5.3 * theta + 0.7 * i);
-    const d = (y - centre) / NECK_LINE_WIDTH;
-    const roll = (y - centre - 1.6 * NECK_LINE_WIDTH) / (1.3 * NECK_LINE_WIDTH);
-    h += line.depth * (-Math.exp(-d * d) + 0.3 * Math.exp(-roll * roll));
-  });
-  return reach * h;
-}
-
 export interface AgeSurfaceMap {
   size: number;
   /** RGB, 8 bits: red the old man's crease height, green the old woman's, blue 128; 128 is flat. */
@@ -431,37 +384,11 @@ export async function buildAgeSurfaceMap(
   size = AGE_SURFACE_SIZE,
 ): Promise<AgeSurfaceMap> {
   const regions = ageRegions(assets);
-  const n = assets.manifest.vertexCount;
-  const px = new Float32Array(n);
-  const py = new Float32Array(n);
-  const pz = new Float32Array(n);
-  for (let v = 0; v < n; v++) {
-    px[v] = assets.positions[v * 3] as number;
-    py[v] = assets.positions[v * 3 + 1] as number;
-    pz[v] = assets.positions[v * 3 + 2] as number;
-  }
-  const r = rasteriseUv(assets, size, [regions.face, regions.neck, regions.hand, px, py, pz]);
+  const r = rasteriseUv(assets, size, [regions.face, regions.hand]);
   const K = r.channels;
   const seam = distanceInside(r.cover, size, SEAM_FADE[1] + 1);
-  const base = joint(assets, "neck01____head");
-  const axisZ = (base[2] + joint(assets, "neck03____head")[2]) / 2;
   const rgb = new Uint8Array(size * size * 3).fill(128);
   const scales: AgeSurfaceMap["scales"] = {};
-  const neck = new Float32Array(size * size);
-  for (let i = 0; i < size * size; i++) {
-    if (!r.cover[i]) continue;
-    const w = r.values[i * K + 1] as number;
-    if (w > 0)
-      neck[i] =
-        w *
-        neckLines(
-          r.values[i * K + 3] as number,
-          r.values[i * K + 4] as number,
-          r.values[i * K + 5] as number,
-          base,
-          axisZ,
-        );
-  }
   for (const [c, source] of AGE_SURFACE_SOURCES.entries()) {
     const signal = await creaseSignal(path.join(systemDir, source.image), size);
     const level = (k: number) =>
@@ -471,7 +398,7 @@ export async function buildAgeSurfaceMap(
         CREASE_FULL_PERCENTILE,
       );
     const face = level(0);
-    const hand = level(2);
+    const hand = level(1);
     scales[source.channel] = { face, hand };
     for (let i = 0; i < size * size; i++) {
       if (!r.cover[i]) continue;
@@ -480,8 +407,8 @@ export async function buildAgeSurfaceMap(
       const detail =
         fade *
         ((r.values[i * K] as number) * grooveHeight(s, face) +
-          (r.values[i * K + 2] as number) * grooveHeight(s, hand));
-      const h = Math.min(1, Math.max(-1, detail + (neck[i] as number)));
+          (r.values[i * K + 1] as number) * grooveHeight(s, hand));
+      const h = Math.min(1, Math.max(-1, detail));
       rgb[i * 3 + c] = Math.round(127.5 + 127.5 * h);
     }
   }
@@ -534,7 +461,7 @@ export function ageSurfaceProvenance(out: AgeSurfaceOutput): string[] {
     `\`${out.entry.file}\` (${out.entry.size}², \`scripts/lib/ageSurfaceMap.ts\`) is a crease height in the body's UV space,`,
     "derived from two photographs of the MakeHuman system assets pack (makehuman_system_assets_cc0.zip,",
     '"System assets, shared under CC0"): each one\'s luminance band-passed to crease scale and masked to the',
-    "face, the backs of the hands and the neck, whose lines are procedural. Red is the first source, green the second.",
+    "face and the backs of the hands. The neck remains neutral. Red is the first source, green the second.",
     "",
     "| Channel | Source | SHA-256 | Licence |",
     "| --- | --- | --- | --- |",
