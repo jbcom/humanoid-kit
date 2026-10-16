@@ -437,12 +437,12 @@ export function createHandContact(options: HandContactOptions = {}): HandContact
     report.status = reached ? "reached" : "unreached";
     report.reason = reached
       ? "reached"
-      : !result.geometricallyReachable
-        ? "geometrically-unreachable"
-        : weight < 1
-          ? "partial-weight"
-          : result.reason === "reached"
-            ? "tolerance-not-reached"
+      : weight >= 1 && result.status === "reached"
+        ? "tolerance-not-reached"
+        : !result.geometricallyReachable
+          ? "geometrically-unreachable"
+          : weight < 1
+            ? "partial-weight"
             : result.reason;
     report.orientationError = weight >= 1 ? result.orientationError : null;
     report.geometricallyReachable = result.geometricallyReachable;
