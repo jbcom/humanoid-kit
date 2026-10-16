@@ -2437,6 +2437,11 @@ animator.root;                // how far the figure has been carried: [x across,
   `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
   (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
+- `rootDisplacement(plan, time, dt, out?)` integrates the stored root-motion steps
+  forwards or backwards, clipping nonlooping spans to the clip's active time.
+  Complete loops use the stored steps' sum, with work bounded by the plan's size,
+  and reuse `out` when supplied. Non-finite time or duration gives `[NaN, NaN]`;
+  zero duration and plans with no intervals or zero frame rate give `[0, 0]`.
 - `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart, onFrame }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
   frame without React state: the body follows it with `pose.faceUnits` laid over,

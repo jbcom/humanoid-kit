@@ -157,8 +157,10 @@ export function planRootMotion(
 /**
  * The displacement over `dt` seconds of the clip's own time from `time`,
  * summed over the intervals it crosses and written to `out` (x, z). A negative
- * `dt` is the same stretch run backwards, so the displacement negated. Past a
- * non-looping clip's end it is zero.
+ * `dt` is the same stretch run backwards, so the displacement negated. A
+ * non-looping span is clipped to the clip's active time. Complete loops use the
+ * sum of the stored steps, with work bounded by the plan's size. Non-finite
+ * time or duration gives NaN, except that zero duration always gives zero.
  */
 export function rootDisplacement(
   plan: RootMotionPlan,
@@ -172,19 +174,58 @@ export function rootDisplacement(
   const sign = dt < 0 ? -1 : 1;
   const intervals = plan.step.length / 2;
   const span = plan.loop ? plan.frames : plan.frames - 1;
+  if (intervals === 0 || span <= 0 || plan.fps <= 0) return out;
   // Frame units, forward from the start of the stretch.
   let f = (dt < 0 ? time + dt : time) * plan.fps;
   let remaining = Math.abs(dt) * plan.fps;
-  let guard = 0;
-  while (remaining > 1e-9 && guard++ < 100000) {
-    if (plan.loop) f = ((f % span) + span) % span;
-    else if (f < 0 || f >= span) break;
-    const i = Math.min(intervals - 1, Math.floor(f));
+  if (!Number.isFinite(f) || !Number.isFinite(remaining)) {
+    out[0] = Number.NaN;
+    out[1] = Number.NaN;
+    return out;
+  }
+  if (!plan.loop) {
+    // A stretch starting before the clip can still cross its active intervals.
+    if (f < 0) {
+      remaining += f;
+      f = 0;
+    }
+    addRootIntervals(plan.step, f, Math.min(remaining, span - f), sign, out);
+    return out;
+  }
+  f = ((f % span) + span) % span;
+  const cycles = Math.floor(remaining / span);
+  if (cycles > 0) {
+    // `cycle` was accumulated before Float32 rounding; `step` is authoritative.
+    let x = 0;
+    let z = 0;
+    for (let i = 0; i < intervals; i++) {
+      x += plan.step[i * 2] as number;
+      z += plan.step[i * 2 + 1] as number;
+    }
+    out[0] += sign * x * cycles;
+    out[1] += sign * z * cycles;
+    remaining %= span;
+  }
+  // Less than a cycle remains, crossing the wrap at most once.
+  remaining = addRootIntervals(plan.step, f, remaining, sign, out);
+  if (remaining > 0) addRootIntervals(plan.step, 0, remaining, sign, out);
+  return out;
+}
+
+/** Adds the part up to the plan's end, returning any span left after that end. */
+function addRootIntervals(
+  step: Float32Array,
+  f: number,
+  remaining: number,
+  sign: number,
+  out: [number, number],
+): number {
+  for (let i = Math.floor(f); i < step.length / 2 && remaining > 0; i++) {
     const used = Math.min(remaining, i + 1 - f);
-    out[0] += sign * (plan.step[i * 2] as number) * used;
-    out[1] += sign * (plan.step[i * 2 + 1] as number) * used;
+    out[0] += sign * (step[i * 2] as number) * used;
+    out[1] += sign * (step[i * 2 + 1] as number) * used;
     f += used;
     remaining -= used;
   }
-  return out;
+  return remaining;
 }
