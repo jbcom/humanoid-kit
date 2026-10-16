@@ -140,6 +140,7 @@ export default defineConfig({
             gpuMode,
             headless,
           }),
+          provide: { browserGpuMode: gpuMode },
           // Software rendering (CI) runs the shading measurements about seven
           // times slower than a GPU: the scatter-parity sweep takes 3 s on a
           // GPU and 20 s under SwiftShader.
