@@ -168,7 +168,7 @@ function renderedHand(b: Body, rotations: Float32Array, side: Side): FrameOut {
   const pose = skinPose(
     b.rest,
     rotations,
-    poseShare(b.rest, rotations, skinDualShare(b.rest.names)),
+    b.figure.skinMode === "linear" ? 0 : poseShare(b.rest, rotations, skinDualShare(b.rest.names)),
   );
   const live: LiveFigure = {
     surface: b.evaluation.surface,
@@ -385,6 +385,48 @@ describe("hand contact constraint", { timeout: 600_000 }, () => {
         expect(Math.abs(ma.shoulderHeight - p.a.posed.measures.shoulderHeight)).toBeLessThan(0.01);
         expect(Math.abs(mb.shoulderHeight - p.b.posed.measures.shoulderHeight)).toBeLessThan(0.01);
       });
+
+  it("rejects a locally reached solve whose final affine-scaled world gap exceeds one centimetre", () => {
+    const p = pair(handshake("R"), body("a", PAIRS[0]?.a ?? {}), body("b", PAIRS[0]?.b ?? {}));
+    p.tick(0.4);
+    const unscaled = solve(createHandContact(), p.a, p.interaction, "initiator", "R");
+    expect(unscaled.report.status).toBe("reached");
+    expect(unscaled.report.distance).toBeGreaterThan(0.00001);
+    expect(unscaled.report.distance).toBeLessThanOrEqual(0.01);
+    const target = p.interaction.contactTarget("grip", "initiator");
+    if (!target) throw new Error("no planned grip");
+    // Scale around the fixed world target: its inverse-transformed local goal
+    // stays unchanged. This core matrix fixture does not extend presence's domain.
+    const scale = 1000;
+    p.a.world.position
+      .sub(new Vector3(...target))
+      .multiplyScalar(scale)
+      .add(new Vector3(...target));
+    p.a.world.scale.setScalar(scale);
+    p.a.world.updateMatrixWorld(true);
+    const scaled = solve(createHandContact(), p.a, p.interaction, "initiator", "R");
+    const gap = dist(scaled.hand.position, target);
+    expect(gap).toBeGreaterThan(0.01);
+    expect(Math.abs(scaled.report.distance - gap)).toBeLessThan(1e-6);
+    expect(dist(scaled.report.hand, scaled.hand.position)).toBeLessThan(1e-6);
+    expect(scaled.report.status).toBe("unreached");
+    expect(scaled.report.reason).toBe("tolerance-not-reached");
+  });
+
+  it("measures the final contact hand using the figure's explicit linear skin mode", () => {
+    for (const side of ["L", "R"] as const) {
+      const p = pair(handshake(side), body("a", PAIRS[0]?.a ?? {}), body("b", PAIRS[0]?.b ?? {}));
+      p.tick(0.4);
+      p.a.figure.skinMode = "linear";
+      const result = solve(createHandContact(), p.a, p.interaction, "initiator", side);
+      expect(dist(result.report.hand, result.hand.position)).toBeLessThanOrEqual(1e-6);
+      expect(
+        Math.abs(result.report.distance - dist(result.hand.position, result.report.target)),
+      ).toBeLessThanOrEqual(1e-6);
+      expect(result.report.status).toBe("reached");
+      expect(result.report.distance).toBeLessThanOrEqual(0.01);
+    }
+  });
 
   it("plans against measured palms and bend reserve, not the old scalar reach target", () => {
     const a = body("a", PAIRS[0]?.a ?? {}),
