@@ -68,7 +68,7 @@ export interface ReservoirSkinning {
   owner: Int16Array;
   /** Per reservoir, its root's bones and weights (`rootSkin`). */
   roots: readonly { index: Uint16Array; weight: Float32Array }[];
-  /** Per reservoir, its loop's render vertices: where the organ meets the body. */
+  /** Per reservoir, one current render representative per original source in its loop's cyclic order. */
   loops: readonly Uint32Array[];
   /** Per reservoir, a canal's opening length (`AdultReservoirSpec.canal`), metres, or null for an organ. */
   openings: readonly (number | null)[];
@@ -167,11 +167,17 @@ export function reservoirSkinningOf(
     for (const v of r.loopVertices) loopOf[v] = s;
   });
   const owner = Int16Array.from(mesh.renderToSurface, (v) => bySurface[v] as number);
-  const loops = reservoirs.map((_, s) => {
+  const renderOf = new Int32Array(mesh.topology.vertexCount).fill(-1);
+  mesh.renderToSurface.forEach((v, r) => {
+    if (renderOf[v] === -1) renderOf[v] = r;
+  });
+  // Mechanical aggregates sample each ordered source once; UV copies remain separate render vertices.
+  const loops = reservoirs.map((reservoir) => {
     const loop: number[] = [];
-    mesh.renderToSurface.forEach((v, r) => {
-      if (loopOf[v] === s) loop.push(r);
-    });
+    for (const v of reservoir.loopVertices) {
+      const r = renderOf[v] as number;
+      if (r >= 0) loop.push(r);
+    }
     return Uint32Array.from(loop);
   });
   const roots = loops.map((loop) => rootSkin(mesh, loop));
@@ -287,7 +293,7 @@ function rise(
   dist: Float64Array,
   centre: number[],
 ): number {
-  const { owner, loops, graph } = skinning;
+  const { loops, graph } = skinning;
   const loop = loops[s] as Uint32Array;
   const n = [0, 0, 0];
   const rel = (v: number, k: number) => (positions[v * 3 + k] as number) - (centre[k] as number);
@@ -305,11 +311,12 @@ function rise(
   let far = 0;
   let heights = 0;
   let distances = 0;
-  for (let v = 0; v < owner.length; v++) {
-    if (owner[v] !== s) continue;
+  for (let node = 0; node < graph.render.length; node++) {
+    if (graph.reservoir[node] !== s) continue;
+    const v = graph.render[node] as number;
     const h = height(v);
     if (Math.abs(h) > Math.abs(far)) far = h;
-    const d = dist[graph.node[v] as number] as number;
+    const d = dist[node] as number;
     if (d < RISE_WINDOW[0] || d > RISE_WINDOW[1]) continue;
     heights += h;
     distances += d;
