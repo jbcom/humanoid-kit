@@ -662,7 +662,8 @@ const position = (fold: boolean): string => /* glsl */ `
  * The blend of the vertex's normal, in place of three's `skinnormal_vertex`: the
  * linear half over every place (its tangent too), mixed with the dual quaternion
  * turn by the share; the matrix and motion it finds are the position's too.
- * With the folds, each joint's change added, and the sum made unit again.
+ * With the folds, the mixed base made unit, each joint's change added, and
+ * the sum made unit again (zero vectors stay zero, as on the CPU).
  */
 const normal = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
@@ -682,12 +683,19 @@ const normal = (fold: boolean): string => /* glsl */ `
 	if ( hkShare > 0.0 ) objectNormal = mix( objectNormal, hkQRotate( hkQ, hkRestNormal ), hkShare );
 	${
     fold
-      ? `bool hkTurned = false;
+      ? `bool hkTurned = ${FOLD_JOINTS.map((joint) => `${foldSlotGlsl(joint)} >= 0.0`).join(" || ")};
+	if ( hkTurned ) {
+		float hkBaseNormalLength = length( objectNormal );
+		objectNormal /= hkBaseNormalLength > 0.0 ? hkBaseNormalLength : 1.0;
+	}
 	${FOLD_JOINTS.map(
     (joint) =>
-      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) { objectNormal += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 1 ); hkTurned = true; }`,
+      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) objectNormal += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 1 );`,
   ).join("\n\t")}
-	if ( hkTurned ) objectNormal = normalize( objectNormal );`
+	if ( hkTurned ) {
+		float hkFoldNormalLength = length( objectNormal );
+		objectNormal /= hkFoldNormalLength > 0.0 ? hkFoldNormalLength : 1.0;
+	}`
       : ""
   }
 #endif
