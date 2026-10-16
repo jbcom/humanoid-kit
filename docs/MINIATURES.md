@@ -123,6 +123,12 @@ draw a different body from the full renderer.
    `HumanoidModel.proxyTopology(id)` gives a proxy's static data and
    `fitProxy` places it on an evaluated figure. Its skin is `bindingSkin` (each
    proxy vertex blends its three base vertices' weights, as MakeHuman does).
+   For textured rendering, `proxyRenderTopology(assets, id)` splits only the
+   authored vertex/UV-entry pairs, copies all eight skin influences, and keeps
+   the original face and triangle ordinals. `expandProxyPositions` expands a
+   `fitProxy` result into that render order; `proxyRenderIndex` applies the
+   same visibility rule in render indices. Source vertices, triangle winding,
+   UV coordinates and fit remain unchanged (see `docs/API.md`).
    Under clothes a proxy vertex shows when at least two of its three base
    vertices show (`transferVisibility`, the rule the kit already applies to a
    garment under another, and MakeHuman's `transferVertexMaskToProxy`), and a

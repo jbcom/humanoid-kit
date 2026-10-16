@@ -763,6 +763,30 @@ follows every morph of the figure.
 - `proxyIndex(assets, id, bodyVisible)`: the triangles that show under an
   outfit (`Outfit.bodyVisible`): a vertex shows where two of its three base
   vertices do, a face unless every corner is hidden.
+- `proxyRenderTopology(assets, id): ProxyRenderTopology` builds and caches a
+  render vertex for each authored `(proxy vertex, UV entry)` pair. `index`
+  preserves the triangle order and winding of `proxyTopology().index`;
+  `uvs` copies authored UVs without projection or flipping. `renderToProxy`
+  and `renderToUv` identify each render vertex's original vertex and UV entry.
+  Equal UV coordinates with different entry indices stay distinct. Each
+  render vertex copies the source vertex's complete `SKIN_INFLUENCES` skin row.
+  `triangleFace` identifies the original authored face; `sourceTriangle` is
+  the triangle ordinal in the unchanged original `proxyTopology().index`.
+  The cached arrays are shared and callers must treat them as read-only.
+- `expandProxyPositions(assets, id, sourcePositions, out?)` copies positions
+  from `fitProxy`'s original vertex order into that render order. The input
+  must have exactly `proxyTopology().vertexCount * 3` floats; an output must
+  have exactly `proxyRenderTopology().vertexCount * 3`. Overlapping input and
+  output views are refused before writing, while disjoint views of the same
+  buffer are supported. The function returns the supplied output when present.
+- `proxyRenderIndex(assets, id, bodyVisible)` returns matching render indices
+  using the same visibility rule as `proxyIndex`. Surviving triangles retain
+  their relative original order; this filtered index is not a provenance
+  record. With a null mask it returns the cached render `index` itself.
+- The render helpers throw `ProxyError` for malformed face/UV arrays, vertex
+  or UV indices outside their source arrays, invalid source skin rows, or
+  position buffer lengths/overlap. They leave source topology and fitting
+  unchanged and add no geometry beyond copies required by UV identity.
 - `boundProxy(assets, id)`; `ProxyError` for a proxy the pack lacks or that has
   not loaded.
 
