@@ -1,7 +1,7 @@
 /**
  * Playing clips on one figure: time, speed, crossfades and the root motion that
- * follows from them. Pure and allocation-free once running: `update` writes
- * into buffers the animator owns, so a caller can call it every frame.
+ * follows from them. The core is framework-free; `update` writes the final pose
+ * into buffers the animator owns after chronological contact checkpoints.
  *
  * Face units and any other pose are laid over the result by the caller
  * (`composeRotations`); the animator knows only the body.
@@ -11,6 +11,7 @@ import { type AnimationClip, blendRotations, clipTime, sampleClip, setIdentity }
 import { FootLock } from "./footlock.ts";
 import { planRootMotion, type RootMotionPlan, rootDisplacement } from "./locomotion.ts";
 import { SupportConstraint, type SupportFigure, type SupportReport } from "./supportConstraint.ts";
+import { type AnimationTrack, animationTimeline } from "./timeline.ts";
 
 export interface PlayOptions {
   /** Seconds the new clip takes to replace the old one; default `DEFAULT_FADE`, and none for the first clip. */
@@ -24,12 +25,9 @@ export interface PlayOptions {
 /** The crossfade between one clip and the next unless told otherwise, seconds. */
 export const DEFAULT_FADE = 0.25;
 
-interface Track {
-  clip: AnimationClip;
-  /** The clip's own time, seconds (not wrapped: `sampleClip` wraps it). */
-  time: number;
-  speed: number;
-}
+const finite = (value: number, name: string): void => {
+  if (!Number.isFinite(value)) throw new RangeError(`animation: ${name} must be finite`);
+};
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
@@ -45,8 +43,8 @@ export class Animator {
   private rest: RestBones | null;
   private ground: number;
   private lock: FootLock | null = null;
-  private current: Track | null = null;
-  private previous: Track | null = null;
+  private current: AnimationTrack | null = null;
+  private previous: AnimationTrack | null = null;
   private fade = { elapsed: 0, duration: 0 };
   private readonly a: BoneRotations;
   private readonly b: BoneRotations;
@@ -55,6 +53,7 @@ export class Animator {
   private readonly supported: BoneRotations;
   private support: SupportConstraint | null = null;
   private supportFigure: SupportFigure | null = null;
+  private poseDirty = false;
   /** Last internal authored-support result; an unavailable or unreachable key leaves the sampled pose unchanged. */
   readonly supportReport: SupportReport = {
     state: "idle",
@@ -86,6 +85,7 @@ export class Animator {
     this.ground = ground;
     this.lock = rest ? new FootLock(rest, ground) : null;
     this.plans.clear();
+    this.poseDirty = true;
     this.setSupportFigure(null);
   }
 
@@ -97,6 +97,7 @@ export class Animator {
       this.supportFigure?.folds === figure?.folds
     )
       return false;
+    this.poseDirty = true;
     this.supportFigure = figure;
     this.support = figure ? new SupportConstraint(figure) : null;
     return true;
@@ -114,8 +115,15 @@ export class Animator {
 
   /** Starts `clip`, fading from the one playing (none for the first). */
   play(clip: AnimationClip, options: PlayOptions = {}): void {
-    const fade = this.current ? (options.fade ?? DEFAULT_FADE) : 0;
-    const next: Track = { clip, time: options.time ?? 0, speed: options.speed ?? 1 };
+    const duration = options.fade ?? DEFAULT_FADE;
+    const time = options.time ?? 0;
+    const speed = options.speed ?? 1;
+    finite(duration, "fade");
+    finite(time, "time");
+    finite(speed, "speed");
+    if (duration < 0) throw new RangeError("animation: fade must be nonnegative");
+    const fade = this.current ? duration : 0;
+    const next: AnimationTrack = { clip, time, speed };
     if (fade > 0 && this.current) {
       this.previous = this.current;
       this.fade = { elapsed: 0, duration: fade };
@@ -128,12 +136,16 @@ export class Animator {
 
   /** Sets the playing clip's speed, or does nothing if none plays. */
   setSpeed(speed: number): void {
-    if (this.current) this.current.speed = speed;
+    if (!this.current) return;
+    finite(speed, "speed");
+    this.current.speed = speed;
   }
 
   /** Moves the playing clip to `time` seconds into it, without moving the figure. */
   seek(time: number): void {
-    if (this.current) this.current.time = time;
+    if (!this.current) return;
+    finite(time, "time");
+    this.current.time = time;
     this.previous = null;
     this.lock?.reset();
     this.write();
@@ -144,6 +156,7 @@ export class Animator {
     this.root[0] = 0;
     this.root[1] = 0;
     this.lock?.reset();
+    this.poseDirty = true;
   }
 
   /** The real foot-contact owner and its hold (left then right); an owner can be fading out. */
@@ -166,28 +179,55 @@ export class Animator {
    */
   update(dt: number): BoneRotations {
     if (!this.current) return this.rotations;
-    let w = 1;
-    if (this.previous) {
-      this.fade.elapsed += dt;
-      w = smooth(Math.min(1, this.fade.elapsed / this.fade.duration));
+    finite(dt, "dt");
+    if (dt < 0)
+      throw new RangeError("animation: dt must be nonnegative; reverse with a negative speed");
+    if (dt === 0) return this.rotations;
+    // Preflight the same pure metadata schedule before changing clocks, root,
+    // fades or contact state. An unrepresentable checkpoint must fail atomically.
+    for (const _interval of animationTimeline(
+      this.current,
+      this.previous,
+      this.fade,
+      dt,
+      this.rest !== null,
+    )) {
+      /* preflight */
     }
-    if (this.previous) this.carry(this.previous, dt, 1 - w);
-    this.carry(this.current, dt, w);
-    if (this.previous && w >= 1) this.previous = null;
-    this.write();
+    for (const interval of animationTimeline(
+      this.current,
+      this.previous,
+      this.fade,
+      dt,
+      this.rest !== null,
+    )) {
+      const cur = this.current;
+      const prev = this.previous;
+      const changed =
+        cur.time !== interval.currentEnd ||
+        (prev !== null && interval.previousEnd !== prev.time) ||
+        interval.fadeElapsed !== this.fade.elapsed;
+      if (prev && interval.previousStart !== null && interval.previousEnd !== null) {
+        this.carry(prev, interval.previousStart, interval.previousEnd, interval.previousWeight);
+        prev.time = interval.previousEnd;
+      }
+      this.carry(cur, interval.currentStart, interval.currentEnd, interval.currentWeight);
+      cur.time = interval.currentEnd;
+      this.fade.elapsed = interval.fadeElapsed;
+      if (interval.fadeComplete) this.previous = null;
+      if (interval.write && (changed || this.poseDirty))
+        this.write(this.poseDirty && !changed ? undefined : interval.supportKey);
+    }
     return this.rotations;
   }
 
-  private carry(track: Track, dt: number, weight: number): void {
+  private carry(track: AnimationTrack, from: number, to: number, weight: number): void {
     const plan = this.planOf(track.clip);
-    if (plan && weight > 0) {
-      rootDisplacement(plan, track.time, dt * track.speed, this.step);
+    if (plan && weight > 0 && from !== to) {
+      rootDisplacement(plan, from, to - from, this.step);
       this.root[0] += this.step[0] * weight;
       this.root[1] += this.step[1] * weight;
     }
-    track.time += dt * track.speed;
-    // A clip that does not loop stops on its last frame.
-    if (!track.clip.loop) track.time = clipTime(track.clip, track.time);
   }
 
   private planOf(clip: AnimationClip): RootMotionPlan | null {
@@ -200,12 +240,18 @@ export class Animator {
     return plan;
   }
 
-  private write(): void {
+  private write(supportKey?: number | null): void {
     const cur = this.current;
     if (!cur) return;
+    this.poseDirty = false;
     if (!this.previous) {
       sampleClip(cur.clip, cur.time, this.rotations);
-      this.alignSupport(cur.clip, cur.time);
+      this.alignSupport(
+        cur.clip,
+        supportKey === undefined ? cur.time : supportKey,
+        supportKey !== null,
+        supportKey !== undefined,
+      );
       if (cur.clip.grounded) this.plant();
       // An airborne clip must not publish the last grounded clip's ownership.
       else this.lock?.reset();
@@ -215,22 +261,40 @@ export class Animator {
     sampleClip(this.previous.clip, this.previous.time, this.a);
     sampleClip(cur.clip, cur.time, this.b);
     blendRotations(this.a, this.b, w, this.rotations);
-    this.alignSupport(cur.clip, cur.time);
+    this.alignSupport(
+      cur.clip,
+      supportKey === undefined ? cur.time : supportKey,
+      supportKey !== null,
+      supportKey !== undefined,
+    );
     if (cur.clip.grounded || this.previous.clip.grounded) this.plant();
     // Once the fade has reached two airborne clips, no old sole may remain owned.
     else this.lock?.reset();
   }
 
   /** Aligns exact authored support keys before FootLock takes its contact snapshots. */
-  private alignSupport(clip: AnimationClip, time: number): void {
-    const active = clip.supportTracks?.some((track) =>
-      track.times.some((key) => Math.abs(key - time) <= 1e-6),
-    );
+  private alignSupport(
+    clip: AnimationClip,
+    time: number | null,
+    enabled = true,
+    exact = false,
+  ): void {
+    const phase = time === null ? null : clipTime(clip, time);
+    const keys = clip.supportTracks?.flatMap((track) => track.times);
+    // Internal crossings carry the original authored identity (including a
+    // duration seam key). Lifecycle refresh retains approximate phase matching.
+    const key =
+      enabled && time !== null
+        ? exact || keys?.includes(time)
+          ? time
+          : keys?.find((key) => Math.abs(clipTime(clip, key) - (phase as number)) <= 1e-6)
+        : undefined;
+    const active = key !== undefined;
     if (!active) {
       Object.assign(this.supportReport, {
         state: "idle",
         clip: null,
-        time,
+        time: time ?? this.current?.time ?? 0,
         residual: Number.NaN,
         tolerance: null,
       });
@@ -240,16 +304,15 @@ export class Animator {
       Object.assign(this.supportReport, {
         state: "unavailable",
         clip: clip.id,
-        time,
+        time: time ?? this.current?.time ?? 0,
         residual: Number.NaN,
         tolerance:
-          clip.supportTracks?.find((track) =>
-            track.times.some((key) => Math.abs(key - time) <= 1e-6),
-          )?.quality.contactTolerance ?? null,
+          clip.supportTracks?.find((track) => track.times.includes(key))?.quality
+            .contactTolerance ?? null,
       });
       return;
     }
-    const report = this.support.apply(clip, time, this.rotations, this.supported);
+    const report = this.support.apply(clip, key, this.rotations, this.supported);
     this.rotations.set(this.supported);
     Object.assign(this.supportReport, report);
   }

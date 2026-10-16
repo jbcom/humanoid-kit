@@ -2447,6 +2447,47 @@ animator.root;                // how far the figure has been carried: [x across,
   `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
   (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
+  `update(dt)` accepts finite, nonnegative wall-clock seconds; reverse playback uses a
+  finite negative speed. Active `seek(time)` and `setSpeed(speed)`, and `play`'s
+  time, speed and nonnegative fade duration, reject invalid numbers with
+  `RangeError` before changing state. With no playing clip, update/seek/setSpeed
+  remain no-ops. Zero elapsed time does not advance contacts or support keys.
+  A nonloop keeps an out-of-range play/seek time visible immediately; its next
+  positive update first clamps that phase, without carry, then consumes the full
+  elapsed step from the endpoint (including reverse playback).
+
+  With grounded contact, elapsed time is processed chronologically at no more than
+  1/60 second or half a source frame for either moving track, also visiting both
+  tracks' source keys, loop seams, stops, authored support keys and fade completion.
+  The actual intermediate blended pose reaches the existing support and foot-lock
+  solvers; only the final state is exposed to the caller. Signed reach corrections
+  remain valid. This is a discrete sampling contract, not continuous contact
+  detection or equal contact results under arbitrary callback partitions. Sequences
+  using the same checkpoints agree. Work grows with elapsed time, frame rates and
+  playback speeds; no hidden time or iteration cap drops contact history. A
+  nonrepresentable requested clock/fade span or checkpoint fails with `RangeError`
+  before mutation; an individual cadence slice may leave one clock unchanged while
+  wall time and another participating clock advance. Keys are admitted against the
+  represented requested endpoint before converting them to wall time. Support fires
+  when the represented clip clock crosses its eligible target. Duplicate declarations
+  of one support time share an event; independently distinct support events whose
+  wall order cannot be represented cause an atomic `RangeError`, not a merged or
+  dropped event. This includes an off-frame key collapsing onto a distinct source
+  frame or loop seam at the current clock or inside the requested represented
+  span, or sharing that boundary’s inverse wall coordinate despite distinct clip
+  coordinates, for loops and nonloops; unrelated collisions outside that span do
+  not reject the update. Exact
+  authored support keys select their own track before lifecycle epsilon matching,
+  preserving raw zero and duration-key identities.
+
+  Fade root travel integrates the stored interval velocities with the exact
+  smoothstep weight integral, including a clip stopping or the fade ending inside
+  an update. It therefore replaces the earlier whole-step endpoint-weight
+  approximation. Current-clip support is applied once per internally crossed
+  authored key (wrapped for loops), before foot lock. Explicit play/seek and
+  refreshed rest/support inputs retain their lifecycle refresh behavior; stopped
+  or frozen updates do not invent new crossings.
+
 - `rootDisplacement(plan, time, dt, out?)` integrates the stored root-motion steps
   forwards or backwards, clipping nonlooping spans to the clip's active time.
   Complete loops use the stored steps' sum, with work bounded by the plan's size,
