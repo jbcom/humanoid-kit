@@ -54,6 +54,42 @@ function deferredVoid(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
+function diagnosticText(value: string): string {
+  return value
+    .replace(/data:[^\s"']+/gi, "data:[omitted]")
+    .replace(/https?:\/\/[^\s"']+/gi, (value) => {
+      const url = new URL(value);
+      url.username = "";
+      url.password = "";
+      url.search = "";
+      url.hash = "";
+      return url.href;
+    })
+    .slice(0, 512);
+}
+
+function diagnosticCard(group: Group | null, vertexCount?: number, indexCount?: number) {
+  let found: SkinnedMesh | undefined;
+  if (vertexCount !== undefined && indexCount !== undefined)
+    group?.traverse((object) => {
+      const candidate = object as SkinnedMesh;
+      if (
+        candidate.isSkinnedMesh &&
+        candidate.geometry.getAttribute("position")?.count === vertexCount &&
+        candidate.geometry.index?.count === indexCount
+      )
+        found = candidate;
+    });
+  const material = found?.material;
+  return {
+    groupPresent: group !== null,
+    facialCardPresent: found !== undefined,
+    cardVisible: found?.visible ?? null,
+    cardMapPresent:
+      material && !Array.isArray(material) ? Boolean((material as HairMaterial).map) : null,
+  };
+}
+
 function albedoOnly(material: Material): void {
   const compile = material.onBeforeCompile.bind(material);
   const key = material.customProgramCacheKey.bind(material);
@@ -229,6 +265,8 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     if (!found) throw new Error("facial card missing");
     return found;
   }
+  const loading = vi.spyOn(TextureLoader.prototype, "loadAsync");
+  let stage = "missing-mask";
   const started = performance.now();
   const screen = await render(<Fixture />);
   try {
@@ -258,6 +296,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
       compile(shader);
       uploaded = shader.uniforms.hkGreyMap?.value as DataTexture;
     };
+    stage = "registry-recovery";
     await screen.rerender(<Fixture masks={registry} />);
     await expect.poll(() => settlements).toBe(1);
     expect(evaluations).toBe(before);
@@ -270,6 +309,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     const changed = {
       "caller-streak": { ...registry["caller-streak"], data: new Uint8Array([255, 0, 0, 255]) },
     };
+    stage = "replaced-upload";
     await screen.rerender(<Fixture masks={changed} />);
     await expect.poll(() => settlements).toBe(2);
     expect(evaluations).toBe(before);
@@ -277,8 +317,34 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     expect(card().geometry).toBe(geometry);
     expect(card().material).toBe(liveMaterial);
     expect(registry["caller-streak"].data.byteLength).toBe(4);
+  } catch (failure) {
+    try {
+      const topology = client.hairTopology(id);
+      console.error(
+        "facial-grey-failure",
+        JSON.stringify({
+          stage,
+          elapsedMs: performance.now() - started,
+          evaluations,
+          settlements,
+          sourcePending: null,
+          gpu: null,
+          gpuMode: inject("browserGpuMode"),
+          textureUrl: topology?.textureUrl ? diagnosticText(topology.textureUrl) : null,
+          loaderCallCount: loading.mock.calls.length,
+          loaderUrls: loading.mock.calls.slice(0, 64).map(([url]) => diagnosticText(url)),
+          errorCount: errors.length,
+          errors: errors.slice(0, 64).map((error) => diagnosticText(error.message)),
+          ...diagnosticCard(group, topology?.vertexCount, topology?.index.length),
+        }),
+      );
+    } catch {
+      // Diagnostics must not replace the original assertion failure.
+    }
+    throw failure;
   } finally {
     await screen.unmount();
+    loading.mockRestore();
     client.dispose();
   }
 }, 120_000);
@@ -380,6 +446,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   };
   const screen = await render(<Fixture masks={registry} />);
   let activeScreen = screen;
+  let stage = "source-pending";
   try {
     await evaluated.promise;
     console.info("facial-grey-source-loader-evaluated", performance.now() - started);
@@ -399,6 +466,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     expect
       .soft(card().visible, "a masked card must remain hidden while its source RGBA is pending")
       .toBe(false);
+    stage = "source-rejection";
     rejectCurrentSource("controlled source RGBA rejection");
     await expect
       .poll(() =>
@@ -422,6 +490,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     ).toBe(false);
     const before = evaluations;
     const originalMesh = card();
+    stage = "masked-registry-recovery";
     allowSource = true;
     await screen.rerender(
       <Fixture masks={{ "caller-streak": { ...registry["caller-streak"] } }} />,
@@ -435,6 +504,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
 
     // A fresh mounted style first fails while unmasked. Its outward legacy
     // behavior remains unchanged, but activation must remember and retry that failure.
+    stage = "unmasked-source-pending";
     await screen.unmount();
     allowSource = false;
     sourcePending = false;
@@ -447,6 +517,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     console.info("facial-grey-unmasked-source-loader-evaluated", performance.now() - started);
     await expect.poll(() => sourcePending).toBe(true);
     const unmaskedMesh = card();
+    stage = "unmasked-source-rejection";
     rejectCurrentSource("controlled initially unmasked source rejection");
     await expect
       .poll(() =>
@@ -459,6 +530,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     expect((card().material as HairMaterial).map).toBeNull();
     expect(card().visible).toBe(true);
     const activationSettlements = settlements;
+    stage = "unmasked-activation-recovery";
     allowSource = true;
     await activeScreen.rerender(<Fixture masks={registry} />);
     await expect.poll(() => settlements).toBeGreaterThan(activationSettlements);
@@ -466,6 +538,31 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     expect(card().visible).toBe(true);
     expect((card().material as HairMaterial).map).not.toBeNull();
     expect(settledMaps.at(-1)).toBe(true);
+  } catch (failure) {
+    try {
+      const topology = client.hairTopology(id);
+      console.error(
+        "facial-grey-failure",
+        JSON.stringify({
+          stage,
+          elapsedMs: performance.now() - started,
+          evaluations,
+          settlements,
+          sourcePending,
+          gpu,
+          gpuMode: inject("browserGpuMode"),
+          textureUrl: topology?.textureUrl ? diagnosticText(topology.textureUrl) : null,
+          loaderCallCount: loading.mock.calls.length,
+          loaderUrls: loading.mock.calls.slice(0, 64).map(([url]) => diagnosticText(url)),
+          errorCount: errors.length,
+          errors: errors.slice(0, 64).map((error) => diagnosticText(error.message)),
+          ...diagnosticCard(group, topology?.vertexCount, topology?.index.length),
+        }),
+      );
+    } catch {
+      // Diagnostics must not replace the original assertion failure.
+    }
+    throw failure;
   } finally {
     await activeScreen.unmount();
     loading.mockRestore();
