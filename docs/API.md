@@ -1295,7 +1295,15 @@ and expressions"). Framework-free.
   effector-frame orientation (the measured frame wins; a position-only sampler
   falls back to the tip). The returned rigid-tip reachability value is
   diagnostic when an effector samples a blended skinned hand; measured
-  tolerances decide its result.
+  tolerances decide its result. Only while the existing orientation tolerance is
+  unmet after the wrist correction, one distal-to-proximal ancestor pass proposes
+  axial turns within the same source-angle budgets. An orientation already accepted
+  by the final-status quaternion metric remains unchanged by this pass; it stops
+  when an accepted turn satisfies that same tolerance. A proposal survives only
+  when its measured orientation improves, its contact error stays within the
+  previous error or positional tolerance, and any defined
+  elbow/pole alignment does not worsen. This bounded pass can recover roll beyond
+  the wrist budget; it does not guarantee convergence for every target or sampler.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or

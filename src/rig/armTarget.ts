@@ -240,7 +240,7 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
 
   // Cyclic coordinate descent is deterministic because it starts from the authored
   // pose and always visits wrist-to-shoulder. That preserves authored twist unless
-  // a target orientation explicitly asks the wrist to turn.
+  // a target orientation explicitly asks the arm to turn.
   refinePosition(
     rest,
     source,
@@ -296,6 +296,20 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
       );
     }
     correctOrientation(rest, source, out, chain, tip, target.orientation, input.effector, limits);
+    correctAncestorTwist(
+      rest,
+      source,
+      out,
+      chain,
+      tip,
+      target.position,
+      target.orientation,
+      pole,
+      input.effector,
+      limits,
+      tolerance,
+      orientationTolerance,
+    );
   }
 
   if (weight < 1) blendArmInto(source, out, chain, weight);
@@ -629,6 +643,108 @@ function correctOrientation(
     : mul(target, conjugate(tip.orientation as Quat));
   const desiredLocal = mul(conjugate(parentWorld), desiredWorld);
   setLimitedLocal(source, out, final, desiredLocal, limits.at(-1) as ArmJointLimit);
+}
+
+/**
+ * Try one axial correction per ancestor, distal first. Before clamping, the
+ * projected residual is the best rigid-frame turn about joint-to-end. A source
+ * budget or skinned sampler can invalidate that geometry, so only the measured
+ * frame, contact error and declared pole decide whether a proposal survives.
+ */
+function correctAncestorTwist(
+  rest: RestBones,
+  source: BoneRotations,
+  out: BoneRotations,
+  chain: readonly number[],
+  tip: ArmTip,
+  targetPosition: readonly [number, number, number],
+  targetOrientation: Quat,
+  pole: ArmPole | undefined,
+  effector: ArmTargetInput["effector"],
+  limits: readonly ArmJointLimit[],
+  tolerance: number,
+  orientationTolerance: number,
+): void {
+  const target = normalizeQuat(targetOrientation);
+  for (let offset = chain.length - 2; offset >= 0; offset--) {
+    const bone = chain[offset] as number;
+    const posed = posedBones(rest, out);
+    const before = sampledEnd(posed, out, chain, tip, effector);
+    if (!before.orientation) continue;
+    // Satisfaction uses the public status metric, including its Float32 norm
+    // error. Normalization below is only for comparing candidate improvement.
+    if (quaternionAngle(before.orientation, targetOrientation) <= orientationTolerance) return;
+    const direction = subtract(before.position, pointAt(posed.heads, bone));
+    const axisLength = length(direction);
+    if (!(axisLength > 0 && Number.isFinite(axisLength))) continue;
+    const axis = direction.map((component) => component / axisLength) as [number, number, number];
+    const measured = normalizeQuat(before.orientation);
+    let residual = normalizeQuat(mul(target, conjugate(measured)));
+    // q and -q describe the same turn. Resolve the half-turn tie by the first
+    // nonzero vector component so proposals remain deterministic there too.
+    if (
+      residual[3] < 0 ||
+      (residual[3] === 0 && (residual.find((component) => component !== 0) ?? 0) < 0)
+    )
+      residual = residual.map((component) => -component) as Quat;
+    const along = residual[0] * axis[0] + residual[1] * axis[1] + residual[2] * axis[2];
+    const projectedLength = Math.hypot(along, residual[3]);
+    if (!(projectedLength > 0 && Number.isFinite(projectedLength))) continue;
+    const delta: Quat = [
+      (axis[0] * along) / projectedLength,
+      (axis[1] * along) / projectedLength,
+      (axis[2] * along) / projectedLength,
+      residual[3] / projectedLength,
+    ];
+    const previous = quatAt(out, bone);
+    const previousError = quaternionAngle(measured, target);
+    const previousDistance = distance(before.position, targetPosition);
+    const previousPole = pole ? poleAlignment(posed, chain, targetPosition, pole) : null;
+    applyWorldDelta(rest, source, out, bone, delta, limits[offset] as ArmJointLimit);
+    const candidatePose = posedBones(rest, out);
+    const candidate = sampledEnd(candidatePose, out, chain, tip, effector);
+    const candidatePole = pole ? poleAlignment(candidatePose, chain, targetPosition, pole) : null;
+    if (
+      !candidate.orientation ||
+      !(quaternionAngle(normalizeQuat(candidate.orientation), target) < previousError) ||
+      !(distance(candidate.position, targetPosition) <= Math.max(previousDistance, tolerance)) ||
+      (previousPole !== null && (candidatePole === null || candidatePole < previousPole))
+    )
+      out.set(previous, bone * 4);
+    else if (quaternionAngle(candidate.orientation, targetOrientation) <= orientationTolerance)
+      return;
+  }
+}
+
+/** Normalized elbow/pole alignment, undefined when either projection collapses. */
+function poleAlignment(
+  posed: ReturnType<typeof posedBones>,
+  chain: readonly number[],
+  target: readonly [number, number, number],
+  pole: ArmPole,
+): number | null {
+  const root = pointAt(posed.heads, chain[0] as number);
+  const axis = subtract(target, root);
+  const axisLength = length(axis);
+  if (!(axisLength > 0 && Number.isFinite(axisLength))) return null;
+  const unit = axis.map((component) => component / axisLength);
+  const project = (point: readonly number[]) => {
+    const v = subtract(point, root);
+    const along =
+      v[0] * (unit[0] as number) + v[1] * (unit[1] as number) + v[2] * (unit[2] as number);
+    return v.map((component, index) => component - (unit[index] as number) * along);
+  };
+  const elbow = pointAt(posed.heads, chain[Math.max(1, Math.floor(chain.length / 2))] as number);
+  const a = project(elbow);
+  const b = project(pole);
+  const denominator = length(a) * length(b);
+  if (!(denominator > 0 && Number.isFinite(denominator))) return null;
+  return (
+    ((a[0] as number) * (b[0] as number) +
+      (a[1] as number) * (b[1] as number) +
+      (a[2] as number) * (b[2] as number)) /
+    denominator
+  );
 }
 
 function applyWorldDelta(
