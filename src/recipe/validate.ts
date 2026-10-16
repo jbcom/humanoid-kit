@@ -113,6 +113,7 @@ export function recipeProblems(recipe: unknown): string[] {
   if ("facialHair" in r && r.facialHair !== undefined) facialHairProblems(r.facialHair, p);
   if (r.facialHairColour !== undefined)
     facialHairColourProblems(r.facialHairColour, r.facialHair, p);
+  if (r.facialHairGrey !== undefined) facialHairGreyProblems(r.facialHairGrey, r.facialHair, p);
   if ("facialHairLength" in r && r.facialHairLength !== undefined)
     facialHairLengthProblems(r.facialHairLength, p);
   if ("facialHairGrowth" in r && r.facialHairGrowth !== undefined)
@@ -167,6 +168,26 @@ function facialHairColourProblems(colours: unknown, selected: unknown, p: string
       p.push(`facialHairColour names ${id}, but it is not selected`);
     if (id === "") p.push("facialHairColour names an empty style id");
     hairColourProblems(colour, `facialHairColour.${id}`, p);
+  }
+}
+
+function facialHairGreyProblems(value: unknown, selected: unknown, p: string[]): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    p.push("facialHairGrey must be an object of selected facial ids to mask requests");
+    return;
+  }
+  for (const [id, request] of Object.entries(value)) {
+    if (id === "" || !Array.isArray(selected) || !selected.includes(id))
+      p.push(`facialHairGrey names ${id}, but it is not selected`);
+    if (typeof request !== "object" || request === null || Array.isArray(request)) {
+      p.push(`facialHairGrey.${id} must name a mask and amount`);
+      continue;
+    }
+    const { mask, amount } = request as Record<string, unknown>;
+    if (typeof mask !== "string" || mask === "")
+      p.push(`facialHairGrey.${id}.mask must be a non-empty key`);
+    if (!finite(amount) || amount < 0 || amount > 1)
+      p.push(`facialHairGrey.${id}.amount must be a finite number in [0, 1]`);
   }
 }
 

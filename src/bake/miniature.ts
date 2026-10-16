@@ -18,6 +18,11 @@ import { boundProxy } from "../model/proxy.ts";
 import { facialHairColour } from "../recipe/facialHairColour.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { type BoneRotations, IDENTITY_POSE, rigData } from "../rig/pose.ts";
+import {
+  type FacialHairGreyMasks,
+  type ResolvedFacialHairGrey,
+  resolveFacialHairGrey,
+} from "../surface/facialHairGrey.ts";
 import { hairAlbedo, hairTint } from "../surface/hairTone.ts";
 import { linearToSrgb, skinAlbedo, srgbToLinear } from "../surface/skinTone.ts";
 import { decimate } from "./decimate.ts";
@@ -72,6 +77,8 @@ export interface MiniatureOptions {
    * not an alpha-to-solid conversion for distant painted miniatures.
    */
   facialHair?: "alpha-cards";
+  /** Decoded caller masks referenced by recipe.facialHairGrey; resolved before baking. */
+  facialHairGreyMasks?: FacialHairGreyMasks;
 }
 
 /** The issue's budget: about 1,500 triangles near and 400 far. */
@@ -144,6 +151,8 @@ export interface MiniatureAlphaCard {
   texture: { width: number; height: number; rgba: Uint8Array };
   /** The selected figure hair colour, as the live strand material's linear tint. */
   tint: [number, number, number];
+  /** Optional owned linear UV whitening field; source RGBA remains exact. */
+  grey?: Omit<ResolvedFacialHairGrey, "data"> & { data: Uint8Array };
 }
 
 /** How much more a region's vertices cost to remove: the face and hands read at small size. */
@@ -316,6 +325,17 @@ export function bakeMiniature(
     )
       throw new MiniatureError(`facial hair ${part.id} has an invalid decoded RGBA source texture`);
     const tint = hairTint(facialHairColour(recipe, part.id));
+    let grey: ResolvedFacialHairGrey | null;
+    try {
+      grey = resolveFacialHairGrey(
+        recipe,
+        part.id,
+        model.hairTopology(part.id).sourceSha256,
+        options.facialHairGreyMasks,
+      );
+    } catch (error) {
+      throw new MiniatureError((error as Error).message);
+    }
     return {
       sourceIndex: index,
       card: {
@@ -331,6 +351,7 @@ export function bakeMiniature(
           rgba: Uint8Array.from(texture.data),
         },
         tint: [tint[0], tint[1], tint[2]],
+        ...(grey && { grey: { ...grey, data: Uint8Array.from(grey.data) } }),
       } satisfies MiniatureAlphaCard,
     };
   });

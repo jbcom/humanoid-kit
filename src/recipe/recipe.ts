@@ -108,6 +108,9 @@ export type FacialHairRecipe = readonly string[];
 /** Independent uniform colours for selected authored beard and moustache ids. */
 export type FacialHairColourRecipe = Readonly<Record<string, HairColour>>;
 
+/** Optional UV-space greying requests for selected authored beard/moustache ids. */
+export type FacialHairGreyRecipe = Readonly<Record<string, { mask: string; amount: number }>>;
+
 /**
  * Extra source-authored free-offset length for selected beard attachments.
  * Each value is a multiplier: one keeps the source asset exactly as packed.
@@ -139,6 +142,8 @@ export interface Recipe {
   facialHair?: FacialHairRecipe;
   /** Per selected facial id; absent entries wear the scalp colour, including its ageing. */
   facialHairColour?: FacialHairColourRecipe;
+  /** Caller mask key and mix amount toward the unpigmented target per selected facial style. */
+  facialHairGrey?: FacialHairGreyRecipe;
   /**
    * Optional source-offset multipliers for selected authored beard assets.
    * Moustache and other non-beard entries do not accept a multiplier.
@@ -217,6 +222,7 @@ export function createRecipe(
     };
     facialHair?: FacialHairRecipe;
     facialHairColour?: FacialHairColourRecipe;
+    facialHairGrey?: FacialHairGreyRecipe;
     facialHairLength?: FacialHairLengthRecipe;
     facialHairGrowth?: FacialHairGrowthRecipe;
     bodyHair?: BodyHairRecipe;
@@ -250,6 +256,7 @@ export function createRecipe(
     }),
     ...(init.facialHair && { facialHair: [...init.facialHair] }),
     ...(init.facialHairColour && { facialHairColour: structuredClone(init.facialHairColour) }),
+    ...(init.facialHairGrey && { facialHairGrey: structuredClone(init.facialHairGrey) }),
     ...(init.facialHairLength && { facialHairLength: { ...init.facialHairLength } }),
     ...(init.facialHairGrowth && { facialHairGrowth: { ...init.facialHairGrowth } }),
     ...(init.bodyHair && {

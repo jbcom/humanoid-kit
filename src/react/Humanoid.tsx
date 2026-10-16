@@ -89,6 +89,7 @@ import {
   writeFoldSlots,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
+import { checkFacialHairGreySize, facialHairGreyTexture } from "../render/facialHairGrey.ts";
 import {
   HairMaterial,
   isMultisampled,
@@ -127,6 +128,11 @@ import {
 import { skinDualShare } from "../rig/skinShare.ts";
 import { ageSurfaceStrength } from "../surface/ageSurface.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
+import {
+  FacialHairGreyError,
+  type FacialHairGreyMasks,
+  resolveFacialHairGrey,
+} from "../surface/facialHairGrey.ts";
 import {
   agedHairColour,
   DEFAULT_HAIR_COLOUR,
@@ -275,6 +281,8 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * drawn without its body art.
    */
   bodyArtImages?: BodyArtImages;
+  /** Immutable decoded single-channel caller masks named by recipe.facialHairGrey. */
+  facialHairGreyMasks?: FacialHairGreyMasks;
   /**
    * A handle on the figure's affordances (`useHumanoidAffordances`), which the
    * figure keeps current: its own affordances by the recipe's age, and frames,
@@ -710,25 +718,38 @@ function useDiffuseTexture(
   material: MeshStandardMaterial,
   url: string | null,
   report: (e: Error) => void,
+  onState?: ((state: "pending" | "ready" | "error") => void) | undefined,
+  retry = 0,
+  required = false,
 ): void {
   const reportRef = useLatest(report);
+  const stateRef = useLatest(onState);
+  const requiredRef = useLatest(required);
   const settle = useSettle();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry is the explicit failed-load generation
   useEffect(() => {
     if (!url) return;
     let live = true;
     const end = settle.begin();
+    stateRef.current?.("pending");
     new TextureLoader().loadAsync(url).then(
       (tex) => {
-        end();
+        // Unobserved callers retain their existing path. Required masked maps
+        // install and announce readiness before releasing their settle hold.
+        if (!requiredRef.current) end();
         if (!live) {
           tex.dispose();
+          end();
           return;
         }
         tex.colorSpace = SRGBColorSpace;
         material.map = tex;
         material.needsUpdate = true;
+        stateRef.current?.("ready");
+        end();
       },
       (e: unknown) => {
+        if (live) stateRef.current?.("error");
         end();
         if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
       },
@@ -739,7 +760,7 @@ function useDiffuseTexture(
       material.map?.dispose();
       material.map = null;
     };
-  }, [url, material, reportRef, settle]);
+  }, [url, material, reportRef, stateRef, requiredRef, settle, retry]);
 }
 
 /** The worn hair style: alpha cards skinned to the figure, coloured by the recipe. */
@@ -755,6 +776,9 @@ function HairMesh({
   dual,
   density = 1,
   white = 0,
+  greyRecipe,
+  greyMasks,
+  onGreyState,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -770,14 +794,98 @@ function HairMesh({
   density?: number;
   /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
   white?: number;
+  greyRecipe?: Recipe;
+  greyMasks?: FacialHairGreyMasks | undefined;
+  onGreyState?: (id: string, failed: boolean) => void;
 }) {
   const material = useMemo(() => {
     const made = new HairMaterial();
     if (dual) applyDualSkinning(made, dual);
     return made;
   }, [dual]);
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const settle = useSettle();
+  const request = greyRecipe?.facialHairGrey?.[topology.id];
+  const [greyReady, setGreyReady] = useState<{
+    request: typeof request;
+    masks: typeof greyMasks;
+    material: HairMaterial;
+  } | null>(null);
+  const maskFailed = useRef(false);
+  const sourceFailed = useRef(false);
+  const [sourceState, setSourceState] = useState<"pending" | "ready" | "error">("pending");
+  const [sourceRetry, setSourceRetry] = useState(0);
+  const onSourceState = useCallback(
+    (state: "pending" | "ready" | "error") => {
+      // Starting a retry is not recovery: retain the prior error until success.
+      if (state !== "pending") sourceFailed.current = state === "error";
+      setSourceState(state);
+      onGreyState?.(topology.id, request ? maskFailed.current || sourceFailed.current : false);
+      invalidate();
+    },
+    [topology.id, request, onGreyState, invalidate],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registry/request replacement explicitly retries a failed required source load
+  useEffect(() => {
+    if (request && sourceFailed.current) setSourceRetry((value) => value + 1);
+  }, [request, greyMasks]);
+  useEffect(() => {
+    const end = settle.begin();
+    let map: ReturnType<typeof facialHairGreyTexture> | null = null;
+    try {
+      const grey = greyRecipe
+        ? resolveFacialHairGrey(greyRecipe, topology.id, topology.sourceSha256, greyMasks)
+        : null;
+      if (grey) {
+        if (!topology.textureUrl)
+          throw new FacialHairGreyError(
+            `facialHairGrey ${topology.id} needs its source strand map`,
+          );
+        checkFacialHairGreySize(grey, gl.capabilities.maxTextureSize);
+        map = facialHairGreyTexture(grey);
+      }
+      material.setGrey(grey, map);
+      setGreyReady({ request, masks: greyMasks, material });
+      maskFailed.current = false;
+      onGreyState?.(topology.id, request ? sourceFailed.current : false);
+    } catch (error) {
+      material.setGrey(null, null);
+      setGreyReady(null);
+      maskFailed.current = true;
+      onGreyState?.(topology.id, true);
+      report(error as Error);
+    } finally {
+      end();
+      invalidate();
+    }
+    return () => {
+      material.setGrey(null, null);
+      map?.dispose();
+      onGreyState?.(topology.id, false);
+      end();
+    };
+  }, [
+    greyRecipe,
+    request,
+    greyMasks,
+    topology,
+    material,
+    gl,
+    settle,
+    invalidate,
+    onGreyState,
+    report,
+  ]);
   useEffect(() => material.setDensity(density), [material, density]);
-  useDiffuseTexture(material, topology.textureUrl, report);
+  useDiffuseTexture(
+    material,
+    topology.textureUrl,
+    report,
+    greyRecipe ? onSourceState : undefined,
+    sourceRetry,
+    request !== undefined,
+  );
   // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
   const { eumelanin, pheomelanin, grey, override } = colour;
   const overrideKey = override?.join(",") ?? "";
@@ -794,7 +902,15 @@ function HairMesh({
       geometry={geometry}
       material={material}
       skeleton={skeleton}
-      visible={visible}
+      visible={
+        visible &&
+        (!request ||
+          (greyReady?.request === request &&
+            greyReady.masks === greyMasks &&
+            greyReady.material === material &&
+            sourceState !== "error" &&
+            material.map !== null))
+      }
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
@@ -1013,6 +1129,7 @@ export function Humanoid({
   signals,
   onGroundOffset,
   bodyArtImages,
+  facialHairGreyMasks,
   affordances,
   ref: callerRef,
   ...group
@@ -1054,6 +1171,11 @@ export function Humanoid({
   const settle = useMemo(() => new Settle(), []);
   /** The latest evaluation written to the geometry and not yet reported as settled. */
   const [unsettled, setUnsettled] = useState<Evaluation | null>(null);
+  const greyErrors = useRef(new Set<string>());
+  const onGreyState = useCallback((id: string, failed: boolean) => {
+    if (failed) greyErrors.current.add(id);
+    else greyErrors.current.delete(id);
+  }, []);
   const onErrorRef = useLatest(onError);
   const report = useMemo(
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
@@ -1894,8 +2016,15 @@ export function Humanoid({
     publishHandGeometry,
   ]);
 
+  // A registry-only appearance update reuses the last shape evaluation but gets its own settle.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registry identity starts a new appearance generation
+  useEffect(() => {
+    if (figure) setUnsettled(figure);
+  }, [figure, facialHairGreyMasks]);
+
   // Settled: the evaluation is written and everything it brought has loaded and been drawn.
   // Children register their loads in their own effects, which run before this one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registry changes cancel the previous appearance callback
   useEffect(() => {
     if (!unsettled) return;
     let live = true;
@@ -1909,7 +2038,7 @@ export function Humanoid({
           return;
         }
         setUnsettled(null);
-        onSettledRef.current?.(unsettled);
+        if (greyErrors.current.size === 0) onSettledRef.current?.(unsettled);
       });
     };
     // Two frames after the last load: the textures upload and the materials compile.
@@ -1919,7 +2048,7 @@ export function Humanoid({
       cancel();
       cancelAnimationFrame(frame);
     };
-  }, [unsettled, settle, onSettledRef]);
+  }, [unsettled, settle, onSettledRef, facialHairGreyMasks]);
 
   const placed = presence?.position;
   const heading = presence?.facing;
@@ -2029,6 +2158,9 @@ export function Humanoid({
                 geometry={facial.geometry}
                 skeleton={rig.skeleton}
                 colour={facialHairColour(recipe, facial.topology.id)}
+                greyRecipe={recipe}
+                greyMasks={facialHairGreyMasks}
+                onGreyState={onGreyState}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

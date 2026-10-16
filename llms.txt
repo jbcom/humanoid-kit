@@ -31,6 +31,9 @@
   zero or more authored beard and moustache assets. Optional `recipe.facialHairColour`
   maps selected ids to independent uniform `HairColour` values; absent entries keep the
   scalp colour and ageing. The same resolved tint is baked per miniature source card.
+  Optional `recipe.facialHairGrey` requests caller UV masks through `facialHairGreyMasks`
+  in live rendering or alpha-card baking. Active masks use HKMB v3; unmasked bakes stay v2.
+  Packaged source-authored streak masks and inspected physical placement remain separate gaps.
   Attribution and
   source receipts accompany the pack; its explicit CC0-only profile excludes attributed assets.
   A miniature bake can optionally preserve selected facial source cards with their embedded RGBA

@@ -48,6 +48,12 @@ import {
 } from "three";
 import { octEncode, toHalf } from "../bake/format.ts";
 import type { MiniatureAlphaCard, MiniatureBake } from "../bake/miniature.ts";
+import {
+  checkFacialHairGreySize,
+  facialHairGreyTexture,
+  facialHairGreyUniforms,
+  patchFacialHairGrey,
+} from "./facialHairGrey.ts";
 import { HAIR_ALPHA_CUTOFF } from "./hairMaterial.ts";
 
 /** Linear RGB. */
@@ -202,6 +208,7 @@ class MiniatureMaterial extends MeshStandardMaterial {
 
 /** The source-card companion material: embedded RGBA alpha is cut out before lighting. */
 class AlphaCardMaterial extends MeshStandardMaterial {
+  readonly greyMap: DataTexture | null;
   readonly hkUniforms: Record<string, { value: unknown }>;
   constructor(
     position: DataTexture,
@@ -231,7 +238,9 @@ class AlphaCardMaterial extends MeshStandardMaterial {
       alphaTest: HAIR_ALPHA_CUTOFF,
       side: DoubleSide,
     });
+    this.greyMap = card.grey ? facialHairGreyTexture(card.grey) : null;
     this.hkUniforms = {
+      ...(card.grey && this.greyMap ? facialHairGreyUniforms(card.grey, this.greyMap) : {}),
       hkVatPosition: { value: position },
       hkVatNormal: { value: normal },
       hkVatWidth: { value: position.image.width },
@@ -240,10 +249,11 @@ class AlphaCardMaterial extends MeshStandardMaterial {
     };
   }
   override customProgramCacheKey(): string {
-    return "hk-miniature-alpha-card";
+    return `hk-miniature-alpha-card${this.greyMap ? "|uv-grey-1" : ""}`;
   }
   override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
     Object.assign(shader.uniforms, this.hkUniforms);
+    if (this.greyMap) patchFacialHairGrey(shader);
     shader.vertexShader = `${VAT_VERTEX_HEAD}${shader.vertexShader}`
       .replace(
         "#include <beginnormal_vertex>",
@@ -310,7 +320,12 @@ class AlphaCardArchetype {
     const position = alphaCardVatTexture(card.positions, card.vertexCount, frameCount);
     const normal = alphaCardVatTexture(card.normals, card.vertexCount, frameCount);
     this.material = new AlphaCardMaterial(position, normal, card.vertexCount, card);
-    this.textures = [position, normal, this.material.map as DataTexture];
+    this.textures = [
+      position,
+      normal,
+      this.material.map as DataTexture,
+      ...(this.material.greyMap ? [this.material.greyMap] : []),
+    ];
     this.textureBytes = this.textures.reduce(
       (sum, texture) => sum + (texture.image.data as ArrayBufferView).byteLength,
       0,
@@ -340,6 +355,10 @@ class AlphaCardArchetype {
       new BufferAttribute(card.vertexCount > 0xffff ? card.index : Uint16Array.from(card.index), 1),
     );
     this.mesh = new InstancedMesh(geometry, this.material, capacity);
+    const grey = card.grey;
+    if (grey)
+      this.mesh.onBeforeRender = (renderer) =>
+        checkFacialHairGreySize(grey, renderer.capabilities.maxTextureSize);
     this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
