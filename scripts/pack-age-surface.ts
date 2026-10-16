@@ -36,7 +36,7 @@ const section = ageSurfaceProvenance(out).join("\n");
 const start = text.indexOf("## Age surface map");
 if (start >= 0) {
   const end = text.indexOf("\n## ", start + 1);
-  text = `${text.slice(0, start)}${section}${text.slice(end + 1)}`;
+  text = `${text.slice(0, start)}${section}${text.slice(end)}`;
 } else {
   const at = text.indexOf("## Texture sizes");
   if (at < 0) throw new Error("PROVENANCE.md has no texture sizes section to place the map before");
