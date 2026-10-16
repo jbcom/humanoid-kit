@@ -1412,8 +1412,11 @@ and expressions"). Framework-free.
   non-arm-only trial poses. Its explicit `resetSource(generation, rotations)`
   replaces the copied full-body baseline and recomputes dynamic skin shares
   while retaining skinning scratch for the same immutable geometry. Invalid
-  reset inputs preserve the previous baseline. Supplied folds remain fixed;
-  rebuild the sampler when those folds change. `createHandContact` (Interactions, below) is what
+  reset inputs preserve the previous baseline. Optional `skinMode` is `mixed`
+  by default; `linear` uses zero dual-quaternion share, including after a source
+  reset, matching a custom material's linear skin. Supply no folds when that
+  material shows none. Supplied folds remain fixed; rebuild the sampler when
+  those folds change. `createHandContact` (Interactions, below) is what
   drives them from an interaction's contact, and `<Humanoid handContact>`
   applies that to a live figure.
 - Internal rig helper: `src/rig/fingerTarget.ts` is not an exported package
@@ -1579,15 +1582,21 @@ slices 1 and 2 of its build plan.
   constrained pose into `out` (the source pose, byte for byte, at weight 0)
   and returns the reused `HandContactReport`. `binding` is `{ interaction,
   role, contact }` or null; `figure` is `{ participant, generation,
-  restBones, rest, restNormals, skinIndex, skinWeight, anchors, folds?,
+  restBones, rest, restNormals, skinIndex, skinWeight, anchors, skinMode?, folds?,
   figureToWorld }`, the figure's evaluated surface as drawn and its lifted
-  group's column-major world matrix. The report's `state` is `idle`,
+  group's column-major world matrix. `skinMode` defaults to `mixed`; pass
+  `linear` and no folds for a custom material's linear skin. The report's
+  `state` is `idle`,
   `refused`, `blending-in`, `holding`, `releasing` or `fading`; `reason` is
   the solver's `ArmTargetReason` or a refusal (`not-a-participant`,
   `not-claimed`, `not-a-hand-contact`, `unknown-contact`); `distance` is the
   measured final hand frame to the target in metres; `target` and `hand` are
-  world points. `handContactSide(definition, contact, role)` reads which hand
-  a contact asks of a role, or null.
+  world points. `reached` requires full weight, a reached local solve and the
+  measured final world distance within `tolerance`; a local success outside
+  that world tolerance reports `unreached` with `tolerance-not-reached`.
+  This postcondition does not extend React presence beyond its upright,
+  unit-scale placement domain. `handContactSide(definition, contact, role)`
+  reads which hand a contact asks of a role, or null.
 - `solveSiteContact(input)`: closes a skinned point of one hand on a named
   landmark of the same figure. It is framework-free and takes the evaluated
   `SiteContactFigure` (including the evaluated render `index`), source rotations,

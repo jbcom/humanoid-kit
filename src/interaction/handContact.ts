@@ -81,6 +81,8 @@ export interface HandContactFigure {
   skinWeight: Float32Array;
   /** Where the landmarks are held on that surface (`landmarkAnchors`). */
   anchors: LandmarkAnchors;
+  /** The drawn skinning path: mixed by default, or linear for a custom material. */
+  skinMode?: "mixed" | "linear";
   /** The source pose's joint folds, when the drawn skin shows them. */
   folds?: readonly SkinFold[];
   /**
@@ -107,7 +109,7 @@ export interface HandContactReport {
   side: HandSide | null;
   /** How much of the solve is applied, 0 to 1. */
   weight: number;
-  /** The solver's measured result, or null when nothing was solved this update. */
+  /** The final contact result, or null when nothing was solved this update. */
   status: ArmTargetStatus | null;
   reason: ArmTargetReason | HandContactRefusal | null;
   /** Metres from the final rendered hand frame to the target; NaN when nothing was solved. */
@@ -359,6 +361,7 @@ export function createHandContact(options: HandContactOptions = {}): HandContact
       sourceRotations: source,
       armBones: chain,
       side: hand,
+      ...(figure.skinMode && { skinMode: figure.skinMode }),
       ...(figure.folds && { folds: figure.folds }),
     });
     const sourceHand = sampler.frame(figure.generation, source, sampled);
@@ -430,15 +433,17 @@ export function createHandContact(options: HandContactOptions = {}): HandContact
       report.hand[2] - report.target[2],
     );
     // A partly weighted hand is measured where it is drawn; it has not made contact.
-    const reached = weight >= 1 && result.status === "reached";
+    const reached = weight >= 1 && result.status === "reached" && report.distance <= tolerance;
     report.status = reached ? "reached" : "unreached";
     report.reason = reached
       ? "reached"
-      : !result.geometricallyReachable
-        ? "geometrically-unreachable"
-        : weight < 1
-          ? "partial-weight"
-          : result.reason;
+      : weight >= 1 && result.status === "reached"
+        ? "tolerance-not-reached"
+        : !result.geometricallyReachable
+          ? "geometrically-unreachable"
+          : weight < 1
+            ? "partial-weight"
+            : result.reason;
     report.orientationError = weight >= 1 ? result.orientationError : null;
     report.geometricallyReachable = result.geometricallyReachable;
     return report;
