@@ -83,9 +83,11 @@ const vectorTurn = (x: number, y: number, z: number): Quat => {
 
 function activeTrack(clip: AnimationClip, time: number): Track | null {
   return (
+    clip.supportTracks?.find((track) => track.times.includes(time)) ??
     clip.supportTracks?.find((track) =>
       track.times.some((key) => Math.abs(key - time) <= KEY_EPSILON),
-    ) ?? null
+    ) ??
+    null
   );
 }
 

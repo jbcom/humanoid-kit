@@ -3511,7 +3511,7 @@ are the contract in [Interactions](INTERACTIONS.md).
   from the figure's root, so the figure yields to its planted foot instead of
   outrunning it. The pins are in the world, so the next foot lands where the figure
   now is and nothing accumulates.
-- *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
+- *Framework-free final-state evaluation.* `Animator` owns its pose buffers: `update(dt)` advances time,
   crossfades and root motion and writes the body's rotations. Face units and other
   poses are laid over by the caller (`composeRotations`).
 
@@ -3526,6 +3526,57 @@ Quaternius's walks (mocap that plants its feet) under 3 mm; in a zombie's shuffl
 under 20 mm and in a crouch walk 36 mm, the dragged foot of the one and the
 shuffled one of the other never quite planted. A hand-keyed clip is the limit, not
 the solver: a clip that planted its feet would leave nothing to hold.
+
+**Elapsed contact chronology.** `Animator.update` preflights a metadata-only
+schedule before mutating clocks, root, fade or contact state, then traverses that
+same schedule. Grounded participation limits each interval to 1/60 wall second
+and half a source frame for either moving track. Both tracks' source-frame keys,
+loop seams, nonloop stops, support keys and fade completion are explicit
+boundaries. Each interval carries the current corrected root, samples fresh
+source/blended rotations, applies the current clip's exact authored support key
+when crossed, then runs the unchanged FootLock ownership/IK/reach correction.
+There is no blanket pin reset, correction clamp or reuse of an IK-modified input
+pose. Only the final Animator pose/root is read by the existing frame writer.
+
+The schedule retains unwrapped loop clocks and observes a swing before a landing
+at the same wrapped pose. Nonloop clocks normalize an out-of-range play/seek hold
+at the start of a positive update, without root carry, before consuming its full
+wall duration. Internally crossed support keys run once, including wrapped loop
+keys and terminal keys; explicit lifecycle refresh writes remain separate.
+
+Between stored-step velocity boundaries, fade travel uses the exact integral of
+`w(u)=3u²-2u³`: the incoming weight integral over `[a,b]` is
+`T * [u³-u⁴/2]_(a/T)^(b/T)` and the outgoing integral is `(b-a)` minus that value.
+Stopped tracks contribute zero velocity. The pose still uses its instantaneous
+end weight. This explicitly replaces the old endpoint-weight travel approximation.
+
+This is a discrete chronology guarantee at the stated resolution, not continuous
+threshold detection or contact invariance under arbitrary additional callback
+endpoints. Equivalent checkpoint schedules agree. Total work is linear in the
+visited checkpoints and their support solves, growing with elapsed time and both
+source rates/speeds; there is no silent maximum-step guard. No-skeleton, airborne
+and unchanged frozen-pose paths omit only observations with no contact history to
+preserve. Finite nonnegative wall `dt`, finite time/speed and finite nonnegative
+fade are validated before active mutations; reverse playback uses negative speed.
+Metadata preflight rejects unrepresentable requested clock/fade spans or checkpoint
+progress atomically. Cadence slices may leave one clock unchanged while wall time
+advances. Key eligibility is directional in represented clip coordinates before
+inverse wall arithmetic. A loop support key exactly at a source frame shares its
+global integer-frame representation; an off-frame key remains distinct. Terminal
+wall slices coalesce only when all participating canonical clock/fade states agree
+and no eligible key remains, preserving actually crossed support metadata. Support
+metadata is triggered by represented clip-clock crossing, including when that clock
+rounds to the target before its inverse wall time. Duplicate declarations of the
+same source support event are valid; distinct source keys that collapse to one
+represented wall order fail atomically rather than being aliased or dropped.
+Within the current/requested represented span, preflight also checks off-frame
+support lifts against their neighboring source-frame identities and loop seams
+or nonloop stops,
+in both represented clip and inverse-wall coordinates. Thus an upcoming tiny key
+cannot round onto a visited boundary and disappear or overwrite a distinct frame.
+Collisions outside that span do not invalidate unrelated updates. Exact raw
+authored keys take precedence over legacy lifecycle epsilon matching, including
+zero versus duration seam identities and nearby tracks with different solvers.
 
 **In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
 (`useFigureAnimation`, `src/react`): each frame the animator's pose, with
