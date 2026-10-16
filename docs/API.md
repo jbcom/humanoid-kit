@@ -1307,6 +1307,16 @@ and expressions"). Framework-free.
   previous error or positional tolerance, and any defined
   elbow/pole alignment does not worsen. This bounded pass can recover roll beyond
   the wrist budget; it does not guarantee convergence for every target or sampler.
+  If orientation remains unresolved, an internal coupled recovery tries at most
+  `min(iterations, 4)` damped least-squares updates, with six backtracking trials
+  each and at most `min(iterations, 4) * (3 * chain.length + 7)` additional frame
+  samples. Its scratch trials may trade position, orientation and pole progress.
+  It publishes only a freshly measured complete target success within the literal
+  caller tolerances and unchanged source-angle budgets, with nonchain rotations
+  unchanged and a defined positive requested pole alignment no worse than the
+  incumbent's defined alignment. Otherwise it retains the exact incumbent pose.
+  Zero tolerances remain zero acceptance gates. The existing weight blend and
+  final measurement follow this recovery; the default iteration budget remains 24.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or

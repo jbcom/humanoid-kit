@@ -6,13 +6,30 @@
 import { Group, Matrix4, Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts";
-import { type FrameOut, frameOut, landmarkAnchors } from "../src/foundation/landmarks.ts";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
+import {
+  type FrameOut,
+  frameOut,
+  type LandmarkAnchors,
+  landmarkAnchors,
+  landmarkFrameInto,
+  SURFACE_LANDMARKS,
+} from "../src/foundation/landmarks.ts";
+import { frameQuat } from "../src/interaction/handContact.ts";
 import { type Evaluation, HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
+import { correctArmCoupled } from "../src/rig/armCoupled.ts";
 import { type ArmTip, armChain, armTip, solveArmTarget } from "../src/rig/armTarget.ts";
-import { skinPose } from "../src/rig/dual.ts";
+import {
+  skinNormalAt,
+  skinPose,
+  skinPoseInto,
+  skinPoseScratch,
+  skinPositionAt,
+} from "../src/rig/dual.ts";
 import { IDENTITY_POSE, posedBones, type RestBones, restBones, rigData } from "../src/rig/pose.ts";
 import { poseShare, skinDualShare } from "../src/rig/skinShare.ts";
+import { armMeasuredFrame } from "./fixtures/armMeasuredFrame.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
@@ -232,7 +249,506 @@ const normalizedAngle = (a: readonly number[], b: readonly number[]) =>
 const rotationBytes = (values: Float32Array) =>
   new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
 
+function measuredArmCase() {
+  const fixture = armMeasuredFrame;
+  const rest: RestBones = {
+    names: [...fixture.rest.names],
+    parents: Int16Array.from(fixture.rest.parents),
+    heads: Float32Array.from(fixture.rest.heads),
+    order: Int16Array.from(fixture.rest.order),
+  };
+  const seed = Float32Array.from(fixture.seed);
+  const control = Float32Array.from(fixture.control);
+  const incumbent = Float32Array.from(fixture.incumbent);
+  const positions = Float32Array.from(fixture.positions);
+  const normals = Float32Array.from(fixture.normals);
+  const skinIndex = Uint16Array.from(fixture.skinIndex);
+  const skinWeight = Float32Array.from(fixture.skinWeight);
+  const chain: number[] = [...fixture.chain];
+  const target = {
+    position: fixture.target.position as readonly [number, number, number],
+    orientation: [...fixture.target.orientation] as [number, number, number, number],
+  };
+  // This reader samples one captured landmark only. Other anchor rows are
+  // deliberately absent, rather than replaced by invented geometry.
+  const anchors = {
+    vertices: { "finger-pad-1.L": { vertex: 0, around: [1] } },
+  } as unknown as LandmarkAnchors;
+  const ups = Int32Array.from(SURFACE_LANDMARKS, () => 1);
+  expect(fixture.provenance.skinInfluences).toBe(SKIN_INFLUENCES);
+  expect(skinIndex.length).toBe((positions.length / 3) * SKIN_INFLUENCES);
+  expect(skinWeight.length).toBe(skinIndex.length);
+  expect(fixture.provenance.foldActivity.every((fold) => !fold.active)).toBe(true);
+  const source = structuredClone({ rest, seed, positions, normals, skinIndex, skinWeight });
+  const makeSampler = () => {
+    const share = poseShare(rest, seed, skinDualShare(rest.names));
+    const scratch = skinPoseScratch(rest, share);
+    return (rotations: Float32Array) => {
+      skinPoseInto(rest, rotations, share, scratch);
+      const frame = landmarkFrameInto(
+        "finger-pad-1.L",
+        anchors,
+        ups,
+        (vertex, position, normal) => {
+          skinPositionAt(
+            scratch.pose,
+            skinIndex,
+            skinWeight,
+            vertex,
+            positions[vertex * 3] as number,
+            positions[vertex * 3 + 1] as number,
+            positions[vertex * 3 + 2] as number,
+            position,
+            0,
+          );
+          if (normal)
+            skinNormalAt(
+              scratch.pose,
+              skinIndex,
+              skinWeight,
+              vertex,
+              normals[vertex * 3] as number,
+              normals[vertex * 3 + 1] as number,
+              normals[vertex * 3 + 2] as number,
+              normal,
+              0,
+            );
+        },
+        scratch.skeleton,
+        frameOut(),
+      );
+      return { position: frame.position, orientation: frameQuat(frame), frame };
+    };
+  };
+  return {
+    fixture,
+    rest,
+    seed,
+    control,
+    incumbent,
+    positions,
+    normals,
+    skinIndex,
+    skinWeight,
+    chain,
+    target,
+    source,
+    makeSampler,
+  };
+}
+
+function measuredPoleAlignment(
+  rest: RestBones,
+  rotations: Float32Array,
+  chain: readonly number[],
+  target: readonly number[],
+  pole: readonly number[],
+) {
+  const heads = posedBones(rest, rotations).heads;
+  const root = new Vector3(...point(heads, chain[0] as number));
+  const axis = new Vector3(...target).sub(root).normalize();
+  const project = (value: readonly number[]) => {
+    const v = new Vector3(...value).sub(root);
+    return v.addScaledVector(axis, -v.dot(axis));
+  };
+  const elbow = project(point(heads, chain[3] as number));
+  const projectedPole = project(pole);
+  expect(elbow.length()).toBeGreaterThan(0);
+  expect(projectedPole.length()).toBeGreaterThan(0);
+  return elbow.dot(projectedPole) / elbow.length() / projectedPole.length();
+}
+
+function measuredCoupledCase() {
+  const captured = measuredArmCase();
+  const { fixture, seed, incumbent, rest, chain, target, makeSampler } = captured;
+  const sample = makeSampler();
+  const input = {
+    source: seed,
+    out: incumbent.slice(),
+    chain,
+    limits: fixture.limitDegrees.map((degrees) => ({ maxRadians: (degrees * Math.PI) / 180 })),
+    target,
+    before: sample(incumbent),
+    sample,
+    alignment: (pose: Float32Array): number | null =>
+      measuredPoleAlignment(rest, pose, chain, target.position, fixture.pole),
+    iterations: Number(fixture.iterations),
+    tolerance: Number(fixture.tolerance),
+    orientationTolerance: Number(fixture.orientationTolerance),
+  };
+  return { ...captured, input };
+}
+
 describe("arm target constraints", { timeout: 300_000 }, () => {
+  it("reaches a measured coupled arm target with an independently legal control", () => {
+    const {
+      fixture,
+      rest,
+      seed,
+      control,
+      incumbent,
+      positions,
+      normals,
+      skinIndex,
+      skinWeight,
+      chain,
+      target,
+      source,
+      makeSampler,
+    } = measuredArmCase();
+    const sampleControl = makeSampler();
+    const measuredControl = sampleControl(control);
+    expect(measuredControl.frame).toEqual(fixture.expectedFrames.control);
+    expect(sampleControl(incumbent).frame).toEqual(fixture.expectedFrames.incumbent);
+    expect(sampleControl(seed).frame).toEqual(fixture.expectedFrames.seed);
+    expect(dist(measuredControl.position, target.position)).toBeCloseTo(0.0007096402230745461, 14);
+    expect(normalizedAngle(measuredControl.orientation, target.orientation)).toBeCloseTo(
+      0.014104435857107628,
+      12,
+    );
+    const assertLegal = (rotations: Float32Array) => {
+      for (let bone = 0; bone < rest.names.length; bone++) {
+        const before = seed.subarray(bone * 4, bone * 4 + 4);
+        const after = rotations.subarray(bone * 4, bone * 4 + 4);
+        expect(Array.from(after).every(Number.isFinite)).toBe(true);
+        if (!chain.includes(bone)) {
+          expect(rotationBytes(after)).toEqual(rotationBytes(before));
+          continue;
+        }
+        const degrees = fixture.limitDegrees[chain.indexOf(bone)] as number;
+        expect(normalizedAngle(Array.from(before), Array.from(after))).toBeLessThanOrEqual(
+          (degrees * Math.PI) / 180,
+        );
+        expect(Math.abs(Math.hypot(...after) - 1)).toBeLessThanOrEqual(2 ** -22);
+      }
+      expect({ rest, seed, positions, normals, skinIndex, skinWeight }).toEqual(source);
+      const lengths = segmentLengths(rest, rotations, chain);
+      const originalLengths = segmentLengths(rest, seed, chain);
+      const rounding = 64 * 2 ** -23 * Math.max(1, ...Array.from(rest.heads, Math.abs));
+      lengths.forEach((length, index) => {
+        expect(Math.abs(length - (originalLengths[index] as number))).toBeLessThanOrEqual(rounding);
+      });
+    };
+    const poleAlignment = (rotations: Float32Array) =>
+      measuredPoleAlignment(rest, rotations, chain, target.position, fixture.pole);
+    // The saved Float32 control proves existence in the exact seed-relative
+    // domain independently of whether this solver finds that particular pose.
+    assertLegal(control);
+    expect(dist(measuredControl.position, target.position)).toBeLessThanOrEqual(fixture.tolerance);
+    expect(normalizedAngle(measuredControl.orientation, target.orientation)).toBeLessThanOrEqual(
+      fixture.orientationTolerance,
+    );
+    const incumbentAlignment = poleAlignment(incumbent);
+    expect(incumbentAlignment).toBeCloseTo(0.9307325751190665, 12);
+    expect(poleAlignment(control)).toBeCloseTo(0.947380390506453, 12);
+    expect(poleAlignment(control)).toBeGreaterThan(incumbentAlignment);
+    const result = solveArmTarget({
+      rest,
+      rotations: seed,
+      chain,
+      tip: fixture.tip,
+      target,
+      pole: fixture.pole,
+      effector: makeSampler(),
+      // Preserve the captured caller's explicit iteration budget.
+      iterations: fixture.iterations,
+      tolerance: fixture.tolerance,
+      orientationTolerance: fixture.orientationTolerance,
+    });
+    const measuredResult = makeSampler()(result.rotations);
+    assertLegal(result.rotations);
+    expect(poleAlignment(result.rotations)).toBeGreaterThanOrEqual(incumbentAlignment);
+    expect(result.status).toBe("reached");
+    expect(dist(measuredResult.position, target.position)).toBeLessThanOrEqual(fixture.tolerance);
+    expect(normalizedAngle(measuredResult.orientation, target.orientation)).toBeLessThanOrEqual(
+      fixture.orientationTolerance,
+    );
+  });
+
+  it("keeps the exact incumbent when a coupled attempt improves but exhausts one update", () => {
+    const { input, incumbent } = measuredCoupledCase();
+    let moved = false;
+    const sample = input.sample;
+    input.iterations = 1;
+    input.sample = (pose) => {
+      moved ||= rotationBytes(pose).some((byte, i) => byte !== rotationBytes(incumbent)[i]);
+      return sample(pose);
+    };
+    correctArmCoupled(input);
+    expect(moved).toBe(true);
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+  });
+
+  it.each([1, 24])(
+    "bounds a rank-deficient measured sampler with %i requested iterations",
+    (iterations) => {
+      const { input, incumbent } = measuredCoupledCase();
+      const fixed = input.before;
+      let samples = 0;
+      input.iterations = iterations;
+      input.sample = () => {
+        samples++;
+        return fixed;
+      };
+      correctArmCoupled(input);
+      expect(samples).toBeGreaterThan(0);
+      expect(samples).toBeLessThanOrEqual(Math.min(iterations, 4) * (input.chain.length * 3 + 7));
+      expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+    },
+  );
+
+  it("retains literal zero tolerances with finite merit and locked source rotations", () => {
+    const { input, seed } = measuredCoupledCase();
+    input.out.set(seed);
+    input.before = input.sample(seed);
+    input.limits = input.chain.map(() => ({ maxRadians: 0 }));
+    input.tolerance = 0;
+    input.orientationTolerance = 0;
+    const sample = input.sample;
+    let samples = 0;
+    input.sample = (pose) => {
+      samples++;
+      expect(rotationBytes(pose)).toEqual(rotationBytes(seed));
+      expect(Array.from(pose).every(Number.isFinite)).toBe(true);
+      return sample(pose);
+    };
+    correctArmCoupled(input);
+    expect(samples).toBeGreaterThan(0);
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(seed));
+  });
+
+  it("does not publish a reached coupled orientation with an unreachable measured contact", () => {
+    const { input, incumbent } = measuredCoupledCase();
+    const unreachable = [3, 4, 5] as const;
+    input.target = { ...input.target, position: unreachable };
+    const before = rotationBytes(incumbent).slice();
+    correctArmCoupled(input);
+    expect(rotationBytes(input.out)).toEqual(before);
+  });
+
+  it("rolls back when fresh validation moves a complete coupled contact outside tolerance", () => {
+    const { fixture, rest, seed, incumbent, chain, target, makeSampler } = measuredArmCase();
+    const actual = makeSampler();
+    let completeTrial: Uint8Array | null = null;
+    let rejectedFreshPosition = false;
+    const result = solveArmTarget({
+      rest,
+      rotations: seed,
+      chain,
+      tip: fixture.tip,
+      target,
+      pole: fixture.pole,
+      iterations: fixture.iterations,
+      tolerance: fixture.tolerance,
+      orientationTolerance: fixture.orientationTolerance,
+      effector: (pose) => {
+        const measured = actual(pose);
+        const complete =
+          dist(measured.position, target.position) <= fixture.tolerance &&
+          normalizedAngle(measured.orientation, target.orientation) <= fixture.orientationTolerance;
+        if (complete && completeTrial === null) completeTrial = rotationBytes(pose).slice();
+        else if (
+          complete &&
+          completeTrial &&
+          rotationBytes(pose).every((byte, i) => byte === completeTrial?.[i])
+        ) {
+          rejectedFreshPosition = true;
+          return {
+            position: [
+              target.position[0] + fixture.tolerance * 2,
+              target.position[1],
+              target.position[2],
+            ],
+            orientation: measured.orientation,
+          };
+        }
+        return measured;
+      },
+    });
+    expect(completeTrial).not.toBeNull();
+    expect(rejectedFreshPosition).toBe(true);
+    expect(rotationBytes(result.rotations)).toEqual(rotationBytes(incumbent));
+    expect(result.status).toBe("unreached");
+  });
+
+  it("rolls back a complete coupled frame when its declared pole alignment worsens", () => {
+    const { input, incumbent, rest, chain, target } = measuredCoupledCase();
+    const heads = posedBones(rest, incumbent).heads;
+    const pole = point(heads, chain[3] as number);
+    input.alignment = (pose) => measuredPoleAlignment(rest, pose, chain, target.position, pole);
+    let reachedFrame = false;
+    const sample = input.sample;
+    input.sample = (pose) => {
+      const frame = sample(pose);
+      reachedFrame ||=
+        dist(frame.position, target.position) <= input.tolerance &&
+        normalizedAngle(frame.orientation, target.orientation) <= input.orientationTolerance;
+      return frame;
+    };
+    correctArmCoupled(input);
+    expect(reachedFrame).toBe(true);
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+  });
+
+  it("keeps the exact incumbent when a declared coupled pole projection is undefined", () => {
+    const { input, incumbent } = measuredCoupledCase();
+    input.alignment = () => null;
+    correctArmCoupled(input);
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+  });
+
+  it("recovers the measured coupled frame through a rotated and translated sampler", () => {
+    const { input, makeSampler } = measuredCoupledCase();
+    const turn = new Quaternion().setFromAxisAngle(new Vector3(1, 2, -3).normalize(), 0.7);
+    const shift = new Vector3(0.4, -0.2, 0.7);
+    const transform = (frame: { position: readonly number[]; orientation: readonly number[] }) => ({
+      position: new Vector3(...frame.position).applyQuaternion(turn).add(shift).toArray() as [
+        number,
+        number,
+        number,
+      ],
+      orientation: turn
+        .clone()
+        .multiply(new Quaternion().fromArray(frame.orientation))
+        .toArray() as [number, number, number, number],
+    });
+    const sample = makeSampler();
+    const transformedSample = (pose: Float32Array) => transform(sample(pose));
+    correctArmCoupled({
+      ...input,
+      target: transform(input.target),
+      before: transform(input.before),
+      sample: transformedSample,
+    });
+    const frame = transformedSample(input.out);
+    const target = transform(input.target);
+    expect(dist(frame.position, target.position)).toBeLessThanOrEqual(input.tolerance);
+    expect(normalizedAngle(frame.orientation, target.orientation)).toBeLessThanOrEqual(
+      input.orientationTolerance,
+    );
+  });
+
+  it("owns coupled residuals when a sampler reuses mutable frame buffers", () => {
+    const { input, incumbent, makeSampler, target } = measuredCoupledCase();
+    const actual = makeSampler();
+    const shared = {
+      position: [0, 0, 0] as [number, number, number],
+      orientation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const pooled = (pose: Float32Array) => {
+      const frame = actual(pose);
+      frame.position.forEach((value, i) => {
+        shared.position[i] = value;
+      });
+      frame.orientation.forEach((value, i) => {
+        shared.orientation[i] = value;
+      });
+      return shared;
+    };
+    const before = pooled(incumbent);
+    correctArmCoupled({
+      ...input,
+      before,
+      sample: (pose) => {
+        expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+        return pooled(pose);
+      },
+    });
+    const measured = actual(input.out);
+    expect(dist(measured.position, target.position)).toBeLessThanOrEqual(input.tolerance);
+    expect(normalizedAngle(measured.orientation, target.orientation)).toBeLessThanOrEqual(
+      input.orientationTolerance,
+    );
+  });
+
+  it("retains the axial incumbent frame when public effector buffers are reused", () => {
+    const { fixture, rest, seed, chain, target, makeSampler } = measuredArmCase();
+    const actual = makeSampler();
+    const shared = {
+      position: [0, 0, 0] as [number, number, number],
+      orientation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const result = solveArmTarget({
+      rest,
+      rotations: seed,
+      chain,
+      tip: fixture.tip,
+      target,
+      pole: fixture.pole,
+      iterations: fixture.iterations,
+      tolerance: fixture.tolerance,
+      orientationTolerance: fixture.orientationTolerance,
+      effector: (pose) => {
+        const frame = actual(pose);
+        frame.position.forEach((value, i) => {
+          shared.position[i] = value;
+        });
+        frame.orientation.forEach((value, i) => {
+          shared.orientation[i] = value;
+        });
+        return shared;
+      },
+    });
+    expect(result.status).toBe("reached");
+    const measured = actual(result.rotations);
+    expect(dist(measured.position, target.position)).toBeLessThanOrEqual(fixture.tolerance);
+    expect(normalizedAngle(measured.orientation, target.orientation)).toBeLessThanOrEqual(
+      fixture.orientationTolerance,
+    );
+  });
+
+  it("preserves coupled sampler failures and exact incumbent bytes", () => {
+    const { input, incumbent } = measuredCoupledCase();
+    const failure = new RangeError("measured frame is invalid");
+    expect(() =>
+      correctArmCoupled({
+        ...input,
+        sample: () => {
+          throw failure;
+        },
+      }),
+    ).toThrow(failure);
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+    correctArmCoupled({ ...input, sample: () => ({ position: input.before.position }) });
+    expect(rotationBytes(input.out)).toEqual(rotationBytes(incumbent));
+  });
+
+  it("blends the complete coupled pose at the existing arm weight boundary", () => {
+    const { fixture, rest, seed, chain, target, makeSampler } = measuredArmCase();
+    const input = {
+      rest,
+      rotations: seed,
+      chain,
+      tip: fixture.tip,
+      target,
+      pole: fixture.pole,
+      iterations: fixture.iterations,
+      tolerance: fixture.tolerance,
+      orientationTolerance: fixture.orientationTolerance,
+    };
+    const full = solveArmTarget({ ...input, effector: makeSampler() });
+    const partial = solveArmTarget({ ...input, effector: makeSampler(), weight: 0.5 });
+    expect(full.status).toBe("reached");
+    expect(partial.reason).toBe("partial-weight");
+    for (let bone = 0; bone < rest.names.length; bone++) {
+      if (!chain.includes(bone)) {
+        expect(rotationBytes(partial.rotations.subarray(bone * 4, bone * 4 + 4))).toEqual(
+          rotationBytes(seed.subarray(bone * 4, bone * 4 + 4)),
+        );
+        continue;
+      }
+      const expected = new Quaternion()
+        .fromArray(seed, bone * 4)
+        .slerp(new Quaternion().fromArray(full.rotations, bone * 4), 0.5);
+      expect(
+        normalizedAngle(
+          Array.from(partial.rotations.subarray(bone * 4, bone * 4 + 4)),
+          expected.toArray(),
+        ),
+      ).toBeLessThan(1e-6);
+    }
+  });
+
   it("reaches a legal axial roll beyond the wrist budget without moving the contact", () => {
     const chain = [0, 1, 2, 3, 4, 5];
     const rest: RestBones = {
@@ -582,7 +1098,10 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
         return rigidFrame(rest, rotations, chain, tip);
       },
     });
-    expect(candidates).toHaveLength(1);
+    // The first captured candidate remains the original axial proposal;
+    // unresolved targets may also sample bounded private coupled trials.
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.length).toBeLessThanOrEqual(1 + 4 * (3 * chain.length + 7));
     const candidate = candidates[0];
     if (!candidate) throw new Error("missing pole-reversing twist proposal");
     const frame = rigidFrame(rest, candidate, chain, tip);

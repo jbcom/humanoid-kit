@@ -8,6 +8,7 @@
  * responsible for choosing an interaction target and for applying the returned
  * rotations to a renderer.
  */
+import { correctArmCoupled } from "./armCoupled.ts";
 import { assertDisjointViews, type BoneRotations, posedBones, type RestBones } from "./bones.ts";
 import {
   between,
@@ -296,7 +297,7 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
       );
     }
     correctOrientation(rest, source, out, chain, tip, target.orientation, input.effector, limits);
-    correctAncestorTwist(
+    const beforeCoupled = correctAncestorTwist(
       rest,
       source,
       out,
@@ -310,6 +311,27 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
       tolerance,
       orientationTolerance,
     );
+    if (
+      beforeCoupled?.orientation &&
+      quaternionAngle(beforeCoupled.orientation, target.orientation) > orientationTolerance
+    )
+      correctArmCoupled({
+        source,
+        out,
+        chain,
+        limits,
+        target: { position: target.position, orientation: target.orientation },
+        before: beforeCoupled,
+        sample: (candidate) =>
+          sampledEnd(posedBones(rest, candidate), candidate, chain, tip, input.effector),
+        ...(pole && {
+          alignment: (candidate: BoneRotations) =>
+            poleAlignment(posedBones(rest, candidate), chain, target.position, pole),
+        }),
+        iterations,
+        tolerance,
+        orientationTolerance,
+      });
   }
 
   if (weight < 1) blendArmInto(source, out, chain, weight);
@@ -664,16 +686,23 @@ function correctAncestorTwist(
   limits: readonly ArmJointLimit[],
   tolerance: number,
   orientationTolerance: number,
-): void {
+): SampledArmEnd | undefined {
   const target = normalizeQuat(targetOrientation);
+  let last: SampledArmEnd | undefined;
+  const snapshot = (frame: SampledArmEnd): SampledArmEnd => ({
+    ...frame,
+    position: [...frame.position],
+    ...(frame.orientation && { orientation: [...frame.orientation] as Quat }),
+  });
   for (let offset = chain.length - 2; offset >= 0; offset--) {
     const bone = chain[offset] as number;
     const posed = posedBones(rest, out);
     const before = sampledEnd(posed, out, chain, tip, effector);
+    last = snapshot(before);
     if (!before.orientation) continue;
     // Satisfaction uses the public status metric, including its Float32 norm
     // error. Normalization below is only for comparing candidate improvement.
-    if (quaternionAngle(before.orientation, targetOrientation) <= orientationTolerance) return;
+    if (quaternionAngle(before.orientation, targetOrientation) <= orientationTolerance) return last;
     const direction = subtract(before.position, pointAt(posed.heads, bone));
     const axisLength = length(direction);
     if (!(axisLength > 0 && Number.isFinite(axisLength))) continue;
@@ -711,9 +740,13 @@ function correctAncestorTwist(
       (previousPole !== null && (candidatePole === null || candidatePole < previousPole))
     )
       out.set(previous, bone * 4);
-    else if (quaternionAngle(candidate.orientation, targetOrientation) <= orientationTolerance)
-      return;
+    else {
+      last = snapshot(candidate);
+      if (quaternionAngle(candidate.orientation, targetOrientation) <= orientationTolerance)
+        return last;
+    }
   }
+  return last;
 }
 
 /** Normalized elbow/pole alignment, undefined when either projection collapses. */
