@@ -46,6 +46,14 @@ declare module "vitest" {
   }
 }
 
+function deferredVoid(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function albedoOnly(material: Material): void {
   const compile = material.onBeforeCompile.bind(material);
   const key = material.customProgramCacheKey.bind(material);
@@ -176,7 +184,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
   let evaluations = 0,
     settlements = 0;
   const errors: Error[] = [];
-  const evaluated = Promise.withResolvers<void>();
+  const evaluated = deferredVoid();
   const client = inlineWorkerClient({ subdivision: 0 }, { hair: true });
   await client.ready;
   const id = "beard-long-scruffy";
@@ -297,7 +305,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   const settledMaps: boolean[] = [];
   let sourcePending = false,
     allowSource = false;
-  let evaluated = Promise.withResolvers<void>();
+  let evaluated = deferredVoid();
   let started = performance.now();
   let rejectSource: ((error: Error) => void) | undefined;
   const errors: Error[] = [];
@@ -430,7 +438,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     await screen.unmount();
     allowSource = false;
     sourcePending = false;
-    evaluated = Promise.withResolvers<void>();
+    evaluated = deferredVoid();
     started = performance.now();
     rejectSource = undefined;
     const previousSettlements = settlements;
