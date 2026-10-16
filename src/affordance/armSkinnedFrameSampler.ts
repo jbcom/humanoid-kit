@@ -62,6 +62,8 @@ export interface ArmSkinnedFrameSamplerInput {
    * also change: a contact's hand shape, blended by its weight. None by default.
    */
   readonly fingerBones?: readonly number[];
+  /** The drawn skinning path: mixed by default, or linear for a custom material. */
+  readonly skinMode?: "mixed" | "linear";
   /** The source pose's fixed joint folds (`LiveFigure.folds`): none when it shows none. */
   readonly folds?: readonly SkinFold[];
 }
@@ -138,6 +140,7 @@ export function createArmSkinnedFrameSampler(
     armBones,
     side,
     fingerBones = [],
+    skinMode = "mixed",
     folds = NO_FOLDS,
   } = input;
   if (generation === null || typeof generation !== "object")
@@ -170,7 +173,7 @@ export function createArmSkinnedFrameSampler(
   // folds. The factory's exact-name restriction above is what makes this source
   // share and the source pose's folds safe to hold.
   const baseShare = skinDualShare(restBones.names);
-  let share: DualShare = poseShare(restBones, source, baseShare);
+  let share: DualShare = skinMode === "linear" ? 0 : poseShare(restBones, source, baseShare);
   const scratch = skinPoseScratch(restBones, share);
   const ups = landmarkUps(anchors, rest, restNormals);
   const allowed = new Uint8Array(bones);
@@ -235,7 +238,7 @@ export function createArmSkinnedFrameSampler(
       for (const component of rotations)
         if (!Number.isFinite(component))
           throw new RangeError("arm sampler: source rotations must be finite");
-      const nextShare = poseShare(restBones, rotations, baseShare);
+      const nextShare = skinMode === "linear" ? 0 : poseShare(restBones, rotations, baseShare);
       source.set(rotations);
       share = nextShare;
     },
