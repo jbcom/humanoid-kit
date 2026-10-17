@@ -57,6 +57,48 @@ describe("CI gate verdict", () => {
     expect([...(listed ?? [])].sort()).toEqual([...REQUIRED_JOBS].sort());
   });
 
+  it("runs every file shard of each sharded suite it declares, so the shards cover the suite", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const jobs = workflow.split(/\n {2}(?=[a-z][a-z-]*:\n)/);
+    const sharded = jobs.filter((job) => job.includes("--shard="));
+    expect(sharded.length).toBeGreaterThan(0);
+    for (const job of sharded) {
+      const name = job.slice(0, job.indexOf(":"));
+      const of = new Set(
+        [...job.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)].map((m) => m[1]),
+      );
+      expect(of.size, `${name} names one shard count`).toBe(1);
+      const total = Number([...of][0]);
+      const matrix = /shard:\s*\[([^\]]+)\]/
+        .exec(job)?.[1]
+        ?.split(",")
+        .map((s) => Number(s.trim()));
+      expect(matrix, `${name} runs shards 1..${total}`).toEqual(
+        Array.from({ length: total }, (_, i) => i + 1),
+      );
+    }
+  });
+
+  it("runs every browser file once: what the SwiftShader shards exclude, each Metal lane runs", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const jobs = new Map(
+      workflow
+        .split(/\n {2}(?=[a-z][a-z-]*:\n)/)
+        .map((job) => [job.slice(0, job.indexOf(":")), job] as const),
+    );
+    const files = (text: string, pattern: RegExp) =>
+      [...text.matchAll(pattern)].map((m) => m[1] as string).sort();
+    const excluded = (name: string) =>
+      files(jobs.get(name) ?? "", /--exclude (tests\/browser\/\S+\.test\.tsx?)/g);
+    const lane = (name: string) =>
+      files(jobs.get(name) ?? "", /^\s+(tests\/browser\/\S+\.test\.tsx?)$/gm);
+    const swiftShader = excluded("verify-browser");
+    expect(swiftShader.length).toBeGreaterThan(0);
+    expect(excluded("coverage-browser-shard")).toEqual(swiftShader);
+    expect(lane("verify-affordance-gpu-metal")).toEqual(swiftShader);
+    expect(lane("coverage-affordance-gpu-metal")).toEqual(swiftShader);
+  });
+
   it("exits non-zero from the command the workflow runs when a job is skipped", () => {
     const run = (needs: object, sonarRuns: string) =>
       spawnSync(process.execPath, ["scripts/ci/requireJobs.ts"], {
