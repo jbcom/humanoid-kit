@@ -14,6 +14,18 @@ const constrainedCi = Boolean(process.env.CI);
 // A shard covers only a subset of test files. Coverage thresholds are meaningful
 // only after the required CI merge job combines every labelled shard.
 const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
+// V8 coverage multiplies a CPU-bound test's run time. Measured on one file at a
+// time on .201 (no contention), against the same tests uninstrumented on a
+// hosted runner:
+// - hipFold's two-millimetre crease case took 36.1 s against 14.4 s;
+// - fluidPosedSurfaceFrame's mass transfer took 32.6 s against 14.9 s;
+// - boxBraids' fixture hook ran past 10 s, where the whole uninstrumented file
+//   takes 2.3 s.
+// An instrumented run keeps the same hang detection at three times the
+// uninstrumented budgets. The uninstrumented jobs keep the budgets themselves.
+const instrumented = partialCoverageShard || process.argv.includes("--coverage");
+const INSTRUMENTED_SLOWDOWN = 3;
+const budget = (ms: number): number => (instrumented ? ms * INSTRUMENTED_SLOWDOWN : ms);
 // A name filter marks every non-selected test as skipped. Shards select files,
 // so their selected files still report real environmental skips to the ledger.
 const skipLedgerEnabled = !process.argv.some(
@@ -111,10 +123,13 @@ export default defineConfig({
           include: ["tests/**/*.test.ts"],
           exclude: ["tests/browser/**", "tests/bake/**"],
           environment: "node",
-          // Building a model takes under a second alone, but coverage
-          // instrumentation and the parallel suites stretch it several times;
-          // 30 s still catches a hang.
-          testTimeout: 30_000,
+          // Building a model takes under a second alone, and the parallel suites
+          // stretch it several times; 30 s still catches a hang. Instrumented
+          // runs scale both budgets (`budget`, above).
+          testTimeout: budget(30_000),
+          hookTimeout: budget(10_000),
+          // A test that sets its own budget scales it the same way (`inject("budgetScale")`).
+          provide: { budgetScale: instrumented ? INSTRUMENTED_SLOWDOWN : 1 },
           // A full set of model fixtures is memory- and CPU-heavy.  Two workers
           // preserve independent-file coverage without oversubscribing a hosted
           // runner (which otherwise turns deterministic geometry assertions into
@@ -140,10 +155,12 @@ export default defineConfig({
             gpuMode,
             headless,
           }),
+          provide: { browserGpuMode: gpuMode },
           // Software rendering (CI) runs the shading measurements about seven
           // times slower than a GPU: the scatter-parity sweep takes 3 s on a
           // GPU and 20 s under SwiftShader.
-          testTimeout: gpuMode === "software" ? 120_000 : 30_000,
+          testTimeout: budget(gpuMode === "software" ? 120_000 : 30_000),
+          hookTimeout: budget(10_000),
           // A software renderer already spreads one WebGL context across the
           // host. Keep its browser files independent but sequential, matching
           // the Playwright suite's software-runner policy.

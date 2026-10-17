@@ -57,6 +57,45 @@ describe("CI gate verdict", () => {
     expect([...(listed ?? [])].sort()).toEqual([...REQUIRED_JOBS].sort());
   });
 
+  it("runs every file shard of each sharded suite it declares, so the shards cover the suite", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const jobs = workflow.split(/\n {2}(?=[a-z][a-z-]*:\n)/);
+    const sharded = jobs.filter((job) => job.includes("--shard="));
+    expect(sharded.length).toBeGreaterThan(0);
+    for (const job of sharded) {
+      const name = job.slice(0, job.indexOf(":"));
+      const of = new Set(
+        [...job.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)].map((m) => m[1]),
+      );
+      expect(of.size, `${name} names one shard count`).toBe(1);
+      const total = Number([...of][0]);
+      const matrix = /shard:\s*\[([^\]]+)\]/
+        .exec(job)?.[1]
+        ?.split(",")
+        .map((s) => Number(s.trim()));
+      expect(matrix, `${name} runs shards 1..${total}`).toEqual(
+        Array.from({ length: total }, (_, i) => i + 1),
+      );
+    }
+  });
+
+  it("runs the whole browser project on a required Metal renderer, excluding no file", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const jobs = new Map(
+      workflow
+        .split(/\n {2}(?=[a-z][a-z-]*:\n)/)
+        .map((job) => [job.slice(0, job.indexOf(":")), job] as const),
+    );
+    for (const name of ["verify-browser", "coverage-browser-shard"]) {
+      const job = jobs.get(name) ?? "";
+      expect(job, `${name} runs the browser project`).toContain("--project browser");
+      expect(job, `${name} runs on macOS`).toMatch(/runs-on: macos-/);
+      expect(job, `${name} rejects a non-Metal renderer`).toContain("assertMetalRenderer.mjs");
+      expect(job, `${name} asks for Metal`).toContain("HK_GPU: macos-hardware-metal");
+      expect(job, `${name} excludes nothing`).not.toContain("--exclude");
+    }
+  });
+
   it("exits non-zero from the command the workflow runs when a job is skipped", () => {
     const run = (needs: object, sonarRuns: string) =>
       spawnSync(process.execPath, ["scripts/ci/requireJobs.ts"], {

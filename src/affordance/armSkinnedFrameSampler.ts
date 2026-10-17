@@ -62,6 +62,8 @@ export interface ArmSkinnedFrameSamplerInput {
    * also change: a contact's hand shape, blended by its weight. None by default.
    */
   readonly fingerBones?: readonly number[];
+  /** The drawn skinning path: mixed by default, or linear for a custom material. */
+  readonly skinMode?: "mixed" | "linear";
   /** The source pose's fixed joint folds (`LiveFigure.folds`): none when it shows none. */
   readonly folds?: readonly SkinFold[];
 }
@@ -69,6 +71,13 @@ export interface ArmSkinnedFrameSamplerInput {
 export interface ArmSkinnedFrameSampler {
   /** The evaluation identity this sampler was constructed for. */
   readonly generation: object;
+  /**
+   * Replaces the copied source baseline for this same immutable geometry generation.
+   * Recomputes dynamic skin shares while retaining geometry and skinning scratch.
+   * Supplied folds remain fixed; rebuild the sampler if those folds change.
+   * Invalid input leaves the previous baseline intact.
+   */
+  resetSource(generation: object, rotations: BoneRotations): void;
   /**
    * Writes the final skinned hand frame for `rotations`. `generation` must be
    * the caller's current evaluated-geometry identity, which makes stale use
@@ -131,6 +140,7 @@ export function createArmSkinnedFrameSampler(
     armBones,
     side,
     fingerBones = [],
+    skinMode = "mixed",
     folds = NO_FOLDS,
   } = input;
   if (generation === null || typeof generation !== "object")
@@ -162,7 +172,8 @@ export function createArmSkinnedFrameSampler(
   // Arm constraints cannot change the thigh's dynamic share or the hip and knee
   // folds. The factory's exact-name restriction above is what makes this source
   // share and the source pose's folds safe to hold.
-  const share: DualShare = poseShare(restBones, source, skinDualShare(restBones.names));
+  const baseShare = skinDualShare(restBones.names);
+  let share: DualShare = skinMode === "linear" ? 0 : poseShare(restBones, source, baseShare);
   const scratch = skinPoseScratch(restBones, share);
   const ups = landmarkUps(anchors, rest, restNormals);
   const allowed = new Uint8Array(bones);
@@ -219,6 +230,18 @@ export function createArmSkinnedFrameSampler(
 
   return {
     generation,
+    resetSource(currentGeneration, rotations) {
+      if (currentGeneration !== generation)
+        throw new Error("arm sampler: evaluated geometry generation is stale");
+      if (rotations.length !== source.length)
+        throw new RangeError("arm sampler: source rotations do not match rest bones");
+      for (const component of rotations)
+        if (!Number.isFinite(component))
+          throw new RangeError("arm sampler: source rotations must be finite");
+      const nextShare = skinMode === "linear" ? 0 : poseShare(restBones, rotations, baseShare);
+      source.set(rotations);
+      share = nextShare;
+    },
     frame(currentGeneration, rotations, out) {
       pose(currentGeneration, rotations);
       return affordanceFrameInto(affordance, read, out);

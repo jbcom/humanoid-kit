@@ -55,9 +55,9 @@ Research only: nothing here ships. The generator is `tissue.ts`; the gates are
 
 `sheets.ts` writes a job for the Playwright `sheets` project
 (e2e/sheets/render.sheet.ts): copy the candidate's `job.json` to a CLEAN worktree's
-`.sheets/job.json` and run `heavy-slot --remote-render pnpm exec playwright test
---project sheets` there (not from a worktree that nests other worktrees: the staging
-tar overflows). The generator's output for each tile is a MakeHuman custom target
+`.sheets/job.json` and run `pnpm exec playwright test --project sheets` there.
+Install Chromium and use the platform/GPU settings documented in
+[CONTRIBUTING.md](../../../CONTRIBUTING.md). The generator's output for each tile is a MakeHuman custom target
 the page registers before the figure is evaluated (`$customTargets`), so skin, rig
 and subdivision all come from the kit. Rows are ages, columns frame directions; every
 other axis is sampled (`sampler.ts`), the seed and the condition list go to

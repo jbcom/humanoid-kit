@@ -14,19 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify-unit:
-    name: Verify unit (${{ matrix.os }}, Node ${{ matrix.node }})
+  # `pnpm verify` remains the local all-in-one command. CI runs the same checks
+  # but splits them across jobs so every supported Node version finishes below
+  # the unchanged 20-minute ceiling: the static checks and the package in one job,
+  # the unit suite (1021 s on one hosted runner at the integration head, against
+  # that ceiling) in four file shards.
+  verify-static:
+    name: Verify static and package (Node ${{ matrix.node }})
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            node: "24"
-          - os: ubuntu-24.04
-            node: "26"
+        node: ["24", "26"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -40,18 +41,14 @@ jobs:
         run: |
           pnpm install --lockfile-only
           git diff --exit-code pnpm-lock.yaml
-      # `pnpm verify` remains the local all-in-one command. CI keeps the same
-      # checks but separates their schedulers so every supported Node version
-      # can finish below the unchanged 20-minute ceiling.
       - run: pnpm run lint
       - run: pnpm run lint:docs
       - run: pnpm run typecheck
-      - run: pnpm exec vitest run --project unit
       - run: pnpm run build
       - run: pnpm run package:check
 
-  verify-browser:
-    name: Verify browser ${{ matrix.shard }}/6 (Node ${{ matrix.node }})
+  verify-unit:
+    name: Verify unit ${{ matrix.shard }}/4 (Node ${{ matrix.node }})
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -59,7 +56,7 @@ jobs:
       fail-fast: false
       matrix:
         node: ["24", "26"]
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -68,39 +65,41 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      # Vitest shards test files exactly once. Six shards isolate the observed
-      # 568-second SwiftShader sphere suite from Node's 448-second unit suite.
-      # Metal-only affordance readback is required separately below; SwiftShader cannot
-      # finish it within this unchanged job ceiling.
-      - run: >-
-          xvfb-run --auto-servernum pnpm exec vitest run --project browser
-          --shard=${{ matrix.shard }}/6 --exclude tests/browser/affordanceGpu.test.tsx
+      # Vitest shards test files exactly once, so the four shards together run the
+      # whole unit project; the gate requires every one of them.
+      - run: pnpm exec vitest run --project unit --shard=${{ matrix.shard }}/4
 
-  verify-affordance-gpu-metal:
-    name: Verify GPU affordance Metal (Node ${{ matrix.node }})
+  # The browser project runs on the standard macos-15 runner's Metal GPU, the
+  # canonical GPU proof (docs/ARCHITECTURE.md). Hosted SwiftShader could no
+  # longer finish it: coatPlacement took 827 s there against 21 s on this
+  # runner, and sphereParity was cancelled after 1123 s. The project runs on
+  # the pinned Node (.nvmrc). Its tests execute in Chromium, and the static and
+  # unit jobs prove the library on both supported Node releases.
+  verify-browser:
+    name: Verify browser ${{ matrix.shard }}/3 (Metal)
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        node: ["24", "26"]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install chromium
       - name: Require a Metal WebGL renderer
         run: node scripts/ci/assertMetalRenderer.mjs
-      - name: Prove GPU affordance positions
+      # Vitest shards test files exactly once; the gate requires every shard.
+      - name: Run the browser shard on Metal
         env:
           HK_GPU: macos-hardware-metal
-        run: pnpm exec vitest run --project browser tests/browser/affordanceGpu.test.tsx
+        run: pnpm exec vitest run --project browser --shard=${{ matrix.shard }}/3
 
   verify-bake:
     name: Verify bake (Node ${{ matrix.node }})
@@ -122,14 +121,18 @@ jobs:
       - run: pnpm exec vitest run --project bake
 
   coverage-unit-shard:
-    name: Coverage unit shard ${{ matrix.shard }}/3
+    name: Coverage unit shard ${{ matrix.shard }}/8
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Instrumented files run about three times as long as plain ones, and
+    # several run for minutes on their own (contactCompression 422 s,
+    # canalSeam 386 s, affordances 374 s, drill 239 s). With six shards, two
+    # ran past 20 minutes; Vitest shards by file, so one file's cost cannot split.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -143,7 +146,7 @@ jobs:
           VITEST_BLOB_LABEL: coverage-unit-${{ matrix.shard }}
           VITEST_COVERAGE_SHARD: "true"
         run: >-
-          pnpm exec vitest run --coverage --project unit --shard=${{ matrix.shard }}/3
+          pnpm exec vitest run --coverage --project unit --shard=${{ matrix.shard }}/8
           --reporter=default --reporter=blob --reporter=./scripts/ci/vitestSkipReporter.ts
       - name: Upload coverage unit shard
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -154,44 +157,14 @@ jobs:
           if-no-files-found: error
 
   coverage-browser-shard:
-    name: Coverage browser shard ${{ matrix.shard }}/6
+    name: Coverage browser shard ${{ matrix.shard }}/3 (Metal)
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - name: Run instrumented browser shard
-        env:
-          VITEST_BLOB_LABEL: coverage-browser-${{ matrix.shard }}
-          VITEST_COVERAGE_SHARD: "true"
-        run: >-
-          xvfb-run --auto-servernum pnpm exec vitest run --coverage --project browser
-          --shard=${{ matrix.shard }}/6 --exclude tests/browser/affordanceGpu.test.tsx
-          --reporter=default --reporter=blob --reporter=./scripts/ci/vitestSkipReporter.ts
-      - name: Upload coverage browser shard
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-blob-browser-${{ matrix.shard }}
-          path: .vitest/blob
-          include-hidden-files: true
-          if-no-files-found: error
-
-  coverage-affordance-gpu-metal:
-    name: Coverage GPU affordance Metal
-    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: macos-15
-    timeout-minutes: 10
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -203,25 +176,25 @@ jobs:
       - run: pnpm exec playwright install chromium
       - name: Require a Metal WebGL renderer
         run: node scripts/ci/assertMetalRenderer.mjs
-      - name: Run instrumented GPU affordance proof
+      - name: Run instrumented browser shard on Metal
         env:
           HK_GPU: macos-hardware-metal
-          VITEST_BLOB_LABEL: coverage-browser-metal
+          VITEST_BLOB_LABEL: coverage-browser-${{ matrix.shard }}
           VITEST_COVERAGE_SHARD: "true"
         run: >-
-          pnpm exec vitest run --coverage --project browser tests/browser/affordanceGpu.test.tsx
+          pnpm exec vitest run --coverage --project browser --shard=${{ matrix.shard }}/3
           --reporter=default --reporter=blob --reporter=./scripts/ci/vitestSkipReporter.ts
-      - name: Upload GPU affordance coverage blob
+      - name: Upload coverage browser shard
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: coverage-blob-browser-metal
+          name: coverage-blob-browser-${{ matrix.shard }}
           path: .vitest/blob
           include-hidden-files: true
           if-no-files-found: error
 
   coverage-merge:
     name: Coverage merge and threshold gate
-    needs: [coverage-unit-shard, coverage-browser-shard, coverage-affordance-gpu-metal]
+    needs: [coverage-unit-shard, coverage-browser-shard]
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -249,6 +222,26 @@ jobs:
           path: .vitest/blob
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
+          name: coverage-blob-unit-4
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-5
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-6
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-7
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-8
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
           name: coverage-blob-browser-1
           path: .vitest/blob
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -259,31 +252,16 @@ jobs:
         with:
           name: coverage-blob-browser-3
           path: .vitest/blob
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: coverage-blob-browser-4
-          path: .vitest/blob
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: coverage-blob-browser-5
-          path: .vitest/blob
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: coverage-blob-browser-6
-          path: .vitest/blob
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: coverage-blob-browser-metal
-          path: .vitest/blob
-      # V8 blobs contain absolute source URLs. The standard macOS proof runs at
+      # V8 blobs contain absolute source URLs. The macOS browser shards run at
       # /Users/runner while this merge runs on Ubuntu, so map both checkout roots
       # to the merge checkout before Vitest filters coverage to existing sources.
       - name: Normalize coverage blob source paths and require every shard
         run: >-
           node scripts/ci/normalizeCoverageBlobPaths.mjs .vitest/blob
           coverage-unit-1 coverage-unit-2 coverage-unit-3
+          coverage-unit-4 coverage-unit-5 coverage-unit-6
+          coverage-unit-7 coverage-unit-8
           coverage-browser-1 coverage-browser-2 coverage-browser-3
-          coverage-browser-4 coverage-browser-5 coverage-browser-6 coverage-browser-metal
       - name: Merge coverage and enforce configured thresholds
         run: |
           test -n "$(find .vitest/blob -type f -print -quit)"
@@ -315,9 +293,12 @@ jobs:
   e2e:
     name: Playground e2e
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: ubuntu-24.04
-    # Software rendering: the suite's budgets are four times its GPU ones (e2e/budget.ts).
-    timeout-minutes: 45
+    # The suite is the playground as people see it, on a GPU: the hosted macOS
+    # runner's Metal at the GPU budgets (e2e/budget.ts). Under hosted SwiftShader
+    # it was cancelled at 45 minutes on every run from 2026-10-14: its frame-rate-
+    # bound walks sampled too few frames and figures never settled in budget.
+    runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -326,13 +307,18 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      # Headed under a virtual display; see playwright.config.ts for the renderer choice.
-      - run: xvfb-run --auto-servernum pnpm test:e2e
-      # Hosted rendering is software, so the cases that need a GPU lane skip here by design.
+      - run: pnpm exec playwright install chromium
+      - name: Require a Metal WebGL renderer
+        run: node scripts/ci/assertMetalRenderer.mjs
+      - name: Run the playground suite on Metal
+        env:
+          HK_GPU: macos-hardware-metal
+          PW_HEADLESS: "1"
+        run: pnpm test:e2e
+      # This is the GPU lane, so a GPU-lane skip fails the ledger rather than being counted.
       # Every skip must carry a known reason; the ledger counts them for the coverage gate.
       - name: Account for skipped e2e tests
-        run: node scripts/ci/skipLedger.ts test-results/e2e-report.json test-results/skip-ledger.json --lane software
+        run: node scripts/ci/skipLedger.ts test-results/e2e-report.json test-results/skip-ledger.json --lane gpu
       - name: Upload the e2e skip ledger
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -405,7 +391,7 @@ jobs:
 
   gate:
     name: CI / gate
-    needs: [verify-unit, verify-browser, verify-affordance-gpu-metal, verify-bake, coverage-merge, docs, e2e, lighthouse, sonarcloud, pre-commit]
+    needs: [verify-static, verify-unit, verify-browser, verify-bake, coverage-merge, docs, e2e, lighthouse, sonarcloud, pre-commit]
     if: >-
       always() && (github.event_name != 'pull_request' ||
       !(startsWith(github.event.pull_request.head.ref, 'release-please--') ||

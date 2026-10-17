@@ -28,7 +28,13 @@ The lab's frame times are the host's: one figure and 500 differ by under a
 millisecond, so the crowd fits inside a 60 fps frame and the p95 is headless
 Chrome's frame pacing. The check therefore holds the crowd to the one-figure
 frame on the same machine, and judges frame time only when the page's WebGL
-renderer is a GPU (never SwiftShader).
+renderer is a display's GPU (`judgesFramePacing` in `e2e/lib/gpuLane.ts`). It
+never judges SwiftShader, and never the hosted macOS runner's "Apple
+Paravirtual device", which draws even one figure in 75 to 100 ms. There the
+pacing test is skipped with a reason the skip ledger counts, while the draw and
+triangle budgets are still asserted. A 2026-10-17 run on the M1 Pro (.202):
+one figure 16.6 ms median, 23.2 ms p95; 500 figures 16.4 ms, 22.9 ms, 8 draws,
+204 k triangles.
 
 ## Why
 
@@ -123,6 +129,12 @@ draw a different body from the full renderer.
    `HumanoidModel.proxyTopology(id)` gives a proxy's static data and
    `fitProxy` places it on an evaluated figure. Its skin is `bindingSkin` (each
    proxy vertex blends its three base vertices' weights, as MakeHuman does).
+   For textured rendering, `proxyRenderTopology(assets, id)` splits only the
+   authored vertex/UV-entry pairs, copies all eight skin influences, and keeps
+   the original face and triangle ordinals. `expandProxyPositions` expands a
+   `fitProxy` result into that render order; `proxyRenderIndex` applies the
+   same visibility rule in render indices. Source vertices, triangle winding,
+   UV coordinates and fit remain unchanged (see `docs/API.md`).
    Under clothes a proxy vertex shows when at least two of its three base
    vertices show (`transferVisibility`, the rule the kit already applies to a
    garment under another, and MakeHuman's `transferVertexMaskToProxy`), and a
@@ -238,3 +250,34 @@ draw a different body from the full renderer.
    archetypes, VAT bytes and encoded size per archetype.
 4. A stress lab: 500 figures in the playground (`?miniatures=500`), its
    capture and a frame-time measurement against one figure (done).
+
+## Optional facial UV greying fields
+
+With `facialHair: "alpha-cards"`, `bakeMiniature` accepts the same decoded
+`facialHairGreyMasks` registry as `<Humanoid>`. Recipe entries select a caller
+mask key and additive whitening amount per beard/moustache; each mask pins the
+packed style checksum and samples its retained source UVs. The bake keeps source
+RGBA and all topology/animation bytes exact, copying the separate R8 field into
+`MiniatureAlphaCard.grey` with its amount, unpigmented target tint and source pin.
+Missing/invalid requested masks throw `MiniatureError`, including an explicit
+zero amount with a missing reference. Absence, valid zero amounts and all-zero
+fields retain the legacy bake. The default still omits all facial cards.
+
+Masked output uses HKMB v3 because the v2 schema has no required-extension
+mechanism: an unknown field under v2 would silently lose the appearance on old
+readers. The encoder reuses aligned sections and writes v2 unchanged when no
+active field exists. The decoder reads v1/v2/v3 and validates mask dimensions,
+section size/bounds, checksum, amount and tint. Earlier v2 decoders reject v3 at
+the version guard. New readers also reject mask fields relabelled as v1/v2.
+Do not strip masks to downgrade a bake. Baked mask buffers belong to the bake,
+appear once in `miniatureTransferables`, and never alias caller registry bytes.
+
+The runtime uses the same linear pigment equation as live hair before source
+RGB multiplication, while retaining its existing miniature lighting model.
+One extra R8 texture costs `width * height` GPU bytes, without mask mipmaps;
+it is counted and disposed with its card archetype. Device texture limits are
+checked before drawing, without resizing the mask. Existing source geometry,
+UV overlap and near-only/default versus all-LOD selection remain unchanged.
+Changing the field requires another archetype bake. The kit does not currently
+supply packaged source-authored streak masks; caller-mask capability and actual
+source-asset visual acceptance are distinct.

@@ -362,6 +362,29 @@ export function placePresence(
     const p = presence.anchors[name];
     move(p[0], p[1], p[2], target.anchors[name]);
   }
+  if (presence.handWorkspaces) {
+    if (!target.handWorkspaces)
+      target.handWorkspaces = {
+        L: {
+          ...presence.handWorkspaces.L,
+          shoulder: [0, 0, 0],
+          palmOffset: [...presence.handWorkspaces.L.palmOffset],
+        },
+        R: {
+          ...presence.handWorkspaces.R,
+          shoulder: [0, 0, 0],
+          palmOffset: [...presence.handWorkspaces.R.palmOffset],
+        },
+      };
+    for (const side of ["L", "R"] as const) {
+      const source = presence.handWorkspaces[side];
+      const placed = target.handWorkspaces[side];
+      move(source.shoulder[0], source.shoulder[1], source.shoulder[2], placed.shoulder);
+      placed.upperLength = source.upperLength;
+      placed.forearmLength = source.forearmLength;
+      for (let k = 0; k < 3; k++) placed.palmOffset[k] = source.palmOffset[k] as number;
+    }
+  } else delete target.handWorkspaces;
 
   const points = presence.footprint.points;
   const placed = target.footprint.points;
@@ -428,6 +451,20 @@ export function clonePresence(p: FigurePresence): FigurePresence {
     bounds: { min: [...p.bounds.min], max: [...p.bounds.max] },
     anchors,
     measures: { ...p.measures },
+    ...(p.handWorkspaces && {
+      handWorkspaces: {
+        L: {
+          ...p.handWorkspaces.L,
+          shoulder: [...p.handWorkspaces.L.shoulder],
+          palmOffset: [...p.handWorkspaces.L.palmOffset],
+        },
+        R: {
+          ...p.handWorkspaces.R,
+          shoulder: [...p.handWorkspaces.R.shoulder],
+          palmOffset: [...p.handWorkspaces.R.palmOffset],
+        },
+      },
+    }),
     footprint: {
       points: p.footprint.points.map(([x, z]) => [x, z] as [number, number]),
       radius: p.footprint.radius,

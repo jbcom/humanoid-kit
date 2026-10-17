@@ -29,6 +29,21 @@ lifting its straight fingers 15° from the local tangent plane; the lift keeps
 the source fingers out of a curved surface without moving the contact centre or
 changing the measured gap.
 
+Broad palms first try the nominal goal: the site plus the requested standoff
+(1 mm by default). If every closing heading collides, placement may use the
+caller's existing positional tolerance (4 mm by default) along the measured
+site normal. Clearance depths propose up to six outward corrections for an
+existing heading; each correction consumes that tolerance and is solved and
+tested again on the final indexed skin. A tilted hand frame does not change
+the direction of this positional correction or the collision rays.
+Acceptance still requires the full hand to pass the unchanged 2 mm penetration
+limit, the original goal error and orientation bounds, and the default contact
+to stay within 5 mm of the site. `report.gap` always measures the original goal;
+the target is never relabelled to make an outward correction look exact.
+If no tested correction fits those bounds, the nominal diagnostic pose and
+`body-collision` result remain; the bounded correction budget does not establish
+that the whole admissible contact region is geometrically unreachable.
+
 ## Slice 1 as built
 
 - **Approach orientation.** The finger is not posed along the reverse of the
@@ -175,12 +190,13 @@ presence, so getting self-contact right is most of partner contact
   - Signal writes go through `assertSignalPolicy`. A beat's signal effect
     (`{ signal: role, change }`) goes through the host's `applySignals` to the
     figure's evaluation.
-  - Adult definitions and clips live in the age-gated adult package (#105),
-    never in the core source.
+  - The kit ships no adult definitions or clips: by the owner's ruling on #105
+    that content belongs to Anyself, a commercial game. The core source names
+    none, and an application's own definitions get the checks above.
 - **R11, regional responses stay region-owned.** The constraint emits a
   validated `RegionalContact` each frame it is in contact. It maps no response
-  itself. A response profile (core for the mouth's opening, the adult package
-  for genital, anal and nipple arousal) is selected by the consumer, as
+  itself. A response profile (core for the mouth's opening, the adult anatomy
+  pack for genital, anal and nipple arousal) is selected by the consumer, as
   `docs/REGIONAL-CONTACTS.md` requires. There is no universal dispatcher.
 - **R12, own-body clipping.** A figure's own finger inside its own mouth,
   nostril or canal is clipped like any other occupant. `channelClip` today
@@ -216,5 +232,5 @@ two arms carry two contacts. Option 3 is still how *posture* is supplied (R7).
 | 4 | `RegionalContact` emission; response profiles; the core oral profile (lips part, jaw opens to fit a finger) | Profile lifecycle tests. A minor's adult signals stay 0, and an adult definition is refused (`interactionAgeGate`). |
 | 5 | Own-body clipping; adult apertures (vagina, anus) declared by the pack, opening to fit an occupant | Clip test with the figure's own finger. Canal aperture follows the occupant radius; the inside part is clipped; `consumed` is written for edible objects. |
 | 6 | Idle clip set (all ages), layering, two arms, queueing | Each clip on four bodies: contact ≤ 5 mm through its loop; sheets read. |
-| 7 | Adult package: adult sites' response profiles and adult clips | Age-gate refusals. Arousal and moisture rise with contact and decay after it. Sheets read. |
+| 7 | Adult anatomy pack: adult sites' response profiles (physiology only; no adult clips, #105) | Age-gate refusals. Arousal and moisture rise with contact and decay after it. Sheets read. |
 | 8 | Partner contact: the site on another presence | The same contact gates between two figures. |

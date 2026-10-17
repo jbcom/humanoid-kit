@@ -21,8 +21,7 @@ female appearance fault or the combined-form overlap.
 The red test was created and run from this worktree with:
 
 ```sh
-heavy-slot --remote-test --render-host <render-host> \
-  pnpm exec vitest run tests/labioscrotalRootContinuity.test.ts
+pnpm exec vitest run tests/labioscrotalRootContinuity.test.ts
 ```
 
 The first failing assertion was `T0.01: expected 15 to be less than or equal

@@ -186,6 +186,35 @@ describe("the worker with hair", { timeout: 60_000 }, () => {
     expect(requested.filter((u) => u.endsWith("moustache-viking.bin.gz"))).toHaveLength(1);
   });
 
+  it("clones a facial mask recipe without transporting caller bytes and pins its source topology", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({ type: "init", id: 1, load: LOAD, model: { subdivision: 0 } });
+    const recipe = structuredClone(
+      createRecipe({
+        facialHair: ["beard-viking"],
+        facialHairGrey: { "beard-viking": { mask: "caller-mask", amount: 0.5 } },
+      }),
+    );
+    await handle({ type: "evaluate", id: 2, recipe });
+    const reply = replies.get(2);
+    expect(reply?.type).toBe("evaluated");
+    if (reply?.type !== "evaluated") throw new Error("mask recipe was not evaluated");
+    expect(reply.decalTopologies?.[0]?.sourceSha256).toBe(
+      hairManifest.styles.find((style) => style.id === "beard-viking")?.sha256,
+    );
+    expect(reply.evaluation.facialHair.map((style) => style.id)).toEqual(["beard-viking"]);
+    await handle({
+      type: "evaluate",
+      id: 3,
+      recipe: createRecipe({
+        facialHair: ["short02"],
+        facialHairGrey: { short02: { mask: "caller-mask", amount: 0.5 } },
+      }),
+    });
+    expect(replies.get(3)?.type).toBe("error");
+  });
+
   it("answers an unknown style with an error that names it, and keeps serving", async () => {
     stubFetch();
     const { handle, replies } = start();

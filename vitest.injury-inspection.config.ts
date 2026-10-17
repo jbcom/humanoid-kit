@@ -2,9 +2,8 @@ import { mergeConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import base from "./vitest.config.ts";
 
-// This explicit config travels with remote renders. `heavy-slot` forwards only
-// its documented browser environment, so the ignored diagnostic cannot depend
-// on an arbitrary local shell variable.
+// This explicit config carries the diagnostic gate into the browser project
+// without relying on an arbitrary local shell variable being propagated.
 export default mergeConfig(
   base,
   defineConfig({

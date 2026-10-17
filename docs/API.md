@@ -160,6 +160,7 @@ createRecipe(init?: {
   };
   facialHair?: readonly string[]; // authored facial style ids; absent = none
   facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
+  facialHairGrey?: FacialHairGreyRecipe; // selected id -> caller UV mask key and additive amount
   facialHairLength?: Readonly<Record<string, number>>; // selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // selected beard id -> source-proxy growth fraction [0, 1]
   bodyHair?: BodyHairRecipe;
@@ -186,6 +187,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
   facialHairColour?: Readonly<Record<string, HairColour>>; // selected beard/moustache id -> independent uniform colour
+  facialHairGrey?: FacialHairGreyRecipe; // selected id -> caller UV mask key and additive amount
   facialHairLength?: Readonly<Record<string, number>>; // optional selected beard id -> source free-offset multiplier (>= 1)
   facialHairGrowth?: Readonly<Record<string, number>>; // optional selected beard id -> source-proxy growth [0, 1]
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
@@ -510,6 +512,12 @@ or the packed body-cavity occlusion, and do not change geometry. The worker and
 `<Humanoid>` receive this setting through the `ModelOptions` supplied to their
 `HumanoidWorkerClient`.
 
+The [paired CPU cost and field-error receipt](evidence/runtime-occlusion-cost.md)
+compares 32 and 16 rays on the same custom attachment set. In nine shared-host
+samples, the posed-bake median fell from 776.47 ms to 421.59 ms, with field mean
+absolute error 0.03416 and maximum error 0.1875. This is workload-specific CPU
+evidence; it does not establish a GPU speedup or change the full-fidelity default.
+
 `foldSolvePasses` is an integer from 1 to 60, default 60. It caps the actual
 contact-push loop in the first round of each hip and knee key, at every opening;
 settled contacts still stop early. Later rounds keep their existing 15-pass
@@ -611,9 +619,72 @@ ceiling a universal geometry guarantee.
   rejected. Missing entries retain the scalp colour exactly. Both paths use
   `agedHairColour(colour, age, "scalp")` and `hairTint`: age is a grey floor,
   while a linear-RGB `override` replaces the pigment model. This is uniform
-  colour only, and leaves scalp, brows, lashes and body coat unchanged. The
+  colour; optional UV-localized whitening is described below. Both leave scalp, brows, lashes and body coat unchanged. The
   same resolved tint is stored per source card by `bakeMiniature`; changing it
   requires another archetype bake, not per-instance recolouring.
+  `facialHairGrey?: Readonly<Record<string, { mask: string; amount: number }>>`
+  optionally names a caller-authored UV mask and finite mix amount in `[0, 1]` per
+  selected beard/moustache. `createRecipe` copies these plain-JSON requests;
+  absent means the exact legacy path. `HairTopology.sourceSha256` exposes the
+  selected packed style's existing checksum, including its UV layout.
+
+  `FacialHairGreyMask` is `{ sourceSha256, width, height, data }`:
+  `sourceSha256` pins `HairStyleEntry.sha256`; dimensions are positive safe
+  integers, their product is safe, and `data` is a `Uint8Array` or
+  `Uint8ClampedArray` of exactly that many bytes. One linear weight per texel,
+  rows top first: zero preserves the base tint; 255 selects the unpigmented
+  target. `FacialHairGreyMasks` is an immutable key-to-mask record, supplied
+  through `<Humanoid facialHairGreyMasks={masks}>` or
+  `bakeMiniature(..., { facialHair: "alpha-cards", facialHairGreyMasks: masks })`.
+  Obtain the style pin from `assets.hair.styles.get(id).sha256` or its loaded
+  topology. The caller decodes its own mask; the kit supplies no packaged
+  source-authored streak masks. Repeated source UVs repeat the field and cannot
+  independently select physical locks that share those UVs.
+
+  `resolveFacialHairGrey(recipe, id, sourceSha256, masks?)` validates a referenced
+  mask and returns `ResolvedFacialHairGrey` (mask, amount, frozen target `tint`),
+  or `null` for absence, a valid zero amount or an all-zero field.
+  `assertFacialHairGreyMask(mask)` validates its decoded data. Both report
+  `FacialHairGreyError`; missing registry/key, invalid bytes or a mismatched
+  style pin never silently become uniform greying. Even amount zero validates
+  its explicit reference. Model evaluation checks selected facial tags without
+  receiving mask bytes. Runtime rendering checks the actual device's texture
+  limit and rejects oversized maps rather than resizing them; the core has no
+  invented dimension cap. Unused registry entries do nothing.
+
+  The shared blend is `q = amount * sampledByte / 255`,
+  `T = (1 - q) * hairTint(facialHairColour(recipe, id)) + q * W`, with
+  `W = hairTint({ ...colour, grey: 1, override: null })`.
+  `facialHairGreyTint(base, target, amount, sample)` exposes the same linear-RGB
+  mix (sample is normalized to `[0, 1]`). Scalar grey and ageing still set the
+  uniform base exactly; an explicit mask mixes toward the existing unpigmented
+  target, including dyed overrides. That target is albedo 0.55 (tint 1.375), so
+  a brighter dyed override may darken; an unpigmented natural-white base stays unchanged.
+  The source RGB multiplies `T` afterward; alpha, geometry, UVs and animation
+  remain unchanged. Live sheen uses the same field. This is continuous pigment
+  mixing, not an individual-fibre classifier. Live and miniature lighting
+  models differ even though their pigment field agrees.
+
+  Replace the registry/byte descriptor to update a live appearance; in-place
+  mutation is unsupported. Installed textures own copies, are disposed on
+  replacement/deselection/unmount, and never detach caller bytes. Registry-only
+  updates invalidate and settle without shape evaluation. Invalid live requests
+  are reported through `onError`, hide the requested card and suppress successful
+  `onSettled` until corrected. Explicit masked cards also stay hidden while
+  their required source RGBA map is pending or failed; a corrected registry
+  replacement retries a failed source load without remounting or shape evaluation.
+  Facial source-load status is remembered even when unmasked, so activating a
+  mask after an earlier source failure also retries that load on the same mesh;
+  already loaded source maps are retained when masks change.
+  Successful mask validation alone never clears a source-map failure. Superseded
+  source replies are disposed rather than installed. Miniature errors throw `MiniatureError` when
+  preserving the requested card; the existing default still omits all facial cards.
+  Baked `MiniatureAlphaCard.grey` stores owned bytes plus amount, target tint and
+  pin; changing them requires a new archetype. Masked bakes use HKMB v3; unmasked
+  bakes retain exact v2 bytes. New readers accept v1/v2/v3; previous v2 readers
+  reject masked v3 explicitly. `miniatureTransferables` includes owned mask
+  buffers once and never the original registry's storage.
+
   A brow is lifted `DECAL_LIFT`
   (2 mm) off the skin along its normal, since the smooth body surface can
   swallow a decal bound to the coarse mesh at the brow ridge.
@@ -757,6 +828,30 @@ follows every morph of the figure.
 - `proxyIndex(assets, id, bodyVisible)`: the triangles that show under an
   outfit (`Outfit.bodyVisible`): a vertex shows where two of its three base
   vertices do, a face unless every corner is hidden.
+- `proxyRenderTopology(assets, id): ProxyRenderTopology` builds and caches a
+  render vertex for each authored `(proxy vertex, UV entry)` pair. `index`
+  preserves the triangle order and winding of `proxyTopology().index`;
+  `uvs` copies authored UVs without projection or flipping. `renderToProxy`
+  and `renderToUv` identify each render vertex's original vertex and UV entry.
+  Equal UV coordinates with different entry indices stay distinct. Each
+  render vertex copies the source vertex's complete `SKIN_INFLUENCES` skin row.
+  `triangleFace` identifies the original authored face; `sourceTriangle` is
+  the triangle ordinal in the unchanged original `proxyTopology().index`.
+  The cached arrays are shared and callers must treat them as read-only.
+- `expandProxyPositions(assets, id, sourcePositions, out?)` copies positions
+  from `fitProxy`'s original vertex order into that render order. The input
+  must have exactly `proxyTopology().vertexCount * 3` floats; an output must
+  have exactly `proxyRenderTopology().vertexCount * 3`. Overlapping input and
+  output views are refused before writing, while disjoint views of the same
+  buffer are supported. The function returns the supplied output when present.
+- `proxyRenderIndex(assets, id, bodyVisible)` returns matching render indices
+  using the same visibility rule as `proxyIndex`. Surviving triangles retain
+  their relative original order; this filtered index is not a provenance
+  record. With a null mask it returns the cached render `index` itself.
+- The render helpers throw `ProxyError` for malformed face/UV arrays, vertex
+  or UV indices outside their source arrays, invalid source skin rows, or
+  position buffer lengths/overlap. They leave source topology and fitting
+  unchanged and add no geometry beyond copies required by UV identity.
 - `boundProxy(assets, id)`; `ProxyError` for a proxy the pack lacks or that has
   not loaded.
 
@@ -1239,7 +1334,10 @@ and expressions"). Framework-free.
   alone, `skinPositionsDual` dual quaternion skinning alone, and
   `skinPositionsBlended(…, share)` the mix at any share (a number, or one per
   bone); `skinNormalsBlended` and `skinNormalsDual` give the matching normals,
-  and `skinPose` / `skinVertex` skin one vertex at a time.
+  and `skinPose` / `skinVertex` skin one vertex at a time. For folded normals,
+  both CPU and GPU normalize the mixed linear/dual base before adding the fold
+  normal changes, then normalize the sum. Each normalization leaves a zero
+  vector unchanged.
 - `SKIN_DUAL_SHARE` is each limb bone's share of dual quaternion skinning (0 is
   linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
   a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
@@ -1289,11 +1387,36 @@ and expressions"). Framework-free.
   effector-frame orientation (the measured frame wins; a position-only sampler
   falls back to the tip). The returned rigid-tip reachability value is
   diagnostic when an effector samples a blended skinned hand; measured
-  tolerances decide its result.
+  tolerances decide its result. Only while the existing orientation tolerance is
+  unmet after the wrist correction, one distal-to-proximal ancestor pass proposes
+  axial turns within the same source-angle budgets. An orientation already accepted
+  by the final-status quaternion metric remains unchanged by this pass; it stops
+  when an accepted turn satisfies that same tolerance. A proposal survives only
+  when its measured orientation improves, its contact error stays within the
+  previous error or positional tolerance, and any defined
+  elbow/pole alignment does not worsen. This bounded pass can recover roll beyond
+  the wrist budget; it does not guarantee convergence for every target or sampler.
+  If orientation remains unresolved, an internal coupled recovery tries at most
+  `min(iterations, 4)` damped least-squares updates, with six backtracking trials
+  each and at most `min(iterations, 4) * (3 * chain.length + 7)` additional frame
+  samples. Its scratch trials may trade position, orientation and pole progress.
+  It publishes only a freshly measured complete target success within the literal
+  caller tolerances and unchanged source-angle budgets, with nonchain rotations
+  unchanged and a defined positive requested pole alignment no worse than the
+  incumbent's defined alignment. Otherwise it retains the exact incumbent pose.
+  Zero tolerances remain zero acceptance gates. The existing weight blend and
+  final measurement follow this recovery; the default iteration budget remains 24.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or
-  non-arm-only trial poses. `createHandContact` (Interactions, below) is what
+  non-arm-only trial poses. Its explicit `resetSource(generation, rotations)`
+  replaces the copied full-body baseline and recomputes dynamic skin shares
+  while retaining skinning scratch for the same immutable geometry. Invalid
+  reset inputs preserve the previous baseline. Optional `skinMode` is `mixed`
+  by default; `linear` uses zero dual-quaternion share, including after a source
+  reset, matching a custom material's linear skin. Supply no folds when that
+  material shows none. Supplied folds remain fixed; rebuild the sampler when
+  those folds change. `createHandContact` (Interactions, below) is what
   drives them from an interaction's contact, and `<Humanoid handContact>`
   applies that to a live figure.
 - Internal rig helper: `src/rig/fingerTarget.ts` is not an exported package
@@ -1459,15 +1582,21 @@ slices 1 and 2 of its build plan.
   constrained pose into `out` (the source pose, byte for byte, at weight 0)
   and returns the reused `HandContactReport`. `binding` is `{ interaction,
   role, contact }` or null; `figure` is `{ participant, generation,
-  restBones, rest, restNormals, skinIndex, skinWeight, anchors, folds?,
+  restBones, rest, restNormals, skinIndex, skinWeight, anchors, skinMode?, folds?,
   figureToWorld }`, the figure's evaluated surface as drawn and its lifted
-  group's column-major world matrix. The report's `state` is `idle`,
+  group's column-major world matrix. `skinMode` defaults to `mixed`; pass
+  `linear` and no folds for a custom material's linear skin. The report's
+  `state` is `idle`,
   `refused`, `blending-in`, `holding`, `releasing` or `fading`; `reason` is
   the solver's `ArmTargetReason` or a refusal (`not-a-participant`,
   `not-claimed`, `not-a-hand-contact`, `unknown-contact`); `distance` is the
   measured final hand frame to the target in metres; `target` and `hand` are
-  world points. `handContactSide(definition, contact, role)` reads which hand
-  a contact asks of a role, or null.
+  world points. `reached` requires full weight, a reached local solve and the
+  measured final world distance within `tolerance`; a local success outside
+  that world tolerance reports `unreached` with `tolerance-not-reached`.
+  This postcondition does not extend React presence beyond its upright,
+  unit-scale placement domain. `handContactSide(definition, contact, role)`
+  reads which hand a contact asks of a role, or null.
 - `solveSiteContact(input)`: closes a skinned point of one hand on a named
   landmark of the same figure. It is framework-free and takes the evaluated
   `SiteContactFigure` (including the evaluated render `index`), source rotations,
@@ -2416,6 +2545,52 @@ animator.root;                // how far the figure has been carried: [x across,
   `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
   (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
+  `update(dt)` accepts finite, nonnegative wall-clock seconds; reverse playback uses a
+  finite negative speed. Active `seek(time)` and `setSpeed(speed)`, and `play`'s
+  time, speed and nonnegative fade duration, reject invalid numbers with
+  `RangeError` before changing state. With no playing clip, update/seek/setSpeed
+  remain no-ops. Zero elapsed time does not advance contacts or support keys.
+  A nonloop keeps an out-of-range play/seek time visible immediately; its next
+  positive update first clamps that phase, without carry, then consumes the full
+  elapsed step from the endpoint (including reverse playback).
+
+  With grounded contact, elapsed time is processed chronologically at no more than
+  1/60 second or half a source frame for either moving track, also visiting both
+  tracks' source keys, loop seams, stops, authored support keys and fade completion.
+  The actual intermediate blended pose reaches the existing support and foot-lock
+  solvers; only the final state is exposed to the caller. Signed reach corrections
+  remain valid. This is a discrete sampling contract, not continuous contact
+  detection or equal contact results under arbitrary callback partitions. Sequences
+  using the same checkpoints agree. Work grows with elapsed time, frame rates and
+  playback speeds; no hidden time or iteration cap drops contact history. A
+  nonrepresentable requested clock/fade span or checkpoint fails with `RangeError`
+  before mutation; an individual cadence slice may leave one clock unchanged while
+  wall time and another participating clock advance. Keys are admitted against the
+  represented requested endpoint before converting them to wall time. Support fires
+  when the represented clip clock crosses its eligible target. Duplicate declarations
+  of one support time share an event; independently distinct support events whose
+  wall order cannot be represented cause an atomic `RangeError`, not a merged or
+  dropped event. This includes an off-frame key collapsing onto a distinct source
+  frame or loop seam at the current clock or inside the requested represented
+  span, or sharing that boundary’s inverse wall coordinate despite distinct clip
+  coordinates, for loops and nonloops; unrelated collisions outside that span do
+  not reject the update. Exact
+  authored support keys select their own track before lifecycle epsilon matching,
+  preserving raw zero and duration-key identities.
+
+  Fade root travel integrates the stored interval velocities with the exact
+  smoothstep weight integral, including a clip stopping or the fade ending inside
+  an update. It therefore replaces the earlier whole-step endpoint-weight
+  approximation. Current-clip support is applied once per internally crossed
+  authored key (wrapped for loops), before foot lock. Explicit play/seek and
+  refreshed rest/support inputs retain their lifecycle refresh behavior; stopped
+  or frozen updates do not invent new crossings.
+
+- `rootDisplacement(plan, time, dt, out?)` integrates the stored root-motion steps
+  forwards or backwards, clipping nonlooping spans to the clip's active time.
+  Complete loops use the stored steps' sum, with work bounded by the plan's size,
+  and reuse `out` when supplied. Non-finite time or duration gives `[NaN, NaN]`;
+  zero duration and plans with no intervals or zero frame rate give `[0, 0]`.
 - `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart, onFrame }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
   frame without React state: the body follows it with `pose.faceUnits` laid over,

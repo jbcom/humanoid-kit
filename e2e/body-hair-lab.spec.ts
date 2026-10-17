@@ -96,7 +96,8 @@ test.describe("the direct body-hair lab", () => {
         const chest = coats
           .flatMap((coat) => coat.uniforms.rows)
           .find((row) => row.region === "hair-chest");
-        expect(chest).toMatchObject({ cover: expect.closeTo(0.84375, 5), density: 44 });
+        // An adult's explicit coverage is drawn exactly, read by no gender (86fb44b2, #21).
+        expect(chest).toMatchObject({ cover: expect.closeTo(1, 5), density: 44 });
       }
       await page.screenshot({
         path: info.outputPath(`body-hair-${region.toLowerCase()}.png`),

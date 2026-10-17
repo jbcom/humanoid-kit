@@ -30,7 +30,7 @@ dictated by them.
 | Lighting | Face position and size, skin reflectance (albedo luminance, specular level) | Face-priority exposure that keeps deep skin readable; a key light aimed at the speaker |
 | Shadows and ambient occlusion | Ground footprint (feet, contact area), height | Contact shadows of figures walking together pool into one field and separate as they part, instead of double-darkening where they overlap |
 | Other figures (awareness) | Transform, velocity, anchors (head, hands, feet), proximity | Look at whoever approaches; match a walking partner's pace; reach for a hand |
-| Interactions (animations) | Anchors plus the [participant contract](INTERACTIONS.md) | Handing an object over; running together; intimate animations (adults only, enforced by the adult animations package) |
+| Interactions (animations) | Anchors plus the [participant contract](INTERACTIONS.md) | Handing an object over; running together; an application's own adult-only definitions are refused for figures under 18 by the contract's age checks |
 | Cameras | Bounds, face anchors, groups | Frame a conversation; keep a group in shot |
 | Game logic and audio | Proximity enter/leave events, groups | Trigger dialogue on approach; mix footsteps of a crowd |
 
@@ -58,7 +58,7 @@ dictated by them.
    once) and a face-weighted exposure meter.
 6. **Age policy travels with presence.** A figure's published age bracket
    (adult or not) lets interaction contracts refuse what the policy forbids,
-   exactly as the adult animations package will.
+   for any definition an application adds.
 
 ## API
 
@@ -210,3 +210,24 @@ bent arm measures what a straight one does.
   seen, which is millimetres, not the limb-scale error of the old rest bounds.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.
+
+### Optional measured hand geometry
+
+`FigurePresence.handWorkspaces` carries per-side numeric contact geometry from
+`presenceFromPose({ ..., hands: { anchors, skinIndex, skinWeight } })`. Use the
+anchors and skin weights of the same evaluated surface, including evaluated
+skin overrides. The shoulder socket is in world space; upper-arm/forearm spans
+and the wrist-to-grip offset in the grip frame follow that evaluated body.
+`placePresence` and `clonePresence` preserve these fields without sharing
+mutable coordinate arrays. Republishing a figure without the optional data
+removes its previous workspace.
+
+The adapter caches repeated evaluation, rig, geometry and source-pose reads.
+The runtime's contact planner consumes only the published numbers. Custom
+presences and rest-only publishers can omit this metadata; their contact plans
+are explicitly `uncertified`, rather than being inferred from the average
+`measures.reach`. `PresenceRegistry.revision` changes on publication/removal so
+contact targets and fitted slots follow new placement or geometry even before
+the next registry tick.
+See [measured hand workspaces](INTERACTIONS.md#measured-hand-workspaces) for the
+planning envelope and its acceptance boundaries.

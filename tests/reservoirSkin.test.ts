@@ -5,6 +5,7 @@
  * pushes keeps its topology's weights, the very arrays.
  */
 import { describe, expect, it } from "vitest";
+import type { SurfaceMesh } from "../src/build/surfaceMesh.ts";
 import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -16,6 +17,7 @@ import {
   RISE,
   ROOT_BAND,
   reservoirGraph,
+  reservoirSkinningOf,
   rootShares,
   rootSkin,
   type SkinWeights,
@@ -27,6 +29,7 @@ import { HIP_FOLD } from "../src/rig/hipFold.ts";
 import { rowTexels, type SurfaceFold } from "../src/rig/jointFold.ts";
 import { KNEE_FOLD } from "../src/rig/kneeFold.ts";
 import { skinNormals } from "../src/rig/pose.ts";
+import { selectionStencil } from "../src/subdiv/catmullClark.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
@@ -60,6 +63,184 @@ const apart = (a: Map<number, number>, b: Map<number, number>) => {
     d += Math.abs((a.get(bone) ?? 0) - (b.get(bone) ?? 0));
   return d;
 };
+
+/** The same source surface with a chosen UV split and render numbering. */
+function sourceSurface(
+  points: readonly (readonly number[])[],
+  loop: readonly number[],
+  renderSources: readonly number[],
+  triangles: readonly number[],
+  boneOne: readonly number[],
+) {
+  const sources = Uint32Array.from(points, (_, s) => s);
+  const stencil = selectionStencil(points.length, sources);
+  const renderOf = (s: number) => renderSources.indexOf(s);
+  const mesh: SurfaceMesh = {
+    stencil,
+    topology: { vertexCount: points.length, faces: new Uint32Array() },
+    renderToSurface: Uint32Array.from(renderSources),
+    renderUv: Uint32Array.from(renderSources, (_, r) => r),
+    uvs: new Float32Array(renderSources.length * 2),
+    index: Uint32Array.from(triangles, renderOf),
+    skinIndex: Uint16Array.from(renderSources.flatMap(() => [0, 1, 0, 0, 0, 0, 0, 0])),
+    skinWeight: Float32Array.from(
+      renderSources.flatMap((s) => [1 - (boneOne[s] ?? 0), boneOne[s] ?? 0, 0, 0, 0, 0, 0, 0]),
+    ),
+    lattice: {
+      vertexCount: points.length,
+      region: sources,
+      polygons: {
+        id: new Uint32Array(),
+        start: Uint32Array.of(0),
+        vertices: new Uint32Array(),
+        uvs: new Uint32Array(),
+      },
+      uvCount: renderSources.length,
+      detailCount: points.length,
+      reservoirs: [
+        {
+          loop: Uint32Array.from(loop),
+          loopVertices: Uint32Array.from(loop),
+          rings: 0,
+          base: points.length,
+          chain: loop.length,
+          copies: new Uint32Array(),
+          capVertices: sources.filter((s) => !loop.includes(s)),
+          slot: Uint32Array.from(loop, (_, i) => i),
+          fraction: new Float32Array(loop.length),
+        },
+      ],
+      copyOf: new Uint32Array(),
+      key: "source-sampling",
+      smooth: null,
+      linear: null,
+      stencil,
+    },
+  };
+  return {
+    mesh,
+    positions: Float32Array.from(renderSources.flatMap((s) => points[s] as readonly number[])),
+    pushed: Float32Array.from(renderSources, (s) => (loop.includes(s) ? 0 : 0.002)),
+  };
+}
+
+describe("reservoir source sampling", () => {
+  // Distinct sources 0 and 1 coincide, but carry different skin and fold rows.
+  const coincident = (renderSources: readonly number[]) =>
+    sourceSurface(
+      [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0.008, 0],
+      ],
+      [0, 1],
+      renderSources,
+      [0, 1, 2],
+      [0, 0.75, 0],
+    );
+
+  it("averages each original loop source once, in source-cycle order, using current mesh attributes", () => {
+    const { mesh } = coincident([1, 0, 0, 2, 2]);
+    const skinning = reservoirSkinningOf(mesh);
+    expect.soft(Array.from(skinning.loops[0] ?? [])).toEqual([1, 0]);
+    expect
+      .soft(Array.from(skinning.loops[0] ?? [], (r) => mesh.renderToSurface[r]))
+      .toEqual([0, 1]);
+    expect.soft(skinning.roots[0]?.index.length).toBe(SKIN_INFLUENCES);
+    expect.soft(skinning.roots[0]?.weight.length).toBe(SKIN_INFLUENCES);
+    expect.soft(skinning.roots[0]?.weight[1]).toBeCloseTo(0.375, 7);
+    expect(skinning.graph.node[0]).not.toBe(skinning.graph.node[1]);
+    expect(Array.from(skinning.owner)).toEqual([-1, -1, -1, 0, 0]);
+    // Rebinding samples these attributes, not a cached or source-indexed skin row.
+    for (const r of [1, 2]) mesh.skinWeight.set([0.5, 0.5], r * SKIN_INFLUENCES);
+    const rebound = reservoirSkinningOf(mesh).roots[0];
+    expect.soft(rebound?.index[0]).toBe(1);
+    expect.soft(rebound?.weight[0]).toBeCloseTo(0.625, 7);
+  });
+
+  it("counts a missing source fold row as zero and scatters the root to every owned UV copy", () => {
+    const width = rowTexels(HIP_FOLD) * 4;
+    for (const renderSources of [
+      [0, 1, 2],
+      [1, 0, 0, 2, 2],
+    ]) {
+      const { mesh, positions, pushed } = coincident(renderSources);
+      const skinning = reservoirSkinningOf(mesh);
+      const shares = rootShares(skinning, pushed, positions);
+      expect(shares).not.toBeNull();
+      const values = new Float32Array(width).fill(0.75);
+      values[3] = 0.25;
+      const fold: SurfaceFold = {
+        joint: HIP_FOLD,
+        rows: 1,
+        slot: Float32Array.from(renderSources, (s) => (s === 0 ? 0 : -1)),
+        data: Uint16Array.from(values, toHalf),
+      };
+      const folded = evaluatedFold(fold, skinning, shares);
+      const skin = evaluatedSkin(mesh, skinning, shares);
+      if (!skin) throw new Error("no evaluated skin");
+      expect(folded.rows).toBe(1 + renderSources.filter((s) => s === 2).length);
+      expect(Array.from(folded.data.subarray(0, width))).toEqual(Array.from(fold.data));
+      renderSources.forEach((s, r) => {
+        if (s !== 2) {
+          expect(folded.slot[r]).toBe(fold.slot[r]);
+          return;
+        }
+        expect(shares?.[r]).toBe(1);
+        expect.soft(row(skin, r).get(1)).toBeCloseTo(0.375, 7);
+        const at = (folded.slot[r] as number) * width;
+        expect.soft(fromHalf(folded.data[at] as number)).toBe(0.375);
+        // The sole held source supplies the side; absent rows dilute displacement only.
+        expect(fromHalf(folded.data[at + 3] as number)).toBe(0.25);
+        for (let i = 4; i < width; i += 8)
+          expect(Array.from(folded.data.subarray(at + i, at + i + 4))).toEqual([0, 0, 0, 0]);
+      });
+    }
+  });
+
+  const diamond = (renderSources: readonly number[]) =>
+    sourceSurface(
+      [
+        [0.015, 0, 0],
+        [0, 0, 0.015],
+        [-0.015, 0, 0],
+        [0, 0, -0.015],
+        [0.0086, 0.0032, 0],
+        [0, 0.0024, 0.0078],
+        [0.0126, 0.0012, 0],
+      ],
+      [0, 1, 2, 3],
+      renderSources,
+      [0, 4, 6, 1, 5, 6],
+      [0, 0.25, 0.5, 0.75, 0, 0, 0],
+    );
+
+  it.each([
+    { change: "loop UV copies", sources: [0, 0, 1, 2, 3, 4, 5, 6] },
+    { change: "bow-tie render order", sources: [0, 2, 1, 3, 4, 5, 6] },
+    { change: "owned UV copies in the rise window", sources: [0, 1, 2, 3, 4, 4, 4, 5, 6] },
+  ])("keeps source-remapped shares unchanged by $change", ({ sources }) => {
+    const base = diamond([0, 1, 2, 3, 4, 5, 6]);
+    const baseShares = rootShares(reservoirSkinningOf(base.mesh), base.pushed, base.positions);
+    if (!baseShares) throw new Error("no baseline shares");
+    // Sources 4/5 lie 7.16/7.59 mm along the surface: both in the 6–10 mm rise window.
+    // Their combined rise is between shallow and steep; source 6 is inside the blend band.
+    expect(baseShares[6]).toBeGreaterThan(0);
+    expect(baseShares[6]).toBeLessThan(1);
+    const changed = diamond(sources);
+    const skinning = reservoirSkinningOf(changed.mesh);
+    expect
+      .soft(Array.from(skinning.loops[0] ?? [], (r) => changed.mesh.renderToSurface[r]))
+      .toEqual([0, 1, 2, 3]);
+    const shares = rootShares(skinning, changed.pushed, changed.positions);
+    expect(shares).not.toBeNull();
+    sources.forEach((s, r) => {
+      expect.soft(shares?.[r], `source ${s}, render ${r}`).toBeCloseTo(baseShares[s] as number, 7);
+    });
+    expect(skinning.owner.length).toBe(sources.length);
+    expect(skinning.graph.render.length).toBe(7);
+  });
+});
 
 describe("reservoir skinning", { timeout: 300_000 }, () => {
   it("keeps the topology's weights, the very arrays, where nothing is pushed: the base surface, an adult with no organ", () => {

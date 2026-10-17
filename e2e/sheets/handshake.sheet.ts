@@ -2,7 +2,7 @@
  * Tall/short handshake review sheet. This is an explicit visual-review command,
  * never part of the browser suite:
  *
- *   heavy-slot pnpm exec playwright test e2e/sheets/handshake.sheet.ts --project sheets
+ *   pnpm exec playwright test e2e/sheets/handshake.sheet.ts --project sheets
  *
  * It opens the playground only through `openSilentGame`, which adds the runtime
  * mute marker. The lab itself rejects an unmuted route, a missing clothing pack,

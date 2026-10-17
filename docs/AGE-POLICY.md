@@ -270,15 +270,16 @@ calling its paint, unless the paint input says the figure is an adult
 recipe applies the layer's anatomy (`appliedAnatomy`, which is empty under 18).
 No layer implements the gate itself, so none can omit it.
 
-**Planned animation packages follow the same rule.** `humanoid-kit-adult-animations`
-(sexual and intimate animations) will refuse any participant under 18. The
-general animations package's interaction contracts tagged `intimate` will also
-refuse any participant under 18. Both will throw, as `AgePolicyError` does,
-rather than skip. The interaction contract ([Interactions](INTERACTIONS.md),
-"Age policy enforcement points") carries this as a required `audience`, fail
-closed and derived from the affordances an interaction names. Whether
-`humanoid-kit-adult-animations` belongs in this repository at all is an open
-owner question (issue 105); nothing of it exists.
+**Animations follow the same rule.** The kit ships no sexual or intimate
+animations, and no adult animation package is planned: by the owner's ruling
+(issue 105) that content belongs to Anyself, a commercial game, outside this
+repository. What the kit keeps is generic: the tooling for adding animations
+and interaction definitions, and the checks every definition passes. An
+interaction contract ([Interactions](INTERACTIONS.md), "Age policy enforcement
+points") carries a required `audience`, fail closed and derived from the
+affordances an interaction names. A definition that is `adult` throws for any
+participant under 18, as `AgePolicyError` does, rather than skipping, wherever
+it is defined.
 
 **The public demo ships without the adult pack.**
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site

@@ -1,15 +1,14 @@
 /**
  * Review screenshots of the creator itself, for a change to its panels or stage. Like
  * the figure sheets (`render.sheet.ts`) it runs against the playground's dev server,
- * through the `sheets` project, so on the agents' machines it goes to the render pool:
+ * through the `sheets` project (see CONTRIBUTING.md for Chromium/GPU requirements):
  *
- *   heavy-slot --remote-render pnpm exec playwright test e2e/sheets/creator.sheet.ts \
+ *   pnpm exec playwright test e2e/sheets/creator.sheet.ts \
  *     --project sheets [-g <scene>]
  *
  * (The file goes first: `--project` takes every name after it.)
  *
- * Each scene writes `<name>.png` to its test output (test-results/), which the pool
- * returns. Figures are always clothed here: the scenes wear a suit, and none loads the
+ * Each scene writes `<name>.png` to its test output (test-results/). Figures are always clothed here: the scenes wear a suit, and none loads the
  * adult pack. A scene waits for the figure to be drawn before it shoots, and the page
  * erring while it does fails the scene.
  */

@@ -89,6 +89,29 @@ beforeAll(async () => {
 });
 const POSTURES = { standing: () => standing, seated: () => seated };
 
+/**
+ * Each recipe's figure and CPU reference poser, built once. Both are read-only to
+ * the solver and the measurement (every test passes its own output pose), and the
+ * poser keeps the recipe's solved folds: re-evaluating and re-solving them for each
+ * of a body's eighteen contacts was most of this file's run time.
+ */
+const figures = new Map<Recipe, SiteContactFigure>();
+const posers = new Map<Recipe, ReturnType<typeof surfacePoser>>();
+function cachedFigure(recipe: Recipe): SiteContactFigure {
+  const cached = figures.get(recipe);
+  if (cached) return cached;
+  const made = figureOf(recipe);
+  figures.set(recipe, made);
+  return made;
+}
+function cachedPoser(recipe: Recipe): ReturnType<typeof surfacePoser> {
+  const cached = posers.get(recipe);
+  if (cached) return cached;
+  const made = surfacePoser(model, recipe);
+  posers.set(recipe, made);
+  return made;
+}
+
 /** The figure as the constraint reads it: its evaluated rest surface, weights, skeleton and landmarks. */
 function figureOf(recipe: Recipe): SiteContactFigure {
   const ev = model.evaluate(recipe);
@@ -177,7 +200,7 @@ function touch(
   standoff?: number,
   shape: keyof typeof HAND_SHAPES = "point",
 ): { report: SiteContactReport; gap: number; inside: number; out: Float32Array } {
-  const figure = figureOf(recipe);
+  const figure = cachedFigure(recipe);
   const out = new Float32Array(BONES * 4);
   const report = solveSiteContact({
     figure,
@@ -188,7 +211,7 @@ function touch(
     ...(standoff === undefined ? {} : { standoff }),
     out,
   });
-  const posed = surfacePoser(model, recipe)(out);
+  const posed = cachedPoser(recipe)(out);
   const frames = landmarks(model, posed) as Record<
     string,
     { position: readonly number[]; normal: readonly number[] }
@@ -271,11 +294,11 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
       expect(contact.vertex, "support differs from stable palm centre").not.toBe(
         contact.centreVertex,
       );
-      const figure = figureOf(recipe as Recipe);
+      const figure = cachedFigure(recipe as Recipe);
       const bone =
         figure.restBones.names[heaviestBone(figure.skinIndex, figure.skinWeight, contact.vertex)];
       expect(bone, "support is primary metacarpal skin").toMatch(/^metacarpal[1-4]\.R$/);
-      const posed = surfacePoser(model, recipe as Recipe)(out);
+      const posed = cachedPoser(recipe as Recipe)(out);
       const frames = landmarks(model, posed) as Record<
         string,
         { position: readonly number[]; normal: readonly number[] }
@@ -317,6 +340,52 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
       else expect(inside, "strict full-hand collision remains red").toBeGreaterThan(0);
     });
 
+  it("uses only allowed goal residual to clear every rendered flat-chest hand vertex", () => {
+    const figure = cachedFigure(FLAT_CHEST);
+    for (const tolerance of [0.004, 0.0001]) {
+      const out = new Float32Array(BONES * 4);
+      const report = solveSiteContact({
+        figure,
+        source: standing,
+        effector: "palm.R",
+        site: "nipple.R",
+        shape: "flat",
+        tolerance,
+        out,
+      });
+      const posed = cachedPoser(FLAT_CHEST)(out);
+      const site = landmarks(model, posed)["nipple.R"];
+      const support = report.contact?.position;
+      if (!support) throw new Error("missing source support");
+      const nominalGoal = site.position.map((v, k) => v + 0.001 * (site.normal[k] as number));
+      const inside = handInside(posed, "R", site.normal);
+      expect(vertexParts(posed).filter((part) => part === "hand.R")).toHaveLength(6837);
+      expect(report.gap, "report retains the original 1mm goal").toBeCloseTo(
+        dist(support, nominalGoal),
+        6,
+      );
+      expect(report.gap, "never move outside the caller's goal tolerance").toBeLessThanOrEqual(
+        tolerance,
+      );
+      expect(dist(support, site.position), "original skin contact bound").toBeLessThan(GAP);
+      expect(report.orientationError, "original arm orientation bound").toBeLessThanOrEqual(0.035);
+      if (tolerance === 0.004) {
+        expect(
+          inside,
+          "all 6837 actual rendered hand vertices must clear the unchanged 2mm limit",
+        ).toBe(0);
+        expect(report.status, report.reason).toBe("reached");
+        expect(report.collision).toBe(0);
+      } else {
+        expect(report.status, "insufficient positional allowance must fail closed").toBe(
+          "unreached",
+        );
+        expect(report.reason).toBe("body-collision");
+        expect(inside).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("sees a finger pushed into the face: the penetration check is not vacuous", () => {
     const { inside } = touch(
       BODIES["slim woman"] as Recipe,
@@ -342,7 +411,7 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
   });
 
   it("is the source pose byte for byte at weight 0", () => {
-    const figure = figureOf(BODIES["heavy man"] as Recipe);
+    const figure = cachedFigure(BODIES["heavy man"] as Recipe);
     const out = new Float32Array(BONES * 4);
     solveSiteContact({
       figure,
@@ -370,7 +439,7 @@ describe("what a site contact accepts", () => {
     });
 
   it("touches with a finger pad, the palm or the hand, and nothing else", () => {
-    const woman = figureOf(BODIES["slim woman"] as Recipe);
+    const woman = cachedFigure(BODIES["slim woman"] as Recipe);
     for (const effector of ["finger-pad-1.L", "finger-pad-5.R", "palm.L", "hand.R"])
       expect(probe(woman, effector, "nose-tip"), effector).not.toThrow();
     for (const effector of ["nipple.L", "ear-lobe.R", "wrist.L", "finger-pad-6.R", "hand"])
@@ -378,14 +447,16 @@ describe("what a site contact accepts", () => {
   });
 
   it("refuses a minor a site the registry does not say is all-ages", () => {
-    const child = figureOf(BODIES.child as Recipe);
+    const child = cachedFigure(BODIES.child as Recipe);
     expect(probe(child, "finger-pad-2.R", "pubic-point")).toThrow(AgePolicyError);
     // The same site on an adult is solved: the refusal is the age's, not the site's.
-    expect(probe(figureOf(BODIES.elder as Recipe), "finger-pad-2.R", "pubic-point")).not.toThrow();
+    expect(
+      probe(cachedFigure(BODIES.elder as Recipe), "finger-pad-2.R", "pubic-point"),
+    ).not.toThrow();
   });
 
   it("lets a minor touch every all-ages site, the nipples among them", () => {
-    const child = figureOf(BODIES.child as Recipe);
+    const child = cachedFigure(BODIES.child as Recipe);
     for (const site of SELF_CONTACT_SITES)
       expect(probe(child, "finger-pad-2.R", site), site).not.toThrow();
     // A finger to the lips, and one hand on the other: everyday at any age.
@@ -394,7 +465,7 @@ describe("what a site contact accepts", () => {
   });
 
   it("treats a figure that does not say it is adult as a minor", () => {
-    const { adult: _adult, ...unsaid } = figureOf(BODIES.elder as Recipe);
+    const { adult: _adult, ...unsaid } = cachedFigure(BODIES.elder as Recipe);
     expect(probe(unsaid as SiteContactFigure, "finger-pad-2.R", "pubic-point")).toThrow(
       AgePolicyError,
     );
@@ -430,7 +501,7 @@ describe("hand shapes", () => {
   it("points the index finger: its pad leads, the other fingers curl behind it", () => {
     const recipe = BODIES["slim woman"] as Recipe;
     const out = handShapeRotations(rig, standing, "point", "R", new Float32Array(BONES * 4));
-    const frames = landmarks(model, surfacePoser(model, recipe)(out)) as Record<
+    const frames = landmarks(model, cachedPoser(recipe)(out)) as Record<
       string,
       { position: readonly number[] }
     >;
@@ -445,7 +516,7 @@ describe("hand shapes", () => {
   it("puts the thumb opposite the index for a pinch", () => {
     const recipe = BODIES["slim woman"] as Recipe;
     const out = handShapeRotations(rig, standing, "pinch", "R", new Float32Array(BONES * 4));
-    const frames = landmarks(model, surfacePoser(model, recipe)(out)) as Record<
+    const frames = landmarks(model, cachedPoser(recipe)(out)) as Record<
       string,
       { position: readonly number[] }
     >;
@@ -461,7 +532,7 @@ describe("hand shapes", () => {
     const recipe = BODIES["slim woman"] as Recipe;
     const pads = (shape: keyof typeof HAND_SHAPES) => {
       const out = handShapeRotations(rig, standing, shape, "R", new Float32Array(BONES * 4));
-      const frames = landmarks(model, surfacePoser(model, recipe)(out)) as Record<
+      const frames = landmarks(model, cachedPoser(recipe)(out)) as Record<
         string,
         { position: readonly number[] }
       >;

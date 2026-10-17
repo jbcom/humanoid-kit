@@ -38,6 +38,17 @@ export interface FigureMeasures {
   eyeHeight: number;
 }
 
+/** Measured hand geometry, independent of a renderer or a particular interaction. */
+export interface HandWorkspace {
+  /** Physical shoulder socket, in world metres. */
+  shoulder: Vec3;
+  /** Physical shoulder–elbow and elbow–wrist spans in the source pose. */
+  upperLength: number;
+  forearmLength: number;
+  /** Wrist-to-grip offset in the measured grip's tangent/bitangent/normal frame. */
+  palmOffset: Vec3;
+}
+
 /**
  * An advisory request for one interaction class of partners. It is presence
  * metadata, not a reservation or a matched group: the discovery slice chooses
@@ -66,6 +77,8 @@ export interface FigurePresence {
   anchors: Record<AnchorName, Vec3>;
   /** The body's own measurements, derived with the anchors. */
   measures: FigureMeasures;
+  /** Absent means contact planning has no measured hand-workspace certificate. */
+  handWorkspaces?: Readonly<Record<"L" | "R", HandWorkspace>>;
   /** Ground contact: foot positions (x, z) and an approximate footprint radius. */
   footprint: { points: [number, number][]; radius: number };
   /** Measured skin appearance: linear albedo, its luminance, specular F0. Never a category. */
@@ -124,6 +137,8 @@ export interface ProximityEvent {
 }
 
 export interface PresenceRegistry {
+  /** Changes when a figure is published or removed, including between ticks. */
+  readonly revision?: number;
   /**
    * Publishes or replaces a figure's presence. The registry keeps the objects
    * it is given by reference (anchors, bounds, footprint) and measures
@@ -188,6 +203,7 @@ function assertPartnerNeeds(needs: readonly PartnerNeed[] | undefined): void {
 }
 
 export function createPresenceRegistry(): PresenceRegistry {
+  let revision = 0;
   const figures = new Map<string, PublishedPresence>();
   /** Each figure holds a numeric slot while published, so pairs key without strings. */
   const slotOf = new Map<string, number>();
@@ -224,12 +240,35 @@ export function createPresenceRegistry(): PresenceRegistry {
   };
 
   return {
+    get revision() {
+      return revision;
+    },
     set(presence) {
       assertPartnerNeeds(presence.partnerNeeds);
+      if (presence.handWorkspaces)
+        for (const side of ["L", "R"] as const) {
+          const workspace = presence.handWorkspaces[side];
+          if (
+            !workspace ||
+            !(workspace.upperLength > 0) ||
+            !Number.isFinite(workspace.upperLength) ||
+            !(workspace.forearmLength > 0) ||
+            !Number.isFinite(workspace.forearmLength) ||
+            workspace.shoulder.length !== 3 ||
+            workspace.palmOffset.length !== 3 ||
+            workspace.shoulder.some((v) => !Number.isFinite(v)) ||
+            workspace.palmOffset.some((v) => !Number.isFinite(v))
+          )
+            throw new RangeError(
+              `hand workspace ${side} must have finite geometry and positive arm spans`,
+            );
+        }
+      revision++;
       const existing = figures.get(presence.id);
       if (existing) {
         const velocity = existing.velocity;
         Object.assign(existing, presence);
+        if (!presence.handWorkspaces) delete existing.handWorkspaces;
         existing.velocity = velocity;
         return;
       }
@@ -243,6 +282,7 @@ export function createPresenceRegistry(): PresenceRegistry {
     remove(id) {
       const slot = slotOf.get(id);
       if (slot === undefined) return;
+      revision++;
       figures.delete(id);
       slotOf.delete(id);
       slots[slot] = undefined;

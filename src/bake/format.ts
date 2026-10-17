@@ -10,6 +10,7 @@
  * half), colours sRGB bytes, and indices 16-bit when the vertex set allows.
  * Encoding is deterministic: the same bake gives the same bytes.
  */
+import { assertFacialHairGreyMask } from "../surface/facialHairGrey.ts";
 import type { MiniatureAlphaCard, MiniatureBake, MiniatureClip } from "./miniature.ts";
 
 export class MiniatureFormatError extends Error {
@@ -17,7 +18,7 @@ export class MiniatureFormatError extends Error {
 }
 
 const MAGIC = [0x48, 0x4b, 0x4d, 0x42]; // "HKMB"
-export const MINIATURE_FORMAT_VERSION = 2;
+export const MINIATURE_FORMAT_VERSION = 3;
 
 interface Section {
   offset: number;
@@ -49,6 +50,25 @@ interface HeaderAlphaCard {
   normals: Section;
   texture: { width: number; height: number; rgba: Section };
   tint: [number, number, number];
+  grey?: Omit<NonNullable<MiniatureAlphaCard["grey"]>, "data"> & { data: Section };
+}
+
+/** The mask is required appearance data; never encode an invalid or silently dropped field. */
+function validateGrey(grey: NonNullable<MiniatureAlphaCard["grey"]>): void {
+  try {
+    assertFacialHairGreyMask(grey);
+    if (
+      !Number.isFinite(grey.amount) ||
+      grey.amount < 0 ||
+      grey.amount > 1 ||
+      !Array.isArray(grey.tint) ||
+      grey.tint.length !== 3 ||
+      grey.tint.some((value) => !Number.isFinite(value) || value < 0)
+    )
+      throw new Error("grey amount/tint is invalid");
+  } catch (error) {
+    throw new MiniatureFormatError(`bad alpha-card grey mask: ${(error as Error).message}`);
+  }
 }
 
 const F32 = new Float32Array(1);
@@ -156,6 +176,11 @@ export function encodeMiniature(bake: MiniatureBake): Uint8Array {
   });
   const alphaCards = bake.alphaCards?.map((card): HeaderAlphaCard => {
     const wideCard = card.vertexCount > 0xffff;
+    if (card.grey !== undefined) validateGrey(card.grey);
+    const grey =
+      card.grey && card.grey.amount > 0 && card.grey.data.some((value) => value !== 0)
+        ? card.grey
+        : undefined;
     return {
       id: card.id,
       vertexCount: card.vertexCount,
@@ -170,6 +195,7 @@ export function encodeMiniature(bake: MiniatureBake): Uint8Array {
         rgba: add(view(card.texture.rgba)),
       },
       tint: card.tint,
+      ...(grey && { grey: { ...grey, data: add(view(grey.data)) } }),
     };
   });
   const header: Header = {
@@ -191,7 +217,7 @@ export function encodeMiniature(bake: MiniatureBake): Uint8Array {
   const out = new Uint8Array(start + size);
   out.set(MAGIC, 0);
   const dv = new DataView(out.buffer);
-  dv.setUint32(4, MINIATURE_FORMAT_VERSION, true);
+  dv.setUint32(4, alphaCards?.some((card) => card.grey) ? MINIATURE_FORMAT_VERSION : 2, true);
   dv.setUint32(8, json.byteLength, true);
   out.set(json, 12);
   let o = 0;
@@ -210,17 +236,23 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
     throw new MiniatureFormatError("not a miniature bake");
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const version = dv.getUint32(4, true);
-  if (version !== 1 && version !== MINIATURE_FORMAT_VERSION)
+  if (version !== 1 && version !== 2 && version !== MINIATURE_FORMAT_VERSION)
     throw new MiniatureFormatError(
-      `miniature format ${version}; this kit reads 1 and ${MINIATURE_FORMAT_VERSION}`,
+      `miniature format ${version}; this kit reads 1, 2 and ${MINIATURE_FORMAT_VERSION}`,
     );
   const jsonLength = dv.getUint32(8, true);
   if (12 + jsonLength > bytes.byteLength) throw new MiniatureFormatError("truncated header");
   const header = JSON.parse(
     new TextDecoder().decode(bytes.subarray(12, 12 + jsonLength)),
   ) as Header;
-  if (version === 2 && header.alphaCards !== undefined && !Array.isArray(header.alphaCards))
+  if (version >= 2 && header.alphaCards !== undefined && !Array.isArray(header.alphaCards))
     throw new MiniatureFormatError("bad alpha-card header");
+  if (
+    version < 3 &&
+    Array.isArray(header.alphaCards) &&
+    header.alphaCards.some((card) => card?.grey !== undefined)
+  )
+    throw new MiniatureFormatError("alpha-card grey masks require miniature v3");
   const start = Math.ceil((12 + jsonLength) / 4) * 4;
   const N = header.vertexCount;
   const F = header.frameCount;
@@ -285,6 +317,23 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
           for (const vertex of index)
             if (vertex >= card.vertexCount)
               throw new MiniatureFormatError("an alpha-card index is out of range");
+          let grey: MiniatureAlphaCard["grey"];
+          if (card.grey !== undefined) {
+            const field = card.grey;
+            if (
+              !field ||
+              !Number.isSafeInteger(field.width) ||
+              !Number.isSafeInteger(field.height) ||
+              field.width < 1 ||
+              field.height < 1 ||
+              !Number.isSafeInteger(field.width * field.height)
+            )
+              throw new MiniatureFormatError("bad alpha-card grey mask dimensions");
+            if (!field.data || typeof field.data !== "object")
+              throw new MiniatureFormatError("bad alpha-card grey mask section");
+            grey = { ...field, data: section(field.data, field.width * field.height) };
+            validateGrey(grey);
+          }
           return {
             id: card.id,
             vertexCount: card.vertexCount,
@@ -300,6 +349,7 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
               rgba: section(card.texture.rgba, card.texture.width * card.texture.height * 4),
             },
             tint: [card.tint[0], card.tint[1], card.tint[2]],
+            ...(grey && { grey }),
           };
         });
   return {
@@ -330,6 +380,7 @@ export function miniatureTransferables(bake: MiniatureBake): ArrayBuffer[] {
       card.positions,
       card.normals,
       card.texture.rgba,
+      ...(card.grey ? [card.grey.data] : []),
     ]) ?? []),
     ...bake.lods.flatMap((l) => [l.index, l.normals]),
   ])

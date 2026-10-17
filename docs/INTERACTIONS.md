@@ -94,10 +94,12 @@ figure wants to sit, eat or be touched is the application's decision.
 8. **Determinism.** Same inputs, same seed, same outcome: no wall clock, no
    unseeded choice.
 9. **Age policy in the contract.** Adult interactions refuse any participant
-   whose presence says it is under 18, fail closed, and their definitions live
-   in the adult package so the core names none of them.
+   whose presence says it is under 18, fail closed, and none of their
+   definitions lives in the kit, so the core names none of them.
 10. **Package boundaries.** The runtime in the core, everyday interactions in
-    `humanoid-kit-animations`, adult ones in `humanoid-kit-adult-animations`.
+    `humanoid-kit-animations`. The kit has no adult interactions or adult
+    animation package: that content belongs to Anyself, a commercial game
+    (issue 105), which builds on the kit's generic tooling and age checks.
 11. **React developer experience.** Components, hooks and event props that read
     like R3F's.
 12. **Serialisable.** Definitions and offers are plain JSON, and an object
@@ -280,9 +282,9 @@ definition names:
 A definition may **route** signals to skin states: a route maps an interaction
 signal to a skin signal of one participant through a gain and the existing
 first-order filter (`SkinStateFilter`). The kit evaluates a route only when the
-interaction is acting and only for signals it names. Routes into `arousal` are
-written only in the adult package and pass through `assertSignalPolicy` on
-every write.
+interaction is acting and only for signals it names. The kit's own definitions
+route no `arousal`; any route into it, wherever it is defined, passes through
+`assertSignalPolicy` on every write.
 
 ### Handshake runtime API
 
@@ -406,7 +408,7 @@ is deliberately separate from the pure unit geometry checks.
    hand on the runtime's target (see "Hand contact constraint"). The lab
    supplies no arm pose, marker offset or target of its own.
 4. The review fixture is `e2e/sheets/handshake.sheet.ts`. A reviewer runs it
-   explicitly with `heavy-slot --remote-render pnpm exec playwright test
+   explicitly with `pnpm exec playwright test
    e2e/sheets/handshake.sheet.ts --project sheets -g <row>`; it is not part of
    ordinary browser testing. It fails before saving a cell unless the route is
    muted, both adult recipes draw their clothes, the animation package
@@ -510,13 +512,55 @@ non-overlapping output buffers. This seam deliberately makes an integration
 choose when it has a final live hand frame to close, rather than quietly moving
 a marker.
 
+### Measured hand workspaces
+
+A scalar arm length is insufficient to place a paired grip. The shoulder is
+beside the body centre, the palm is offset from the wrist, its orientation
+uses some reach, and the elbow needs room to bend. An unequal-height pair can
+satisfy the old scalar reach estimate while its requested palm frame and elbow
+bend are geometrically incompatible.
+
+`presenceFromPose` accepts optional `hands` geometry: the evaluated surface's
+landmark anchors and its actual render `skinIndex`/`skinWeight`. It samples the
+two grip frames, then publishes numeric `handWorkspaces.L/R`: the physical
+shoulder socket, upper-arm and forearm spans, and wrist-to-palm offset in the
+grip frame. The adapter caches immutable evaluation/rig/skin/anchor inputs and
+compares the actual source pose. It never skins the full render mesh to plan a
+contact. Publish from the composed source pose before applying this contact;
+feeding a previous contact result back as its source changes the planning input.
+`placePresence` transforms sockets with the figure and preserves frame-local
+palm offsets. `Humanoid` forwards its existing surface geometry to posed presence;
+rest-only or custom presences without it remain uncertified.
+
+For measured pairs, the runtime fits both requested within-reach ground slots
+about their pinned reference, then computes one shared grip in their overlap.
+The outer envelope reserves a 15-degree elbow bend and subtracts the measured
+palm-offset length, allowing room for any palm orientation. The authored slot
+factors and scalar `reach` measurement are unchanged. Explicit beyond-reach
+slots (for example, three reaches from the reference) keep their requested
+positions, so impossible external requests remain visible to the arm solver.
+No fitting moves a figure: the consumer still walks it to `slot(role)`.
+
+`contactWorkspaceStatus(contact, role)` reports `fitted`, `uncertified`, or
+`outside-workspace`. Missing geometry retains the legacy target and reports
+`uncertified`; an empty envelope retains the requested target and reports
+`outside-workspace`. Both roles read the same cached plan for the same presence
+publication. Publishing movement or geometry invalidates both slots and the
+contact target even between ticks. Registries without a publication revision
+recompute on each request.
+These are planning-envelope results. They do not certify anatomical joint
+limits, the elbow's final side, body clearance, finger contact, or skin
+nonpenetration. The unchanged arm constraint still measures its actual final
+position and orientation, reports failure, and never stretches a segment.
+
 ### Hand contact constraint
 
 `createHandContact(options?)` (framework-free, `src/interaction/handContact.ts`)
 turns a running interaction's hand-to-hand contact into an arm pose on one
-figure. `<Humanoid presence handContact={{ interaction, role, contact }}>` owns
-one and applies it every frame; a framework-free renderer calls
-`update(input)` itself.
+figure. A framework-free renderer owns one and calls `update(input)` itself.
+The current React `Humanoid` publishes presence geometry but does not expose a
+`handContact` prop or apply this constraint. A caller integrating the helper
+must write its output pose to the renderer and the other pose readers together.
 
 **Use cases.** Two figures of any heights shake right hands or left hands;
 they hold the grip while both are carried along (a moving contact); the
@@ -548,10 +592,10 @@ policy; a target is placed out of one figure's reach.
    (`endReason`) drops it in the same frame, with no blend.
 6. At weight 0 the output is the source pose byte for byte: the figure is
    back on its animation.
-7. One pose for every reader: `<Humanoid>` writes the constrained rotations
-   before the skeleton, the occlusion keys, the skin's dual quaternions (which
-   the body, garments, shadows, CPU picking and `HumanoidAffordances` frames
-   read) and the presence pose, so none of them disagree.
+7. One pose for every reader: the integrating renderer must write constrained
+   rotations before the skeleton, occlusion keys, skin dual quaternions,
+   picking, affordance frames and posed presence. This remains an integration
+   requirement; helper unit tests do not establish a React hand-contact binding.
 
 **Decisions.**
 
@@ -712,7 +756,7 @@ policy requires, and none clamps.
    (`ADULT_ONLY_SIGNALS`: `arousal`, `genitalMoisture`) is adult; one that
    drives `blush` or `exertion` is not. The line is the content, not the body
    site: a core nipple is an all-ages site (nursing, a child's own chest), and
-   only a sexual signal or an adult package site makes the act adult.
+   only a sexual signal or an adult anatomy pack site makes the act adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure
@@ -727,10 +771,11 @@ policy requires, and none clamps.
 7. **Signals.** Routes to `arousal` pass through `assertSignalPolicy`. A beat's
    signal effect reaches the figure only through the host's `applySignals`,
    whose values go to the figure's evaluation and so through the same check.
-8. **Packages.** Adult definitions, their clips and their routes are data of
-   `humanoid-kit-adult-animations`; the core's source names none (the same
-   source scan as `tests/adultStack.test.ts`), and `pnpm check:pages` refuses a
-   build that contains the package.
+8. **Packages.** No package of the kit holds adult definitions, clips or
+   routes, and the core's source names none (the same source scan as
+   `tests/adultStack.test.ts`). An application that defines its own (Anyself,
+   a commercial game, issue 105) gets every check above, and `pnpm check:pages`
+   refuses a public build that contains the adult anatomy pack.
 9. **Objects cannot stand in for figures.** A role says whether it takes a
    figure or an object, so an adult role cannot be filled by an object to dodge
    the check, and an object role never carries an age.
@@ -745,7 +790,6 @@ posing, framing and purpose remain the application's responsibility.
 | `humanoid-kit` (core, framework-free `src/interaction/`) | Types, tag matching, definition validation, offers, claims, the runtime on the presence registry, alignment and contact solving, signals, stimuli, the generic age checks above. No clips, no definitions of its own except test fixtures |
 | `humanoid-kit/react` | Existing-runtime context, `<Interactable>` object/offer registration, and observation hooks; declarative proposals and `<Humanoid>` event props remain future slices |
 | `humanoid-kit-animations` | Everyday definitions as data with their clips: pick up, hand over, eat, drink, sit, lie down, lean, open a door, wave, handshake, hug, walk together, dance; reaction rules (flinch, turn to look) |
-| `humanoid-kit-adult-animations` | Adult definitions, clips and signal routes; depends on `humanoid-kit-adult-anatomy` for the adult affordances; refuses any participant under 18 at load of each definition and at every point above |
 
 ### Type sketches
 
@@ -1044,42 +1088,6 @@ extension, not a Khronos one.
   the frame), gaze on each other's face anchor.
 - **Stimuli**: the grip's pressure is a `touch` stimulus to each.
 
-### Adult intercourse
-
-This example is described technically: roles, anchors, channels, phases and
-signals. It lives entirely in `humanoid-kit-adult-animations`; the core names
-none of it.
-
-- **Definition**: audience `adult`, declared and also derived (its coupling
-  names adult-pack affordances). Two figure roles, `receptive` and
-  `insertive`, both requiring the adult affordances their coupling names, both
-  using `pelvis`, `torso` and `locomotion`. A variant per position.
-- **Consent**: proposed by one participant; each figure's policy must accept
-  explicitly (no default acceptance for adult interactions).
-- **Age checks**: at definition load, at query (minors see no such offer), at
-  proposal (throws before any policy is asked), on every tick, structurally
-  (a minor has no adult affordances), and on every `arousal` write.
-- **Reference**: the receptive figure's pelvis frame; each variant places the
-  insertive slot from both figures' hip heights.
-- **Coupling**: the receptive role's aperture (an adult-pack canal, or the
-  core mouth for an oral variant, which the coupling with an adult insertable
-  makes adult) with the insertive role's insertable part (an adult-pack
-  affordance of a new core kind, `insertable`: a base frame, an axis, a length
-  and a radius profile, which a prop can declare too).
-- **Phases**: approach and align as any two-figure interaction; act loops a
-  pair of synchronised clips whose tempo follows `intensity`; release blends
-  apart.
-- **Signals**: the insertable's depth along the channel (`place()`), its
-  radius at the rim (setting the aperture's `occupancy`, so the opening fits
-  it), its speed along the channel, and contact distances at the pelvis.
-- **Routes**: depth and speed, through gains, into both participants'
-  `arousal` and `exertion`, filtered by `SkinStateFilter`; skin flush and the
-  adult pack's state morphs respond through the existing skin-state channels.
-- **Reactions**: each touch is a stimulus to the other participant; gaze and
-  breathing reactions follow it.
-- **Cancel**: either participant's `cancel`, a policy withdrawal, the tether,
-  or an age-policy failure (abort, no blend).
-
 ## Decision record
 
 **Decisions (2026-10-11).**
@@ -1114,8 +1122,9 @@ follows the existing one.
 ## Owner rulings (2026-10-11)
 
 1. **Adult-only everyday interactions.** A romantic kiss and a caress are
-   `adult` and ship in the adult package; a cheek kiss, a hug and a dance are
-   `all`.
+   `adult` and are not shipped by the kit (the 2026-10-17 ruling on issue 105
+   leaves adult content to Anyself, a commercial game); a cheek kiss, a hug and
+   a dance are `all`.
 2. **Adult and minor together in `all` definitions** (a parent carrying a
    child, holding hands) are allowed: the policy restricts sexual content, and
    no `all` definition may carry any.
@@ -1155,10 +1164,10 @@ document's status and [API](API.md) as it lands.
    for one chair by two figures (a deterministic loser), a sofa's three slots.
 6. **Signal routes** (issue 103). Routes into skin signals through `SkinStateFilter`
    (exertion from a dance), the per-frame cost measured and held allocation-free.
-7. **The adult package** (blocked on an owner ruling, issue 105). `insertable` in the core, the adult pack's
-   affordances (the canals' channels and insertables, which the affordance
-   work lists as next), `humanoid-kit-adult-animations` with its definitions,
-   and one test per age-policy enforcement point showing a figure under 18
-   fails closed; `check:pages` extended to the package.
+7. **Age-policy enforcement points** (issue 105 ruled 2026-10-17: no adult
+   animation package; that content belongs to Anyself, a commercial game). One
+   test per enforcement point, with fixture definitions only, showing a figure
+   under 18 fails closed, so an application's own adult definitions get every
+   check.
 8. **glTF** (issue 104). `HK_interaction` import and export, and the `KHR_interactivity`
    custom-event bridge.

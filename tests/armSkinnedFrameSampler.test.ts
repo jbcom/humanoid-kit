@@ -27,9 +27,14 @@ function live(
   rotations: Float32Array,
   world: Group,
   folds: readonly SkinFold[] = NO_FOLDS,
+  skinMode: "mixed" | "linear" = "mixed",
 ): LiveFigure {
   const rest = restBones(assets, evaluation.control);
-  const pose = skinPose(rest, rotations, poseShare(rest, rotations, skinDualShare(rest.names)));
+  const pose = skinPose(
+    rest,
+    rotations,
+    skinMode === "linear" ? 0 : poseShare(rest, rotations, skinDualShare(rest.names)),
+  );
   return {
     surface: evaluation.surface,
     rest: evaluation.positions,
@@ -49,12 +54,14 @@ function slowFrame(
   rotations: Float32Array,
   side: "L" | "R",
   folds: readonly SkinFold[] = NO_FOLDS,
+  skinMode: "mixed" | "linear" = "mixed",
+  effector = `hand.${side}`,
 ): FrameOut {
   const affordances = new HumanoidAffordances();
   affordances.setRecipe(recipe);
   affordances.setAnchors({ base: anchors, adult: null });
-  affordances.attach(live(evaluation, rotations, new Group(), folds));
-  const frame = affordances.frame(`hand.${side}`, "figure", frameOut());
+  affordances.attach(live(evaluation, rotations, new Group(), folds, skinMode));
+  const frame = affordances.frame(effector, "figure", frameOut());
   if (!frame) throw new Error("slow hand frame was unavailable");
   return frame;
 }
@@ -126,6 +133,106 @@ describe("arm skinned-frame sampler", { timeout: 300_000 }, () => {
         expect(distance(actual.position, expected.position)).toBeLessThanOrEqual(1e-6);
         expect(orientation(actual).angleTo(orientation(expected))).toBeLessThanOrEqual(1e-6);
       }
+    }
+  });
+
+  it.each([false, true])(
+    "matches custom linear hand and touched-site skin (reset source: %s)",
+    (reset) => {
+      const recipe = createRecipe({ macros: { age: 30, height: 0.8 } });
+      const evaluation = model.evaluate(recipe);
+      const rest = restBones(assets, evaluation.control);
+      for (const side of ["L", "R"] as const) {
+        const generation = {};
+        const source = bodyPoseRotations(rigData(assets), "benchmark");
+        const chain = armChain(rest, side);
+        const sampler = createArmSkinnedFrameSampler({
+          generation,
+          rest: evaluation.positions,
+          restNormals: evaluation.normals,
+          skinIndex: model.topology().body.skinIndex,
+          skinWeight: model.topology().body.skinWeight,
+          anchors,
+          restBones: rest,
+          sourceRotations: source,
+          armBones: chain,
+          side,
+          skinMode: "linear",
+        });
+        const baseline = Float32Array.from(source);
+        if (reset) {
+          const hip = rest.names.indexOf("upperleg01.R");
+          baseline.set([Math.sin(0.4), 0, 0, Math.cos(0.4)], hip * 4);
+          sampler.resetSource(generation, baseline);
+        }
+        const candidate = Float32Array.from(baseline);
+        const wrist = chain.at(-1) as number;
+        candidate.set([Math.sin(0.45), 0, 0, Math.cos(0.45)], wrist * 4);
+        // The actual palm is rigid in this fixture, while the touched sternum
+        // blends bones and exposes an incorrect mixed share in the same sample.
+        const expectedHand = slowFrame(recipe, evaluation, candidate, side, NO_FOLDS, "linear");
+        const expectedSite = slowFrame(
+          recipe,
+          evaluation,
+          candidate,
+          side,
+          NO_FOLDS,
+          "linear",
+          "sternum-notch",
+        );
+        const mixedSite = slowFrame(
+          recipe,
+          evaluation,
+          candidate,
+          side,
+          NO_FOLDS,
+          "mixed",
+          "sternum-notch",
+        );
+        expect(
+          distance(expectedSite.position, mixedSite.position),
+          "fixture distinguishes skin modes",
+        ).toBeGreaterThan(1e-5);
+        const actualHand = frameOut();
+        const actualSite = frameOut();
+        sampler.frames(generation, candidate, actualHand, "sternum-notch", actualSite);
+        expect(distance(actualHand.position, expectedHand.position)).toBeLessThanOrEqual(1e-6);
+        expect(orientation(actualHand).angleTo(orientation(expectedHand))).toBeLessThanOrEqual(
+          1e-6,
+        );
+        expect(distance(actualSite.position, expectedSite.position)).toBeLessThanOrEqual(1e-6);
+        expect(orientation(actualSite).angleTo(orientation(expectedSite))).toBeLessThanOrEqual(
+          1e-6,
+        );
+      }
+    },
+  );
+
+  it("preserves the default mixed frames exactly when mixed skinning is explicit", () => {
+    const recipe = createRecipe({ macros: { age: 30 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const generation = {};
+    const input = {
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: bodyPoseRotations(rigData(assets), "benchmark"),
+      armBones: armChain(rest, "R"),
+      side: "R" as const,
+    };
+    const implicit = createArmSkinnedFrameSampler(input);
+    const explicit = createArmSkinnedFrameSampler({ ...input, skinMode: "mixed" });
+    for (const source of [input.sourceRotations, bodyPoseRotations(rigData(assets), "seated")]) {
+      implicit.resetSource(generation, source);
+      explicit.resetSource(generation, source);
+      expect(explicit.frame(generation, source, frameOut())).toEqual(
+        implicit.frame(generation, source, frameOut()),
+      );
     }
   });
 
@@ -210,6 +317,54 @@ describe("arm skinned-frame sampler", { timeout: 300_000 }, () => {
     expect(() => sampler.frame(generation, candidate, frameOut())).toThrow(
       "candidate rotations must be finite",
     );
+  });
+
+  it("refreshes its full-body source without stale shares and rejects invalid resets atomically", () => {
+    const recipe = createRecipe({ macros: { age: 30, height: 0.8 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const generation = {};
+    const source = IDENTITY_POSE(rest.names.length);
+    const input = {
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: source,
+      armBones: armChain(rest, "R"),
+      side: "R" as const,
+    };
+    const sampler = createArmSkinnedFrameSampler(input);
+    const before = new Uint8Array(source.buffer).slice();
+    for (const name of ["seated", "tpose", "benchmark", "seated"]) {
+      const changed = bodyPoseRotations(rigData(assets), name);
+      sampler.resetSource(generation, changed);
+      const fresh = createArmSkinnedFrameSampler({ ...input, sourceRotations: changed });
+      expect(sampler.frame(generation, changed, frameOut())).toEqual(
+        fresh.frame(generation, changed, frameOut()),
+      );
+      const accepted = Float32Array.from(changed);
+      changed.fill(0);
+      expect(sampler.frame(generation, accepted, frameOut())).toEqual(
+        fresh.frame(generation, accepted, frameOut()),
+      );
+      const invalid = Float32Array.from(accepted);
+      invalid[invalid.length - 1] = NaN;
+      expect(() => sampler.resetSource(generation, invalid)).toThrow(
+        "source rotations must be finite",
+      );
+      expect(() => sampler.resetSource({}, accepted)).toThrow("generation is stale");
+      expect(() => sampler.resetSource(generation, new Float32Array(1))).toThrow(
+        "source rotations do not match",
+      );
+      expect(sampler.frame(generation, accepted, frameOut())).toEqual(
+        fresh.frame(generation, accepted, frameOut()),
+      );
+    }
+    expect(new Uint8Array(source.buffer)).toEqual(before);
   });
 
   it("copies its source baseline and preserves output when candidate validation fails", () => {

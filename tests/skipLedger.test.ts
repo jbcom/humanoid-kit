@@ -3,7 +3,7 @@
  * skip never passes on a run that has a GPU lane.
  */
 import { describe, expect, it } from "vitest";
-import { GPU_LANE_SKIP } from "../e2e/lib/gpuLane.ts";
+import { FRAME_PACING_SKIP, GPU_LANE_SKIP, judgesFramePacing } from "../e2e/lib/gpuLane.ts";
 import { type PlaywrightReport, skipLedger } from "../scripts/ci/skipLedger.ts";
 
 const spec = (title: string, status: string, description?: string) => ({
@@ -54,6 +54,27 @@ describe("e2e skip ledger", () => {
         'unaccounted skip in animation.spec.ts: "b" (skipped with no reason)',
       ]);
     }
+  });
+
+  it("counts a frame-pacing skip on either lane, so an unjudged pacing gate stays visible", () => {
+    for (const lane of ["software", "gpu"] as const) {
+      const ledger = skipLedger(report(spec("paces", "skipped", FRAME_PACING_SKIP)), lane);
+      expect(ledger.byReason).toEqual({ [FRAME_PACING_SKIP]: 1 });
+      expect(ledger.failures).toEqual([]);
+    }
+  });
+
+  it("judges frame pacing only on a renderer that holds a display's rate", () => {
+    expect(
+      judgesFramePacing("ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)"),
+    ).toBe(true);
+    for (const renderer of [
+      "ANGLE (Apple, ANGLE Metal Renderer: Apple Paravirtual device, Unspecified Version)",
+      "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "llvmpipe (LLVM 17.0.6, 256 bits)",
+      "Microsoft Basic Render Driver",
+    ])
+      expect(judgesFramePacing(renderer), renderer).toBe(false);
   });
 
   it("finds skips in nested suites and ignores tests that ran", () => {

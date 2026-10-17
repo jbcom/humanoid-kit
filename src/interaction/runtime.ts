@@ -17,7 +17,7 @@ import type {
   Vec3,
 } from "../presence/presence.ts";
 import { AgePolicyError } from "../recipe/agePolicy.ts";
-import { gripMeeting } from "./contacts.ts";
+import { fitGripMeeting, fitGripSlots, type GripWorkspaceStatus } from "./contacts.ts";
 import {
   type Audience,
   audienceOf,
@@ -93,6 +93,8 @@ export interface Interaction {
    * (the other pairings arrive with their slices) and for a figure that has left.
    */
   contactTarget(contact: string | number, role: RoleName, out?: Vec3): Vec3 | null;
+  /** The measured planning envelope is distinct from final IK and collision acceptance. */
+  contactWorkspaceStatus?(contact: string | number, role: RoleName): GripWorkspaceStatus | null;
   /**
    * Seconds into `role`'s clip for the current phase, on the interaction's one
    * clock: `time` scaled by the track's rate, wrapped at the clip's length when
@@ -230,6 +232,17 @@ interface ContactInfo {
   during: readonly Phase[];
   /** Both ends are figure hands: the one pairing slice 2 solves. */
   handToHand: boolean;
+  sideA: "L" | "R";
+  sideB: "L" | "R";
+  slotClock: number;
+  slotRevision: number | undefined;
+  slotA: SlotPlacement;
+  slotB: SlotPlacement;
+  reference: Vec3;
+  targetClock: number;
+  targetRevision: number | undefined;
+  target: Vec3;
+  status: GripWorkspaceStatus;
 }
 
 interface Running extends Interaction {
@@ -441,7 +454,7 @@ export function createInteractions(
   };
 
   /** `role`'s slot in world space into `out`, or null (no slot, or the reference is missing). */
-  const slotInto = (i: Running, r: RoleSpec, out: SlotPlacement): SlotPlacement | null => {
+  const requestedSlotInto = (i: Running, r: RoleSpec, out: SlotPlacement): SlotPlacement | null => {
     const s = r.slot;
     if (!s || !frameFor(i, r.name)) return null;
     const x = resolveLength(s.offset[0], i.measuresOf);
@@ -458,6 +471,56 @@ export function createInteractions(
     out.facing[0] = fx * cos + fz * sin;
     out.facing[1] = 0;
     out.facing[2] = fz * cos - fx * sin;
+    return out;
+  };
+
+  const slotInto = (i: Running, r: RoleSpec, out: SlotPlacement): SlotPlacement | null => {
+    const contact = i.contactInfo.find((c) => c.handToHand && (c.a === r.name || c.b === r.name));
+    const reference = i.definition.reference;
+    if (!contact || !reference || !("between" in reference)) return requestedSlotInto(i, r, out);
+    const a = presence.get(i.roles[contact.a] as string),
+      b = presence.get(i.roles[contact.b] as string);
+    const ar = i.definition.roles.find((role) => role.name === contact.a);
+    const br = i.definition.roles.find((role) => role.name === contact.b);
+    if (!a?.handWorkspaces || !b?.handWorkspaces || !ar?.slot || !br?.slot)
+      return requestedSlotInto(i, r, out);
+    if (
+      contact.slotClock !== clock ||
+      presence.revision === undefined ||
+      contact.slotRevision !== presence.revision
+    ) {
+      if (!requestedSlotInto(i, ar, contact.slotA) || !requestedSlotInto(i, br, contact.slotB))
+        return null;
+      contact.reference[0] = refFrame.x;
+      contact.reference[1] = refFrame.y;
+      contact.reference[2] = refFrame.z;
+      // A deliberately beyond-reach authored request remains unreachable. Only
+      // within-reach placements ask this planner to reserve bend and palm room.
+      const within = (role: RoleSpec, reach: number) => {
+        const offset = role.slot?.offset;
+        if (!offset) return false;
+        const x = resolveLength(offset[0], i.measuresOf),
+          z = resolveLength(offset[2], i.measuresOf);
+        return x !== undefined && z !== undefined && Math.hypot(x, z) <= reach;
+      };
+      if (within(ar, a.measures.reach) && within(br, b.measures.reach))
+        fitGripSlots(
+          a,
+          b,
+          contact.sideA,
+          contact.sideB,
+          contact.slotA,
+          contact.slotB,
+          contact.reference,
+        );
+      contact.slotClock = clock;
+      contact.slotRevision = presence.revision;
+    }
+    const fitted = contact.a === r.name ? contact.slotA : contact.slotB;
+    for (let k = 0; k < 3; k++) {
+      out.position[k] = fitted.position[k] as number;
+      out.facing[k] = fitted.facing[k] as number;
+    }
     return out;
   };
 
@@ -491,7 +554,18 @@ export function createInteractions(
     if (!c.during.includes(i.phase as Phase)) return null;
     const a = presence.get(i.roles[c.a] as string);
     const b = presence.get(i.roles[c.b] as string);
-    return a && b ? gripMeeting(a, b, out) : null;
+    if (!a || !b) return null;
+    if (
+      c.targetClock !== clock ||
+      presence.revision === undefined ||
+      c.targetRevision !== presence.revision
+    ) {
+      c.status = fitGripMeeting(a, b, c.sideA, c.sideB, c.target);
+      c.targetClock = clock;
+      c.targetRevision = presence.revision;
+    }
+    for (let k = 0; k < 3; k++) out[k] = c.target[k] as number;
+    return out;
   };
 
   const trackTime = (i: Running, role: RoleName): number | null => {
@@ -708,6 +782,17 @@ export function createInteractions(
             b,
             during: c.during,
             handToHand: a !== b && isHand(a, an) && isHand(b, bn),
+            sideA: an.endsWith(".L") ? "L" : "R",
+            sideB: bn.endsWith(".L") ? "L" : "R",
+            slotClock: NaN,
+            slotRevision: undefined,
+            slotA: { position: [0, 0, 0], facing: [0, 0, 1] },
+            slotB: { position: [0, 0, 0], facing: [0, 0, 1] },
+            reference: [0, 0, 0],
+            targetClock: NaN,
+            targetRevision: undefined,
+            target: [0, 0, 0],
+            status: "uncertified",
           };
         }),
         participants,
@@ -717,6 +802,13 @@ export function createInteractions(
           return r ? slotInto(i, r, out) : null;
         },
         contactTarget: (contact, role, out = [0, 0, 0]) => contactTarget(i, contact, role, out),
+        contactWorkspaceStatus: (contact, role) => {
+          const c =
+            typeof contact === "number"
+              ? i.contactInfo[contact]
+              : i.contactInfo.find((entry) => entry.name === contact);
+          return c && contactTarget(i, contact, role, c.target) ? c.status : null;
+        },
         trackTime: (role) => trackTime(i, role),
         frameStops: new Set(),
         observeFrames: (role, onFrame, onRelease) => observeFrames(i, role, onFrame, onRelease),

@@ -70,7 +70,21 @@ export function drillSupport(macros: Partial<MacroValues>): SupportFigure {
   };
 }
 
+/** Each figure's sampler, made once: its support solves the figure's folds, the costliest part. */
+const samplers = new Map<string, (clip: AnimationClip, t: number) => DrillFrame>();
+
+/** Samples the figure of `macros` at a clip's time; the same sampler for the same macros. */
 export function drillFigure(macros: Partial<MacroValues>) {
+  const key = JSON.stringify(Object.entries(macros).sort(([a], [b]) => a.localeCompare(b)));
+  let sampler = samplers.get(key);
+  if (!sampler) {
+    sampler = makeDrillFigure(macros);
+    samplers.set(key, sampler);
+  }
+  return sampler;
+}
+
+function makeDrillFigure(macros: Partial<MacroValues>) {
   const support = drillSupport(macros);
   const recipe = createRecipe({ macros });
   const pose = surfacePoser(model, recipe);

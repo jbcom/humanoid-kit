@@ -213,6 +213,8 @@ export interface AttachmentTopology extends SurfaceTopology {
  */
 export interface HairTopology extends SurfaceTopology {
   id: string;
+  /** Checksum of the packed source style, including its UV layout. */
+  sourceSha256: string;
   /**
    * What it is: `scalp` hair, or a decal (`brows`, `lashes`), whose `fade` is all 1,
    * `fin` and `growth` all 0 and `scalp` none, and whose `strand` has no direction.
@@ -1471,6 +1473,7 @@ export class HumanoidModel {
       ...topologyOf(p.mesh),
       id,
       kind: entry.kind,
+      sourceSha256: entry.sha256,
       label: entry.label,
       tags: entry.tags,
       zDepth: asset.entry.zDepth,
@@ -2014,6 +2017,13 @@ export class HumanoidModel {
       if (!entry.tags.includes("beard") && !entry.tags.includes("moustache"))
         throw new RecipeError(
           `facialHairColour names ${id}, but it is not a beard or moustache style`,
+        );
+    }
+    for (const id of Object.keys(recipe.facialHairGrey ?? {})) {
+      const entry = this.hairEntry(id, "facial");
+      if (!entry.tags.includes("beard") && !entry.tags.includes("moustache"))
+        throw new RecipeError(
+          `facialHairGrey names ${id}, but it is not a beard or moustache style`,
         );
     }
     const facialHairLength = recipe.facialHairLength ?? {};

@@ -52,7 +52,6 @@
   "jobs": [
     {
       "job_id": "render-c093455589b24732995390e10bf0baf6",
-      "host": "_gitea_render@192.168.1.201",
       "node_version": "v26.11.1",
       "started_at": "2026-10-14T18:12:59.635Z",
       "finished_at": "2026-10-14T18:13:08.705Z",
@@ -61,7 +60,6 @@
     },
     {
       "job_id": "render-749a4cdaeed64aff951138e297f3c4b8",
-      "host": "_gitea_render@192.168.1.201",
       "node_version": "v26.11.1",
       "started_at": "2026-10-14T18:13:35.481Z",
       "finished_at": "2026-10-14T18:13:41.776Z",
@@ -70,7 +68,6 @@
     },
     {
       "job_id": "render-0b17b555b9aa4e879131c0d3b3c550e3",
-      "host": "_gitea_render@192.168.1.201",
       "node_version": "v26.11.1",
       "started_at": "2026-10-14T18:17:32.126Z",
       "finished_at": "2026-10-14T18:17:39.772Z",
@@ -79,7 +76,6 @@
     },
     {
       "job_id": "render-a73f117681c9462a878a59886307cc2c",
-      "host": "_gitea_render@192.168.1.201",
       "node_version": "v26.11.1",
       "started_at": "2026-10-14T18:18:15.461Z",
       "finished_at": "2026-10-14T18:18:22.704Z",

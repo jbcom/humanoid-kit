@@ -44,16 +44,15 @@ Browser tests (the Vitest browser project and the Playwright suite) run headed
 Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on
 your native GPU by default, so they test what people see; the playground spec
 fails if a run that expects a GPU falls back to software rendering. CI has no
-GPU and selects SwiftShader explicitly under `xvfb-run`; the agents' render Macs
-(`heavy-slot --remote-render`) run headless on their Apple GPU through ANGLE
-Metal; heavy-slot's priority lane chooses for itself, and the project opts in to
-it (`heavySlot.priorityLane` in package.json). `scripts/lib/browserRun.ts` holds
-the whole rule for both configs. Set `HK_GPU` to `auto`, `software`,
+GPU and selects SwiftShader explicitly under `xvfb-run`. On a macOS runner with
+an Apple GPU, `HK_GPU=macos-hardware-metal PW_HEADLESS=1` selects headless
+ANGLE Metal; use `HK_HEADED=1` for a visible local review. These modes require
+Chromium and the corresponding GPU/driver support. `scripts/lib/browserRun.ts`
+holds the environment rules for both configs. Set `HK_GPU` to `auto`, `software`,
 `macos-hardware-metal` or `linux-hardware-vulkan`, or `HK_HEADED=1`, to override.
 `pnpm exec playwright test --project sheets` renders the contact sheets in
-`.sheets/job.json` for review (`e2e/sheets/render.sheet.ts` describes the job;
-on the agents' machines it runs on the render pool through
-`heavy-slot --remote-render`), and `node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
+`.sheets/job.json` for review (`e2e/sheets/render.sheet.ts` describes the job),
+and `node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
 playground. To look at the creator itself after a change to its panels or stage, run
 `pnpm exec playwright test e2e/sheets/creator.sheet.ts --project sheets [-g <scene>]` (the file
 goes first, because `--project` takes every name after it): each scene in that file

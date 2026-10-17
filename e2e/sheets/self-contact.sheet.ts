@@ -2,8 +2,7 @@
  * Issue #117 private self-contact review sheet. It draws the CPU-skinned indexed
  * surface from the exact authored `relaxed` source pose and final solver rotations.
  *
- *   heavy-slot --remote-render --render-host 192.168.1.201 --context gate -- \
- *     pnpm exec playwright test e2e/sheets/self-contact.sheet.ts --project sheets
+ *   pnpm exec playwright test e2e/sheets/self-contact.sheet.ts --project sheets
  *
  * Every page goes through `openSilentGame`; it cannot persist audio changes.
  * The PNG and receipt JSON are test artifacts only and are never committed.

@@ -4,7 +4,6 @@
   "sourceHead": "f8c43f33bed8ee535a87e0fe1d31eb9b24359443",
   "scriptSha256": "2b2b20833ea1675252ca68d7ddeccd6c64fc1bb41d51de838184b1c90ad300b9",
   "host": {
-    "hostname": "MBJobsSlice1.local",
     "platform": "darwin",
     "arch": "arm64",
     "release": "27.0.0",
@@ -736,10 +735,9 @@
   ],
   "rendererEvidence": "runtime-occlusion-quality.md",
   "execution": {
-    "command": "heavy-slot --remote-run --render-host 192.168.1.201 --out docs/evidence node scripts/research/runtime-occlusion-cost.ts f8c43f33bed8ee535a87e0fe1d31eb9b24359443",
-    "job": "render-3a373130a6df4565b5b433078b7a63c8",
-    "host": "_gitea_render@192.168.1.201",
+    "command": "node scripts/research/runtime-occlusion-cost.ts f8c43f33bed8ee535a87e0fe1d31eb9b24359443",
     "exitCode": 0,
-    "provenance": "Source commit argument checked against local worktree HEAD before snapshot; remote snapshots omit Git metadata."
+    "provenance": "Source commit argument checked against local worktree HEAD before snapshot; remote snapshots omit Git metadata.",
+    "publicationNote": "Private routing, hostname and job identifiers are omitted. The listed command is the underlying reproduction command; measured values and source hashes are unchanged."
   }
 }

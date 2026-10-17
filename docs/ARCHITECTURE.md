@@ -1956,8 +1956,10 @@ asks once a hip or a knee in the pose is flexed past its fold's start, whenever 
 shape changes. Until it arrives the figure draws without it, and the fold then
 fades in over 150 ms (`FOLD_FADE`, the `hkFoldBlend` uniform, `DualBones.advanceFold`)
 so that it does not pop; a fold that replaces another, for a figure whose shape
-changed, does not fade. The figure's settle is held until the fold is drawn and
-whole. The fold is for the surface the evaluation draws (the base body, or an
+changed, does not fade. Nor does one on a canvas drawn only when its host advances
+the clock (`frameloop="never"`): no frame runs there to fade it, and the host waits
+for the settle before it advances, so the fold shows whole at once. The figure's
+settle is held until the fold is drawn and whole. The fold is for the surface the evaluation draws (the base body, or an
 adult's refined surface), the other's slots set to none.
 
 **Gates** (`tests/hipFold.test.ts`, nine bodies: the bench's five and the battery's
@@ -3195,7 +3197,46 @@ and a full beard each change the face, the full beard more than the goatee,
 chest hair shows against the same chest bare, and a child asked for a full beard
 grows none.
 
-**Facial hair (current, issue #14).** The hair pack now carries authored MakeHuman facial attachments. A recipe selects them explicitly through `facialHair`; each keeps its source vertices, faces, texture alpha, face/jaw MHCLO anchors and hair colour. `facialHairColour` is an optional map of selected authored beard and moustache ids to complete `HairColour` values. Recipe validation checks selected ids, pigment ranges and linear-RGB replacements; model evaluation checks the loaded facial entry's beard/moustache tags. A shared renderer-free resolver applies the existing scalp ageing clock to each requested colour, falling back exactly to the recipe's scalp colour when absent. The live `HairMesh` and miniature alpha-card bake both consume it. This is uniform greying and tint only; scalp, brows, lashes and body coat retain their existing colour routes. No source texture, alpha, geometry, UV or VAT changes are involved, and a baked colour change needs another archetype rather than per-instance facial recolouring. `facialHairLength` is the existing explicit source-free-offset multiplier for a selected beard: one is the exact packed placement, and a value above one expands every authored free-offset axis. It is not a named style generator and does not apply to moustaches.
+**Facial hair (current, issue #14).** The hair pack now carries authored MakeHuman facial attachments. A recipe selects them explicitly through `facialHair`; each keeps its source vertices, faces, texture alpha, face/jaw MHCLO anchors and hair colour. `facialHairColour` is an optional map of selected authored beard and moustache ids to complete `HairColour` values. Recipe validation checks selected ids, pigment ranges and linear-RGB replacements; model evaluation checks the loaded facial entry's beard/moustache tags. A shared renderer-free resolver applies the existing scalp ageing clock to each requested colour, falling back exactly to the recipe's scalp colour when absent. The live `HairMesh` and miniature alpha-card bake both consume it. This resolver remains uniform greying and tint; optional caller UV fields can mix its result toward the existing unpigmented target, as described below. Scalp, brows, lashes and body coat retain their existing colour routes. No source texture, alpha, geometry, UV or VAT changes are involved, and a baked colour change needs another archetype rather than per-instance facial recolouring. `facialHairLength` is the existing explicit source-free-offset multiplier for a selected beard: one is the exact packed placement, and a value above one expands every authored free-offset axis. It is not a named style generator and does not apply to moustaches.
+
+**Caller UV greying fields (source implementation, 2026-10-16).**
+`facialHairGrey` adds per-selected-style `{ mask, amount }` requests without
+changing `HairColour.grey`, the ageing floor or existing uniform overrides.
+Decoded `FacialHairGreyMasks` stay outside the JSON recipe and worker geometry
+messages. Each linear R8 raster is pinned to the packed style's existing SHA;
+`HairTopology.sourceSha256` carries that identity through the existing topology
+reply. Live and miniature materials mix the legacy tint toward the unpigmented
+target with `q = amount * mask` before multiplying the exact source RGB; source
+alpha, UVs, binding and animated frames remain intact. Dyed overrides also
+mix toward that same target (albedo 0.55, tint 1.375); an override brighter than
+the target may darken, while an unpigmented natural-white base stays unchanged. Sampling uses top-first rows, the existing map
+UVs, linear filtering, clamp-to-edge and no mask mipmaps or sRGB decode.
+
+Missing or invalid explicit masks fail rather than choosing a procedural field.
+Dimensions must safely address the exact bytes; device limits are checked by the
+renderer, with no core downsampling or arbitrary dimension cap. Each live
+installation copies and owns its texture; replacement and unmount dispose it.
+Registry-only updates settle independently of shape evaluation; errors hide the
+requested card and suppress successful settling until corrected. A masked card
+requires its source RGBA map as well as its mask: it stays hidden while that
+map is pending or failed. Source readiness/error is recorded before releasing
+the load's settle hold. Registry replacement retries a failed load on the same
+mesh, including activation after an earlier unmasked source failure. That passive
+status tracking does not change unmasked visibility or error/settle behavior, and
+successful source maps are retained when masks change. Mask validation cannot
+clear a source error, and superseded replies cannot install stale textures. Miniature
+baking copies bytes and stores an optional mask, amount, frozen target tint and
+source pin per alpha card. Its runtime owns/counts that R8 texture separately.
+HKMB reuses aligned sections and writes v3 only for active fields: old readers
+must reject rather than ignore required appearance data. Unmasked output stays
+byte-identical v2, and the new decoder reads v1/v2/v3. No hair-pack schema,
+packer, source asset or source texture changes are involved.
+
+This is caller-mask support, not source-authored packaged streak availability
+or full issue #14 acceptance. Source UV overlap restricts physical placement;
+no left/right/chin/lock meaning is inferred from atlas coordinates. A useful
+visible stripe on retained source hair still needs inspected real-source UV and
+live/miniature evidence; analytic shader checks cannot establish that mapping.
 
 **Source-proxy growth.** `facialHairGrowth` is a separate selected-beard control from zero to one. At zero the evaluator omits that attachment, so no collapsed facial film reaches the renderer; at `0.5` it delegates to the exact packed source placement. Below that native point it contracts the existing free offsets continuously from a source-derived attachment-edge frame. Above it, every runtime vertex extends by its native vertical depth below one shared source-height frame; at one, the deepest source vertex reaches the morphed base-control mesh's unposed rest floor. The evaluator retains the boundary edge nearest the MHCLO weighted base-surface placement for every source boundary loop, then restores both vertices of every retained edge exactly to their face/jaw binding. A connected source component can therefore retain several card attachments rather than a single global winner. A closed source component has no exposed growth root and remains source-fixed. A runtime-only, body-front clearance proxy moves only lower vertices horizontally along that root evidence's existing normal frame, which keeps the retained source cards inspectable in front of the unposed base body without rebinding a vertex to the torso. The calculation retains the source's three base-mesh anchors, vertices and topology, and it cannot share an asset with `facialHairLength`. This is a rest-floor bound only: it does not assert posed-world drape, collision avoidance, garment contact, or a new style.
 
@@ -3445,8 +3486,8 @@ clip is loaded when first played, and the pack is optional, like the hair pack.
 **Requirements.** A clip says nothing about one body's proportions, so it plays on
 every body. A planted foot stays planted on any body: no skating. Nothing is
 allocated per frame once a figure is playing. Only clips whose licence is proven
-are packed, by the repository's licence rule. The adult animations are a separate
-later package that refuses participants under 18, and are not here. Interactions
+are packed, by the repository's licence rule. No adult animations are packed or
+planned; that content belongs to Anyself, a commercial game (issue 105). Interactions
 between participants (roles, slots, synchronised tracks, contacts and signals)
 are the contract in [Interactions](INTERACTIONS.md).
 
@@ -3511,7 +3552,7 @@ are the contract in [Interactions](INTERACTIONS.md).
   from the figure's root, so the figure yields to its planted foot instead of
   outrunning it. The pins are in the world, so the next foot lands where the figure
   now is and nothing accumulates.
-- *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
+- *Framework-free final-state evaluation.* `Animator` owns its pose buffers: `update(dt)` advances time,
   crossfades and root motion and writes the body's rotations. Face units and other
   poses are laid over by the caller (`composeRotations`).
 
@@ -3526,6 +3567,57 @@ Quaternius's walks (mocap that plants its feet) under 3 mm; in a zombie's shuffl
 under 20 mm and in a crouch walk 36 mm, the dragged foot of the one and the
 shuffled one of the other never quite planted. A hand-keyed clip is the limit, not
 the solver: a clip that planted its feet would leave nothing to hold.
+
+**Elapsed contact chronology.** `Animator.update` preflights a metadata-only
+schedule before mutating clocks, root, fade or contact state, then traverses that
+same schedule. Grounded participation limits each interval to 1/60 wall second
+and half a source frame for either moving track. Both tracks' source-frame keys,
+loop seams, nonloop stops, support keys and fade completion are explicit
+boundaries. Each interval carries the current corrected root, samples fresh
+source/blended rotations, applies the current clip's exact authored support key
+when crossed, then runs the unchanged FootLock ownership/IK/reach correction.
+There is no blanket pin reset, correction clamp or reuse of an IK-modified input
+pose. Only the final Animator pose/root is read by the existing frame writer.
+
+The schedule retains unwrapped loop clocks and observes a swing before a landing
+at the same wrapped pose. Nonloop clocks normalize an out-of-range play/seek hold
+at the start of a positive update, without root carry, before consuming its full
+wall duration. Internally crossed support keys run once, including wrapped loop
+keys and terminal keys; explicit lifecycle refresh writes remain separate.
+
+Between stored-step velocity boundaries, fade travel uses the exact integral of
+`w(u)=3u²-2u³`: the incoming weight integral over `[a,b]` is
+`T * [u³-u⁴/2]_(a/T)^(b/T)` and the outgoing integral is `(b-a)` minus that value.
+Stopped tracks contribute zero velocity. The pose still uses its instantaneous
+end weight. This explicitly replaces the old endpoint-weight travel approximation.
+
+This is a discrete chronology guarantee at the stated resolution, not continuous
+threshold detection or contact invariance under arbitrary additional callback
+endpoints. Equivalent checkpoint schedules agree. Total work is linear in the
+visited checkpoints and their support solves, growing with elapsed time and both
+source rates/speeds; there is no silent maximum-step guard. No-skeleton, airborne
+and unchanged frozen-pose paths omit only observations with no contact history to
+preserve. Finite nonnegative wall `dt`, finite time/speed and finite nonnegative
+fade are validated before active mutations; reverse playback uses negative speed.
+Metadata preflight rejects unrepresentable requested clock/fade spans or checkpoint
+progress atomically. Cadence slices may leave one clock unchanged while wall time
+advances. Key eligibility is directional in represented clip coordinates before
+inverse wall arithmetic. A loop support key exactly at a source frame shares its
+global integer-frame representation; an off-frame key remains distinct. Terminal
+wall slices coalesce only when all participating canonical clock/fade states agree
+and no eligible key remains, preserving actually crossed support metadata. Support
+metadata is triggered by represented clip-clock crossing, including when that clock
+rounds to the target before its inverse wall time. Duplicate declarations of the
+same source support event are valid; distinct source keys that collapse to one
+represented wall order fail atomically rather than being aliased or dropped.
+Within the current/requested represented span, preflight also checks off-frame
+support lifts against their neighboring source-frame identities and loop seams
+or nonloop stops,
+in both represented clip and inverse-wall coordinates. Thus an upcoming tiny key
+cannot round onto a visited boundary and disappear or overwrite a distinct frame.
+Collisions outside that span do not invalidate unrelated updates. Exact raw
+authored keys take precedence over legacy lifecycle epsilon matching, including
+zero versus duration seam identities and nearby tracks with different solvers.
 
 **In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
 (`useFigureAnimation`, `src/react`): each frame the animator's pose, with
@@ -3558,6 +3650,13 @@ the constraint begins or ends holding, the meshes' bounds are recomputed so
 picking and culling follow the reaching arm. Without a clip, a static figure is
 re-posed every frame only while the constraint has weight, and once more when it
 returns to idle.
+
+Measured presence workspaces retain private sampler and posed-skeleton scratch
+for one immutable evaluation, rig and landmark/skin generation. Each changed
+source pose explicitly resets both sampler baselines, including dynamic skin
+shares; returned workspace numbers are newly owned values. Pose comparisons
+use copied rotation values so a caller may reuse its animation output buffer.
+Replacing geometry, weights, anchors or rig data rebuilds that scratch.
 
 **Cached site contacts.** `createSiteContactConstraint` is deliberately outside the
 current `<Humanoid>` frame pass. It retains only a full solve for one immutable
@@ -3662,12 +3761,16 @@ spread at most 3, absolute lightness error at most 4, lightness spread at most
 only with a measured replacement claim; a renderer, platform or timeout never
 justifies a relaxed comparison.
 
-SwiftShader (`HK_GPU=software` under `xvfb-run`) is the repeatable CI execution
-path. It has the longer 120 second browser-test timeout because it is slower;
-it is not visual acceptance. Headed local Chromium and the admitted headless
-Metal render lane provide the hardware evidence. Results from those paths are
-compared to the assertion that names the path, never by silently widening an
-assertion for a different renderer.
+CI runs the browser project and the playground suite on the standard `macos-15`
+runner's Metal GPU (`HK_GPU=macos-hardware-metal`, renderer asserted first),
+the canonical GPU proof (docs/CI.md). SwiftShader (`HK_GPU=software`) remains a
+local and render-pool software reference. It has the longer 120 second
+browser-test timeout because it is slower, and it is not visual acceptance.
+Hosted SwiftShader can no longer finish the suite within the job ceiling.
+Headed local Chromium and the headless Metal render lane provide further
+hardware evidence. Results from those paths are compared to the assertion that
+names the path, never by silently widening an assertion for a different
+renderer.
 
 The Vitest and Playwright skip ledgers record every observed skip with its
 declared reason. CI fails for a skip that is not in the finite expected-skip
@@ -4238,10 +4341,10 @@ Milestones, in the order each is proven (built in parallel lanes; see
 7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,
    including `.mhclo` assets with `delete_verts` (see "Clothing"). Planned: fur,
    scales and feathers as layers (issue 99).
-8. **Animation packs.** Implemented: `humanoid-kit-animations`. Pending an owner
-   ruling on whether it belongs in this repository (issue 105): a separate
-   `humanoid-kit-adult-animations` that refuses any participant under 18.
-   Presence is implemented ("Presence"); the interaction core is in progress,
+8. **Animation packs.** Implemented: `humanoid-kit-animations`. No adult
+   animation package: by the owner's ruling (issue 105) that content belongs to
+   Anyself, a commercial game; the kit keeps the generic tooling for adding
+   animations and the age checks. Presence is implemented ("Presence"); the interaction core is in progress,
    with slices 1 and 2 built and the later slices tracked (issues 100 to 104).
    How figures, objects and fixtures offer, claim and
    play interactions together, and where the age policy is enforced in them, is

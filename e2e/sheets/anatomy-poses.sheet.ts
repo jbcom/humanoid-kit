@@ -14,7 +14,7 @@
  * gender 0.5 with its blended defaults, a female form with a phallus, a male form with
  * a vulva. Every figure is hairless. Each tile is labelled with its values.
  *
- *   heavy-slot --remote-render pnpm exec playwright test e2e/sheets/anatomy-poses.sheet.ts --project sheets [-g "fold"]
+ *   pnpm exec playwright test e2e/sheets/anatomy-poses.sheet.ts --project sheets [-g "fold"]
  *
  * `assertAdult` runs on every recipe before it reaches the page, and the page always
  * loads the adult pack. Sheets go to the test output only: they are anatomical QA,

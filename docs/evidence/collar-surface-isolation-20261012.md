@@ -25,10 +25,9 @@ appearance baseline changes.
 
 ## First controlled capture
 
-Remote Metal browser run on `.202` passed:
+A macOS Metal browser run passed:
 
 ```text
-heavy-slot job: render-8cfd601c25734491881328ea5777238e
 tests/browser/collarSurfaceIsolation.test.tsx: 1 passed
 collar-centred changed pixels from baseline:
   pores off:  11,413
@@ -36,12 +35,13 @@ collar-centred changed pixels from baseline:
   both off:   20,664
 ```
 
-The passed job retained four separate Canvas-main-camera PNGs for direct review:
+The passed run retained four separate Canvas-main-camera PNGs privately for
+direct review. These filenames identify the observations, not public attachments:
 
-- `.heavy-slot/remote-artifacts/render-8cfd601c25734491881328ea5777238e/test-results/collar-surface-isolation/baseline.png`
-- `.heavy-slot/remote-artifacts/render-8cfd601c25734491881328ea5777238e/test-results/collar-surface-isolation/pores-off.png`
-- `.heavy-slot/remote-artifacts/render-8cfd601c25734491881328ea5777238e/test-results/collar-surface-isolation/layers-off.png`
-- `.heavy-slot/remote-artifacts/render-8cfd601c25734491881328ea5777238e/test-results/collar-surface-isolation/both-off.png`
+- `baseline.png`
+- `pores-off.png`
+- `layers-off.png`
+- `both-off.png`
 
 Before saving each PNG, the test reads an offscreen target from the exact Canvas main-camera
 object, re-renders that same scene and camera to the Canvas, and then screenshots that canvas
@@ -68,24 +68,24 @@ not alter the product source atlas, its recipe, or any shader API. It makes two 
 - the current material's half-float stop-table clone has only that same row zeroed before it is
   assigned as the material uniform for the capture.
 
-The `.202` Metal run recorded `clavicles` at layer index 5. The sole altered field range was
+The macOS Metal run recorded `clavicles` at layer index 5. The sole altered field range was
 `[557840, 669408)` (111,568 `Float32` entries); the sole altered stop-table range was `[180, 216)`
 (36 `Uint16` entries). The test asserts every value outside those intervals is identical to the
 active product data, retains the exact atlas plan, and restores/disposes both clones in `finally`.
 It repeats the main-camera and dual-bone-byte receipts for this fifth state.
 
 ```text
-heavy-slot job: render-cc065899dbb6414eb9e57f72dbf3ab16
 tests/browser/collarSurfaceIsolation.test.tsx: 1 passed
 baseline → clavicle-off, collar-centred changed pixels: 16,293
 ```
 
-The direct review pair is retained at:
+The direct review pair is retained privately under these filenames:
 
-- `.heavy-slot/remote-artifacts/render-cc065899dbb6414eb9e57f72dbf3ab16/test-results/collar-surface-isolation/baseline.png`
-- `.heavy-slot/remote-artifacts/render-cc065899dbb6414eb9e57f72dbf3ab16/test-results/collar-surface-isolation/clavicle-off.png`
+- `baseline.png`
+- `clavicle-off.png`
 
-The other three controls (`pores-off`, `layers-off`, `both-off`) are adjacent. This is an isolated
+The other three controls (`pores-off`, `layers-off`, `both-off`) were retained with the pair.
+Original routing receipts and local artifact locations remain in private recovery storage. This is an isolated
 causal witness for review, not authorization to blur, retune, or otherwise repair the clavicle
 surface. The broad shoulder angularity was visible independently and remains a separate question.
 
@@ -108,7 +108,6 @@ relief, that becomes about a 0.0915 normal-slope change at one internal edge.
 The browser diagnostic reads the actual product 1024px atlas at the corresponding worst UV edge:
 
 ```text
-heavy-slot job: render-4dc36594faba4889bf97e34c26690322
 shared edge: 5766:15122 (render triangles 26533, 27194)
 unit-height UV-gradient jump: 90.70094796304632
 interpolated source [mask, coordinate]: [0.9535188562, 0.3755384423]

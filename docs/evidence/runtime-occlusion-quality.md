@@ -24,8 +24,7 @@ that the material consumes occlusion attributes.
 
 ## Rendered pixels
 
-Muted headless Chromium runs through `heavy-slot` on the render Mac
-`192.168.1.201`. The browser reports
+Muted headless Chromium ran on a macOS runner with an Apple GPU. The browser reports
 `ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max, Unspecified Version)`.
 The attachment is isolated in white to make the field observable; this is a
 material diagnostic rather than a textured whole-figure acceptance view.

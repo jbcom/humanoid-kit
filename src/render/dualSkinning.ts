@@ -370,15 +370,20 @@ export class DualBones {
    * `surface` says which body surface they are for; the CPU reference keeps
    * them too (`skinFolds`), so what is skinned on the CPU is what the shader draws.
    */
-  setFolds(folds: readonly SurfaceFold[] | null, surface: "base" | "adult" = "base"): void {
+  setFolds(
+    folds: readonly SurfaceFold[] | null,
+    surface: "base" | "adult" = "base",
+    fade = true,
+  ): void {
     const had = this.hasFold;
     const set = (folds ?? []).filter((f) => f.rows > 0);
     this.hasFold = set.length > 0;
     this.cpuFolds = set.map(renderFold);
     this.cachedFolds = undefined;
     this.foldSurface = surface;
-    // Folds that arrive where there were none fade in; ones that replace others (the figure's shape changed) do not.
-    this.foldBlend.value = this.hasFold && !had ? 0 : 1;
+    // Folds that arrive where there were none fade in; ones that replace others (the figure's
+    // shape changed) do not, and neither do any where no frame comes to fade them (`fade` false).
+    this.foldBlend.value = fade && this.hasFold && !had ? 0 : 1;
     for (const joint of FOLD_JOINTS) {
       const holder = this.folds[joint.name];
       const old = holder.value;
@@ -390,6 +395,11 @@ export class DualBones {
 
   /** Whether a fold is set. */
   private hasFold = false;
+
+  /** Whether the folds set are still fading in (`advanceFold`). */
+  get foldFading(): boolean {
+    return this.foldBlend.value < 1;
+  }
 
   /**
    * Carries the fold's fade on by `seconds`; true while it is not whole, so a
@@ -662,7 +672,8 @@ const position = (fold: boolean): string => /* glsl */ `
  * The blend of the vertex's normal, in place of three's `skinnormal_vertex`: the
  * linear half over every place (its tangent too), mixed with the dual quaternion
  * turn by the share; the matrix and motion it finds are the position's too.
- * With the folds, each joint's change added, and the sum made unit again.
+ * With the folds, the mixed base made unit, each joint's change added, and
+ * the sum made unit again (zero vectors stay zero, as on the CPU).
  */
 const normal = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
@@ -682,12 +693,19 @@ const normal = (fold: boolean): string => /* glsl */ `
 	if ( hkShare > 0.0 ) objectNormal = mix( objectNormal, hkQRotate( hkQ, hkRestNormal ), hkShare );
 	${
     fold
-      ? `bool hkTurned = false;
+      ? `bool hkTurned = ${FOLD_JOINTS.map((joint) => `${foldSlotGlsl(joint)} >= 0.0`).join(" || ")};
+	if ( hkTurned ) {
+		float hkBaseNormalLength = length( objectNormal );
+		objectNormal /= hkBaseNormalLength > 0.0 ? hkBaseNormalLength : 1.0;
+	}
 	${FOLD_JOINTS.map(
     (joint) =>
-      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) { objectNormal += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 1 ); hkTurned = true; }`,
+      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) objectNormal += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 1 );`,
   ).join("\n\t")}
-	if ( hkTurned ) objectNormal = normalize( objectNormal );`
+	if ( hkTurned ) {
+		float hkFoldNormalLength = length( objectNormal );
+		objectNormal /= hkFoldNormalLength > 0.0 ? hkFoldNormalLength : 1.0;
+	}`
       : ""
   }
 #endif
