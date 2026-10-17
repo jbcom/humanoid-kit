@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, inject, it } from "vitest";
 import { DRILLS } from "../scripts/lib/drill.ts";
 import {
   type DrillWorklist,
@@ -47,6 +47,13 @@ function groundDistanceNear(
   return best;
 }
 
+declare module "vitest" {
+  interface ProvidedContext {
+    /** How many times its budget a test that sets its own gets: 3 when coverage instruments it. */
+    budgetScale: number;
+  }
+}
+
 const stationaryFigure = {
   "slim@25": figure("slim", 25),
   "heavy@35": figure("heavy", 35),
@@ -78,7 +85,7 @@ const worklist: DrillWorklist = JSON.parse(
  */
 beforeAll(() => {
   for (const figure of DRILL_FIGURES) drillFigure(figure.macros);
-}, 180_000);
+}, 180_000 * inject("budgetScale"));
 
 describe("period drill acceptance worklist (NOT acceptance)", () => {
   it("is the reviewed worklist, printed on every run until it is empty", () => {
@@ -90,8 +97,12 @@ describe("period drill acceptance worklist (NOT acceptance)", () => {
     for (const [id, metres] of misses)
       console.log(`  miss: ${id}: ${(metres * 1000).toFixed(1)} mm`);
     const known = new Set(DRILLS.map((drill) => drill.clip));
-    for (const id of [...worklist.missingKeys, ...Object.keys(worklist.misses)])
+    for (const id of Object.keys(worklist.misses))
       expect(known.has(id.split(" ").find((word) => known.has(word)) ?? ""), id).toBe(true);
+    // A listed count without a key must still be a count of the drill.
+    const counts = new Set(DRILLS.flatMap((drill) => drill.counts.map((c) => keyId(drill, c))));
+    for (const id of worklist.missingKeys)
+      expect(counts.has(id), `${id} is no longer a count: take it off the worklist`).toBe(true);
   });
 
   it.each(DRILLS)(
@@ -112,7 +123,12 @@ describe("period drill acceptance worklist (NOT acceptance)", () => {
     (drill) => {
       const failures: string[] = [];
       const mm = (metres: number) => `${(metres * 1000).toFixed(1)} mm`;
-      for (const { id, measured, bound } of drillFindings(drill)) {
+      const findings = drillFindings(drill);
+      const judged = new Set(findings.map((f) => f.id));
+      for (const id of Object.keys(worklist.misses))
+        if (id.includes(` ${drill.clip} @`) && !judged.has(id))
+          failures.push(`${id}: no longer judged: take it off the worklist`);
+      for (const { id, measured, bound } of findings) {
         const recorded = worklist.misses[id];
         if (recorded === undefined) {
           if (measured > bound)

@@ -128,6 +128,8 @@ export default defineConfig({
           // runs scale both budgets (`budget`, above).
           testTimeout: budget(30_000),
           hookTimeout: budget(10_000),
+          // A test that sets its own budget scales it the same way (`inject("budgetScale")`).
+          provide: { budgetScale: instrumented ? INSTRUMENTED_SLOWDOWN : 1 },
           // A full set of model fixtures is memory- and CPU-heavy.  Two workers
           // preserve independent-file coverage without oversubscribing a hosted
           // runner (which otherwise turns deterministic geometry assertions into
