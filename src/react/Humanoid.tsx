@@ -1163,7 +1163,6 @@ export function Humanoid({
   const presenceContext = usePresenceContext();
   if (presence && !presenceContext)
     throw new Error("<Humanoid presence> must be used inside <PresenceProvider>");
-  usePublishPresence(presence?.id, groupRef, presenceSource);
   // Lifts the figure so its soles meet the declared ground position.
   const [lift, setLift] = useState(0);
   const onEvaluatedRef = useLatest(onEvaluated);
@@ -1654,6 +1653,11 @@ export function Humanoid({
     support: animationSupport,
     report,
   });
+  // After `useFigureAnimation`: React cleans a component's effects up in the order they were
+  // declared, so on unmount the animation releases its frame binding (observers hear
+  // `released`) before the presence leaves the registry, which would otherwise tell them
+  // `removed` (docs/INTERACTION-SESSION.md, "Mount and unmount of a figure").
+  usePublishPresence(presence?.id, groupRef, presenceSource);
   // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.
   useFrame(() => affordancesRef.current?.refreshClip(), FIGURE_FRAME_PRIORITY);
   const rotationsRef = useLatest(rotations);
