@@ -3486,8 +3486,8 @@ clip is loaded when first played, and the pack is optional, like the hair pack.
 **Requirements.** A clip says nothing about one body's proportions, so it plays on
 every body. A planted foot stays planted on any body: no skating. Nothing is
 allocated per frame once a figure is playing. Only clips whose licence is proven
-are packed, by the repository's licence rule. The adult animations are a separate
-later package that refuses participants under 18, and are not here. Interactions
+are packed, by the repository's licence rule. No adult animations are packed or
+planned; that content belongs to Anyself, a commercial game (issue 105). Interactions
 between participants (roles, slots, synchronised tracks, contacts and signals)
 are the contract in [Interactions](INTERACTIONS.md).
 
@@ -4341,10 +4341,10 @@ Milestones, in the order each is proven (built in parallel lanes; see
 7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,
    including `.mhclo` assets with `delete_verts` (see "Clothing"). Planned: fur,
    scales and feathers as layers (issue 99).
-8. **Animation packs.** Implemented: `humanoid-kit-animations`. Pending an owner
-   ruling on whether it belongs in this repository (issue 105): a separate
-   `humanoid-kit-adult-animations` that refuses any participant under 18.
-   Presence is implemented ("Presence"); the interaction core is in progress,
+8. **Animation packs.** Implemented: `humanoid-kit-animations`. No adult
+   animation package: by the owner's ruling (issue 105) that content belongs to
+   Anyself, a commercial game; the kit keeps the generic tooling for adding
+   animations and the age checks. Presence is implemented ("Presence"); the interaction core is in progress,
    with slices 1 and 2 built and the later slices tracked (issues 100 to 104).
    How figures, objects and fixtures offer, claim and
    play interactions together, and where the age policy is enforced in them, is

@@ -190,12 +190,13 @@ presence, so getting self-contact right is most of partner contact
   - Signal writes go through `assertSignalPolicy`. A beat's signal effect
     (`{ signal: role, change }`) goes through the host's `applySignals` to the
     figure's evaluation.
-  - Adult definitions and clips live in the age-gated adult package (#105),
-    never in the core source.
+  - The kit ships no adult definitions or clips: by the owner's ruling on #105
+    that content belongs to Anyself, a commercial game. The core source names
+    none, and an application's own definitions get the checks above.
 - **R11, regional responses stay region-owned.** The constraint emits a
   validated `RegionalContact` each frame it is in contact. It maps no response
-  itself. A response profile (core for the mouth's opening, the adult package
-  for genital, anal and nipple arousal) is selected by the consumer, as
+  itself. A response profile (core for the mouth's opening, the adult anatomy
+  pack for genital, anal and nipple arousal) is selected by the consumer, as
   `docs/REGIONAL-CONTACTS.md` requires. There is no universal dispatcher.
 - **R12, own-body clipping.** A figure's own finger inside its own mouth,
   nostril or canal is clipped like any other occupant. `channelClip` today
@@ -231,5 +232,5 @@ two arms carry two contacts. Option 3 is still how *posture* is supplied (R7).
 | 4 | `RegionalContact` emission; response profiles; the core oral profile (lips part, jaw opens to fit a finger) | Profile lifecycle tests. A minor's adult signals stay 0, and an adult definition is refused (`interactionAgeGate`). |
 | 5 | Own-body clipping; adult apertures (vagina, anus) declared by the pack, opening to fit an occupant | Clip test with the figure's own finger. Canal aperture follows the occupant radius; the inside part is clipped; `consumed` is written for edible objects. |
 | 6 | Idle clip set (all ages), layering, two arms, queueing | Each clip on four bodies: contact ≤ 5 mm through its loop; sheets read. |
-| 7 | Adult package: adult sites' response profiles and adult clips | Age-gate refusals. Arousal and moisture rise with contact and decay after it. Sheets read. |
+| 7 | Adult anatomy pack: adult sites' response profiles (physiology only; no adult clips, #105) | Age-gate refusals. Arousal and moisture rise with contact and decay after it. Sheets read. |
 | 8 | Partner contact: the site on another presence | The same contact gates between two figures. |

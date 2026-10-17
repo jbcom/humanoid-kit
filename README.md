@@ -253,7 +253,7 @@ Status per milestone. The architecture notes carry the detail
 | Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
 | Anthro traits | Planned (issue 97). The shared coat module for body hair and fur is built |
 | Fur, scales and feathers as layers | Planned (issue 99) |
-| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope (issue 105) |
+| Animation | `humanoid-kit-animations` is done. No adult animation package is planned: that content belongs to Anyself, a commercial game, and the kit keeps only the generic tooling for adding animations and its age checks (issue 105) |
 | Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices and the rest are tracked (issues 100 to 104) |
 
 ## Compatibility
