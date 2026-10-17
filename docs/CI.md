@@ -15,25 +15,20 @@ automation remain tied to that branch.
   runs lint, documentation lint, typecheck, build and package validation, and
   four unit jobs run the unit project in Vitest file shards (`--shard=N/4`).
   Every shard is required, so together they run every unit file exactly once.
-  Bake has its own uninstrumented job on both Nodes. Browser validation has six
-  software-rendered jobs per Node; Vitest assigns every browser test file to
-  exactly one shard. The **Metal lane** has its own required standard `macos-15`
-  job on both Nodes, which first rejects a non-Metal renderer. It runs the browser
-  files SwiftShader cannot finish within the job ceiling:
-  - `affordanceGpu` (hardware readback);
-  - `coatPlacement` (every authored facial asset's jaw matrix: 827 s on a hosted
-    SwiftShader shard);
-  - `creatorHosting` (the creator's hosting flows: every click waits out
-    software frames, and one test reached 130 s against its 120 s budget).
+  Bake has its own uninstrumented job on both Nodes. This keeps every source,
+  runtime and published-package check on both supported releases.
+- **Browser validation** runs the whole browser project in three required jobs
+  on the standard `macos-15` runner's Metal GPU. Each job first rejects a
+  non-Metal renderer, and Vitest assigns every browser file to exactly one
+  shard. Browser tests execute in Chromium, so they run once, on the pinned
+  Node (`.nvmrc`).
+- **Coverage unit shards 1/6 through 6/6** and **coverage browser shards 1/3
+  through 3/3** (Metal, as above) run their projects with V8 coverage.
+  `tests/ciGate.test.ts` checks two things:
+  - every browser job runs the whole project on a required Metal renderer;
+  - every sharded job runs shards 1 to N of the N it names.
 
-  This keeps every source, runtime and published-package check on both
-  supported releases.
-- **Coverage unit shards 1/6 through 6/6**, **coverage browser shards 1/6
-  through 6/6**, and the required **browser Metal lane** coverage job run their
-  projects with V8 coverage. The software shards exclude exactly the Metal lane's
-  files; the Metal coverage job runs those files and uploads their blob.
-  `tests/ciGate.test.ts` checks that the two lists are the same, and that every
-  sharded job runs shards 1 to N of the N it names. Every job writes a labelled blob artifact and the
+  Every job writes a labelled blob artifact and the
   normal terminal reporter, so a failed test retains its witness in the job log.
   A partial shard cannot meet suite-wide coverage by itself, so it deliberately
   defers threshold evaluation to the required merge job.
@@ -41,8 +36,8 @@ automation remain tied to that branch.
   separately. A failed shard or a missing artifact stops this job. V8 stores
   absolute source URLs in each blob, so the merge maps the macOS checkout root
   to its own Ubuntu checkout before Vitest verifies that source files exist. It
-  also requires exactly one labelled blob for each unit/browser shard and the
-  Metal proof before merging. It then merges the blobs under the unchanged
+  also requires exactly one labelled blob for each unit and browser shard
+  before merging. It then merges the blobs under the unchanged
   thresholds in `vitest.config.ts`
   (90% lines, functions and statements; 85% branches), emits
   `coverage/lcov.info`, and uploads that exact file.
@@ -78,11 +73,14 @@ had a green CI run since. These were the measurements:
 - the browser shard holding `coatPlacement.test.tsx` was cancelled after 827
   seconds in that one file.
 
-The unit project therefore runs as four shards per Node, coverage as six, and
-the Metal lane takes the browser files that need a GPU's frame rate. Per-test
-timeouts and assertions are unchanged. The Metal job ceiling rose from 10 to 20
-minutes because the job now runs three files instead of one, and it stays the
-same ceiling as every other job.
+The unit project therefore runs as four shards per Node and coverage as six.
+The browser project moved whole to the standard macOS Metal runner. A first
+step that moved only the slowest files there showed the gap: `coatPlacement`
+took 21 seconds on that runner against 827 under SwiftShader. The next
+SwiftShader shard then failed on `sphereParity` (four cases timed out, 1123
+seconds) and on `fluidPosedSurfaceFrame` (300 seconds). Hosted SwiftShader is
+no longer the repeatable path for this suite. Per-test timeouts and assertions
+are unchanged.
 
 ## Standard macOS Metal evidence
 

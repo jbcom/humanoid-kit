@@ -3761,12 +3761,16 @@ spread at most 3, absolute lightness error at most 4, lightness spread at most
 only with a measured replacement claim; a renderer, platform or timeout never
 justifies a relaxed comparison.
 
-SwiftShader (`HK_GPU=software` under `xvfb-run`) is the repeatable CI execution
-path. It has the longer 120 second browser-test timeout because it is slower;
-it is not visual acceptance. Headed local Chromium and the admitted headless
-Metal render lane provide the hardware evidence. Results from those paths are
-compared to the assertion that names the path, never by silently widening an
-assertion for a different renderer.
+CI runs the browser project and the playground suite on the standard `macos-15`
+runner's Metal GPU (`HK_GPU=macos-hardware-metal`, renderer asserted first),
+the canonical GPU proof (docs/CI.md). SwiftShader (`HK_GPU=software`) remains a
+local and render-pool software reference. It has the longer 120 second
+browser-test timeout because it is slower, and it is not visual acceptance.
+Hosted SwiftShader can no longer finish the suite within the job ceiling.
+Headed local Chromium and the headless Metal render lane provide further
+hardware evidence. Results from those paths are compared to the assertion that
+names the path, never by silently widening an assertion for a different
+renderer.
 
 The Vitest and Playwright skip ledgers record every observed skip with its
 declared reason. CI fails for a skip that is not in the finite expected-skip

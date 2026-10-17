@@ -12,7 +12,6 @@ export const REQUIRED_JOBS = [
   "verify-static",
   "verify-unit",
   "verify-browser",
-  "verify-affordance-gpu-metal",
   "verify-bake",
   "coverage-merge",
   "docs",

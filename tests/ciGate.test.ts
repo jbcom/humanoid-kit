@@ -79,24 +79,21 @@ describe("CI gate verdict", () => {
     }
   });
 
-  it("runs every browser file once: what the SwiftShader shards exclude, each Metal lane runs", () => {
+  it("runs the whole browser project on a required Metal renderer, excluding no file", () => {
     const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
     const jobs = new Map(
       workflow
         .split(/\n {2}(?=[a-z][a-z-]*:\n)/)
         .map((job) => [job.slice(0, job.indexOf(":")), job] as const),
     );
-    const files = (text: string, pattern: RegExp) =>
-      [...text.matchAll(pattern)].map((m) => m[1] as string).sort();
-    const excluded = (name: string) =>
-      files(jobs.get(name) ?? "", /--exclude (tests\/browser\/\S+\.test\.tsx?)/g);
-    const lane = (name: string) =>
-      files(jobs.get(name) ?? "", /^\s+(tests\/browser\/\S+\.test\.tsx?)$/gm);
-    const swiftShader = excluded("verify-browser");
-    expect(swiftShader.length).toBeGreaterThan(0);
-    expect(excluded("coverage-browser-shard")).toEqual(swiftShader);
-    expect(lane("verify-affordance-gpu-metal")).toEqual(swiftShader);
-    expect(lane("coverage-affordance-gpu-metal")).toEqual(swiftShader);
+    for (const name of ["verify-browser", "coverage-browser-shard"]) {
+      const job = jobs.get(name) ?? "";
+      expect(job, `${name} runs the browser project`).toContain("--project browser");
+      expect(job, `${name} runs on macOS`).toMatch(/runs-on: macos-/);
+      expect(job, `${name} rejects a non-Metal renderer`).toContain("assertMetalRenderer.mjs");
+      expect(job, `${name} asks for Metal`).toContain("HK_GPU: macos-hardware-metal");
+      expect(job, `${name} excludes nothing`).not.toContain("--exclude");
+    }
   });
 
   it("exits non-zero from the command the workflow runs when a job is skipped", () => {
