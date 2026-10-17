@@ -366,9 +366,12 @@ jobs:
   e2e:
     name: Playground e2e
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: ubuntu-24.04
-    # Software rendering: the suite's budgets are four times its GPU ones (e2e/budget.ts).
-    timeout-minutes: 45
+    # The suite is the playground as people see it, on a GPU: the hosted macOS
+    # runner's Metal at the GPU budgets (e2e/budget.ts). Under hosted SwiftShader
+    # it was cancelled at 45 minutes on every run from 2026-10-14: its frame-rate-
+    # bound walks sampled too few frames and figures never settled in budget.
+    runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -377,13 +380,18 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      # Headed under a virtual display; see playwright.config.ts for the renderer choice.
-      - run: xvfb-run --auto-servernum pnpm test:e2e
-      # Hosted rendering is software, so the cases that need a GPU lane skip here by design.
+      - run: pnpm exec playwright install chromium
+      - name: Require a Metal WebGL renderer
+        run: node scripts/ci/assertMetalRenderer.mjs
+      - name: Run the playground suite on Metal
+        env:
+          HK_GPU: macos-hardware-metal
+          PW_HEADLESS: "1"
+        run: pnpm test:e2e
+      # This is the GPU lane, so a GPU-lane skip fails the ledger rather than being counted.
       # Every skip must carry a known reason; the ledger counts them for the coverage gate.
       - name: Account for skipped e2e tests
-        run: node scripts/ci/skipLedger.ts test-results/e2e-report.json test-results/skip-ledger.json --lane software
+        run: node scripts/ci/skipLedger.ts test-results/e2e-report.json test-results/skip-ledger.json --lane gpu
       - name: Upload the e2e skip ledger
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

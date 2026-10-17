@@ -80,6 +80,9 @@ export default definePlaywrightConfig({
   ],
   overrides: {
     outputDir: "./test-results",
+    // The adult-defaults lab needs the dev server's adult pack, which the suite's
+    // production build never has: it runs only as its own project.
+    testIgnore: adultDefaultsLab ? [] : [/effective-adult-defaults\.spec\.ts$/],
     fullyParallel: true,
     // SwiftShader already spreads one page's rendering over every core (a lone
     // creator test uses ~8 locally); parallel workers only starve each other.

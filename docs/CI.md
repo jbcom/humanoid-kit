@@ -49,7 +49,11 @@ automation remain tied to that branch.
 - **SonarCloud** depends on the merged-LCOV gate and scans that artifact; it no
   longer starts a second coverage run.
 - Docs, end-to-end, Lighthouse and pre-commit remain independent required
-  checks. The final `CI / gate` requires Node validation, the merged coverage
+  checks. The end-to-end suite runs on the standard `macos-15` runner's Metal
+  at the GPU budgets, and its skip ledger runs as the GPU lane, so a GPU-lane
+  skip fails it. Under hosted SwiftShader it was cancelled at 45 minutes on
+  every run. On the `.202` Metal render host the whole suite finishes in
+  2.8 minutes. The final `CI / gate` requires Node validation, the merged coverage
   gate, and every applicable check to succeed.
 
 ## Why the split exists
