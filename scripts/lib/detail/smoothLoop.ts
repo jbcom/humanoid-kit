@@ -25,6 +25,7 @@
 import type { AdultSurfacePatch } from "../../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
 import type { Disc, Vec3 } from "./disc.ts";
+import { discAngle, nearestTriangle, type OnTriangle, triangleHolding } from "./discPick.ts";
 import type { SculptPart } from "./sculpt.ts";
 import { meanValueDisc } from "./transfer.ts";
 
@@ -59,51 +60,6 @@ function radiusOn(curve: readonly Polar[], angle: number): number {
   return p.r + (q.r - p.r) * Math.min(1, off / span);
 }
 
-/** A point on a triangle: the triangle, and its corners' weights. */
-interface OnTriangle {
-  tri: number;
-  w: number[];
-}
-
-/** The point of triangle `a b c` nearest `p`, as weights on its corners (Ericson, 5.1.5). */
-function closestOnTriangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3): number[] {
-  const sub = (x: Vec3, y: Vec3): Vec3 => [x[0] - y[0], x[1] - y[1], x[2] - y[2]];
-  const dot = (x: Vec3, y: Vec3) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
-  const ab = sub(b, a);
-  const ac = sub(c, a);
-  const ap = sub(p, a);
-  const d1 = dot(ab, ap);
-  const d2 = dot(ac, ap);
-  if (d1 <= 0 && d2 <= 0) return [1, 0, 0];
-  const bp = sub(p, b);
-  const d3 = dot(ab, bp);
-  const d4 = dot(ac, bp);
-  if (d3 >= 0 && d4 <= d3) return [0, 1, 0];
-  const vc = d1 * d4 - d3 * d2;
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-    const v = d1 / (d1 - d3);
-    return [1 - v, v, 0];
-  }
-  const cp = sub(p, c);
-  const d5 = dot(ab, cp);
-  const d6 = dot(ac, cp);
-  if (d6 >= 0 && d5 <= d6) return [0, 0, 1];
-  const vb = d5 * d2 - d1 * d6;
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-    const w = d2 / (d2 - d6);
-    return [1 - w, 0, w];
-  }
-  const va = d3 * d6 - d5 * d4;
-  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-    return [0, 1 - w, w];
-  }
-  const denom = 1 / (va + vb + vc);
-  const v = vb * denom;
-  const w = vc * denom;
-  return [1 - v - w, v, w];
-}
-
 /**
  * A closed curve of points on a surface of triangles made smooth on the surface itself:
  * Taubin's passes (a step toward the midpoint of each point's neighbours, then a slightly
@@ -127,20 +83,7 @@ function fairOnSurface(
       wa * a[2] + wb * b[2] + wc * c[2],
     ];
   };
-  const nearest = (p: Vec3): OnTriangle => {
-    let best: OnTriangle = { tri: 0, w: [1, 0, 0] };
-    let bestD = Number.POSITIVE_INFINITY;
-    for (let t = 0; t < triangleCount; t++) {
-      const w = closestOnTriangle(p, corner(t, 0), corner(t, 1), corner(t, 2));
-      const q = pointOf({ tri: t, w });
-      const d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2;
-      if (d < bestD) {
-        bestD = d;
-        best = { tri: t, w };
-      }
-    }
-    return best;
-  };
+  const nearest = (p: Vec3): OnTriangle => nearestTriangle(p, triangleCount, corner);
   const n = start.length;
   let on = [...start];
   for (let pass = 0; pass < FAIR_PASSES; pass++)
@@ -445,8 +388,7 @@ export function smoothLoopPatch(
   };
   const angleOf = (v: number) => {
     const [x, y] = discOf(v);
-    const a = Math.atan2(y, x);
-    return a < 0 ? a + 2 * Math.PI : a;
+    return discAngle(x, y);
   };
   const radiusOf = (v: number) => Math.hypot(...discOf(v));
   // The staircase inside the band, the boundary of the polygons kept in the cap; for a
@@ -480,38 +422,21 @@ export function smoothLoopPatch(
     return Math.min(hi, Math.max(lo, inner));
   });
   // Each loop vertex: the point of the region's triangle that holds its disc place.
-  const locate = (x: number, y: number) => {
-    let best = 0;
-    let bestW: number[] = [1, 0, 0];
-    let bestOut = Number.POSITIVE_INFINITY;
-    for (let t = 0; t < triangles.length / 3; t++) {
-      const [a, b, c] = [0, 1, 2].map((k) => triangles[t * 3 + k] as number) as [
-        number,
-        number,
-        number,
-      ];
-      const ax = uv[a * 2] as number;
-      const ay = uv[a * 2 + 1] as number;
-      const v0x = (uv[b * 2] as number) - ax;
-      const v0y = (uv[b * 2 + 1] as number) - ay;
-      const v1x = (uv[c * 2] as number) - ax;
-      const v1y = (uv[c * 2 + 1] as number) - ay;
-      const den = v0x * v1y - v1x * v0y;
-      const s = ((x - ax) * v1y - v1x * (y - ay)) / den;
-      const r = (v0x * (y - ay) - (x - ax) * v0y) / den;
-      const w = [1 - s - r, s, r];
-      const out = -Math.min(...w);
-      if (out < bestOut) {
-        bestOut = out;
-        best = t;
-        bestW = w;
-        if (out <= 0) break;
-      }
-    }
-    const clamped = bestW.map((v) => Math.max(0, v));
-    const sum = clamped.reduce((s, v) => s + v, 0);
-    return { tri: best, w: clamped.map((v) => v / sum) };
+  const discCorners = (t: number): [number, number, number, number, number, number] => {
+    const a = triangles[t * 3] as number;
+    const b = triangles[t * 3 + 1] as number;
+    const c = triangles[t * 3 + 2] as number;
+    return [
+      uv[a * 2] as number,
+      uv[a * 2 + 1] as number,
+      uv[b * 2] as number,
+      uv[b * 2 + 1] as number,
+      uv[c * 2] as number,
+      uv[c * 2 + 1] as number,
+    ];
   };
+  const locate = (x: number, y: number): OnTriangle =>
+    triangleHolding(triangles.length / 3, discCorners, x, y) as OnTriangle;
   // Each loop vertex where its disc place falls on the region, then faired on the
   // surface (`fairOnSurface`), and its place in the disc read back from where it lands.
   const onRegion = fairOnSurface(
@@ -536,8 +461,7 @@ export function smoothLoopPatch(
   });
   const loopAngle = (j: number) => {
     const [x, y] = discPlaces[j] as [number, number];
-    const a = Math.atan2(y, x);
-    return a < 0 ? a + 2 * Math.PI : a;
+    return discAngle(x, y);
   };
   // The faired loop must still run round the disc in order, strictly between the staircases.
   const outerPolar = outer.map((v) => ({ a: angleOf(v), r: radiusOf(v) }));
@@ -582,36 +506,17 @@ export function smoothLoopPatch(
       weights = w;
     } else {
       const [x, y] = discPlaces[j] as [number, number];
-      let best = -1;
-      let bestW: number[] = [];
-      let bestOut = Number.POSITIVE_INFINITY;
-      for (let t = 0; t < triangles.length / 3; t++) {
-        if (chartOf.get(triPolygon[t] as number) !== chart) continue;
-        const [a, b, c] = [0, 1, 2].map((k) => triangles[t * 3 + k] as number) as [
-          number,
-          number,
-          number,
-        ];
-        const ax = uv[a * 2] as number;
-        const ay = uv[a * 2 + 1] as number;
-        const v0x = (uv[b * 2] as number) - ax;
-        const v0y = (uv[b * 2 + 1] as number) - ay;
-        const v1x = (uv[c * 2] as number) - ax;
-        const v1y = (uv[c * 2 + 1] as number) - ay;
-        const den = v0x * v1y - v1x * v0y;
-        const s = ((x - ax) * v1y - v1x * (y - ay)) / den;
-        const r = (v0x * (y - ay) - (x - ax) * v0y) / den;
-        const ww = [1 - s - r, s, r];
-        const out = -Math.min(...ww);
-        if (out < bestOut) {
-          bestOut = out;
-          best = t;
-          bestW = ww;
-        }
-      }
-      if (best < 0) throw new Error(`smooth loop: no triangle in chart ${chart}`);
-      from = [0, 1, 2].map((k) => ids[triangles[best * 3 + k] as number] as number);
-      weights = bestW;
+      const held = triangleHolding(
+        triangles.length / 3,
+        discCorners,
+        x,
+        y,
+        (t) => chartOf.get(triPolygon[t] as number) === chart,
+        false,
+      );
+      if (!held) throw new Error(`smooth loop: no triangle in chart ${chart}`);
+      from = [0, 1, 2].map((k) => ids[triangles[held.tri * 3 + k] as number] as number);
+      weights = held.w;
     }
     uvs.push({
       from: from.map((u) => uvIn.get(`${u}:${chart}`) as number),
