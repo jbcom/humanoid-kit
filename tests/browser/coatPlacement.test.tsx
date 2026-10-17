@@ -501,9 +501,13 @@ describe("the coat on a figure", () => {
       const screen = await render(<Figure recipe={bearded} />);
       await expect.poll(() => facialMesh()?.visible === true, LOAD).toBe(true);
       const beard = facialMesh() as SkinnedMesh;
-      expect(beard.geometry.getAttribute("position").count).toBe(6557);
+      // The renderer draws the worker's render topology of the style (its 6557
+      // source vertices expanded into bound cards, tests/beardAssets.test.ts), whole.
+      const topology = client.hairTopology("beard-viking");
+      expect(beard.geometry.getAttribute("position").count).toBe(topology?.vertexCount);
+      expect(beard.geometry.index?.count).toBe(topology?.index.length);
       await screen.rerender(<Figure recipe={createRecipe({ hair: { style: null } })} />);
-      await expect.poll(() => facialMesh()).toBeNull();
+      await expect.poll(() => facialMesh(), LOAD).toBeNull();
     },
     LOAD.timeout,
   );
