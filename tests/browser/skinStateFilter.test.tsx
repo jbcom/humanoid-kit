@@ -70,9 +70,12 @@ describe("useSkinStateFilter", () => {
     const seen: Record<string, number>[] = [];
     const screen = await render(<Probe target={{ cold: 0 }} seen={seen} />);
     await screen.rerender(<Probe target={{ cold: 1 }} seen={seen} />);
-    await sleep(20);
+    // Waits for the first eased frame, however long the display's frame is (a
+    // virtual GPU draws one in about 90 ms), rather than for a 60 Hz frame's time.
+    await expect.poll(() => seen.at(-1)?.cold ?? 0).toBeGreaterThan(0);
     const mid = seen.at(-1)?.cold as number;
-    expect(mid).toBeGreaterThan(0);
+    // Part of the way: the 80 ms time constant reaches 1 only after about 0.55 s.
+    expect(mid).toBeLessThan(1);
     await screen.rerender(<Probe target={{ cold: 1 }} seen={seen} />);
     // Still on its way up, not back at 0.
     expect(seen.at(-1)?.cold as number).toBeGreaterThanOrEqual(mid);
