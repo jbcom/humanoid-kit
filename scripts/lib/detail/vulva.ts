@@ -48,15 +48,8 @@ import { MH_UNIT } from "../compileAsset.ts";
 import { bindToBody } from "../hairCards/bind.ts";
 import type { Vec3 } from "./disc.ts";
 import { regionIndex, regionNeighbours } from "./region.ts";
-import {
-  boundaryLoop,
-  boundSource,
-  readObj,
-  restBody,
-  SCULPT_SOURCES,
-  type SculptPart,
-  sourceCuts,
-} from "./sculpt.ts";
+import { boundaryLoop, boundSource, parseObj, restBody, type SculptPart } from "./sculpt.ts";
+import { sculptCuts, sculptFile } from "./sculptSources.ts";
 import { applySimilarity, fitRigid, fitSimilarity } from "./similarity.ts";
 
 /** The source the vulva is cut from. */
@@ -69,7 +62,7 @@ export const VULVA_SIZE = "genitals/vulva-size";
 export const VULVA_TARGET = "genitals/vulva-k1";
 
 /**
- * The sheet the transfer takes, in the source's own units before `readObj`'s scaling
+ * The sheet the transfer takes, in the source's own units before `parseObj`'s scaling
  * (y up, +z forward): an ellipse across the crotch, seen from below, round the majora,
  * the minora and the vestibule (they span x -0.20 to 0.20, z -0.17 to 1.00 and y -0.82
  * to -0.45) with a margin of plain skin, above the cleft's floor, below which the
@@ -127,10 +120,10 @@ export interface PlacedVulva extends SculptPart {
  * carried rigidly with its edge. Its boundary is its edge, in order.
  */
 export function placeVulva(assets: HumanoidAssets, figure: Float32Array): PlacedVulva {
-  const cuts = sourceCuts(VULVA_SOURCE);
+  const cuts = sculptCuts(VULVA_SOURCE);
   if (!cuts.parts.vulva?.disc) throw new Error(`sculpt ${VULVA_SOURCE}: no vulva cut as a disc`);
   const body = restBody(assets);
-  const cut = readObj(`${SCULPT_SOURCES}/${VULVA_SOURCE}/vulva.obj`);
+  const cut = parseObj(sculptFile(VULVA_SOURCE, "vulva.obj").toString("utf8"));
   const sheet = sheetOf(cut.positions, cut.faces);
   const { obj, placed } = boundSource(VULVA_SOURCE, body.positions);
   const lo = [Infinity, Infinity, Infinity];
@@ -180,7 +173,7 @@ export function placeVulva(assets: HumanoidAssets, figure: Float32Array): Placed
   );
   const positions = new Float64Array(n * 3);
   for (let v = 0; v < n; v++) positions.set(applySimilarity(carry, point3(atRest, v)), v * 3);
-  // A landmark goes where the sheet does: `readObj` scales the source's units by MH_UNIT.
+  // A landmark goes where the sheet does: `parseObj` scales the source's units by MH_UNIT.
   const landmark = (p: readonly number[]) =>
     applySimilarity(carry, applySimilarity(fit, p.map((x) => x * MH_UNIT) as unknown as Vec3));
   return {
@@ -204,7 +197,7 @@ function sheetOf(
   const [z0, z1] = VULVA_SHEET.z;
   const inside = new Uint8Array(n);
   for (let v = 0; v < n; v++) {
-    // `readObj` scaled the source's units by MH_UNIT.
+    // `parseObj` scaled the source's units by MH_UNIT.
     const x = (positions[v * 3] as number) / MH_UNIT / VULVA_SHEET.x;
     const z = ((positions[v * 3 + 2] as number) / MH_UNIT - (z0 + z1) / 2) / ((z1 - z0) / 2);
     if (x * x + z * z < 1 && (positions[v * 3 + 1] as number) / MH_UNIT > VULVA_SHEET.floor)

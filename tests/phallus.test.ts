@@ -29,11 +29,15 @@ import {
 } from "../scripts/lib/detail/root.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
 import { flatShape, skirtOnto } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
+
+// The sculpts are fetched and verified, and their cuts regenerated, not committed.
+await ensureSculptSources();
 
 /**
  * The phallic organ (scripts/lib/detail/phallus.ts): two CC0 sculpts' shafts and

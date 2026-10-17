@@ -1,7 +1,9 @@
 /**
  * A part cut from a CC0 sculpt (`scripts/blender/cut_sculpt.py`), placed on our
  * base and on the figure detail is authored against (docs/research/
- * ADULT-SCULPT-PLAN.md, section 6d, steps 1 and 2).
+ * ADULT-SCULPT-PLAN.md, section 6d, steps 1 and 2). The sculpts and their cuts are
+ * not in the repository: `sculptSources.ts` downloads them, regenerates the cuts and
+ * verifies every file against its recorded hash, and every read here goes through it.
  *
  * A source's coordinates are those of whatever figure its author fitted it to,
  * not hm08 at rest. The asset's own binding (CC0, by its page) says where it sits
@@ -18,22 +20,14 @@
  * the thighs and its back to the perineum; on a figure whose thighs and groin moved
  * apart from rest, those pieces went with them and tore the sac into strips.
  */
-import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { groupFaces, type HumanoidAssets } from "../../../src/format/assetFormat.ts";
 import { type Bound, evaluateBinding } from "../../../src/mhclo/bound.ts";
 import { parseMhclo } from "../../../src/mhclo/parse.ts";
 import { MH_UNIT } from "../compileAsset.ts";
 import { type BodyMesh, bindToBody } from "../hairCards/bind.ts";
 import type { Vec3 } from "./disc.ts";
+import { sculptCuts, sculptFile } from "./sculptSources.ts";
 import { applySimilarity, fitRigid } from "./similarity.ts";
-
-/** Where the sources live: outside the published pack's files and anything the site builds from. */
-export const SCULPT_SOURCES = path.resolve(
-  import.meta.dirname,
-  "../../../packs/adult-anatomy/source",
-);
 
 /** A part on the figure: its surface, and its cut as an ordered loop of vertices. */
 export interface SculptPart {
@@ -55,10 +49,10 @@ export interface Obj {
  * source authored in metres comes out ten times small here, which its fit undoes:
  * the fit's per-axis scale is taken against where its binding puts it on our body.
  */
-export function readObj(file: string): Obj {
+export function parseObj(text: string): Obj {
   const positions: number[] = [];
   const faces: number[][] = [];
-  for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+  for (const raw of text.split(/\r?\n/)) {
     const w = raw.trim().split(/\s+/);
     if (w[0] === "v")
       positions.push(Number(w[1]) * MH_UNIT, Number(w[2]) * MH_UNIT, Number(w[3]) * MH_UNIT);
@@ -93,8 +87,6 @@ export function boundaryLoop(faces: readonly (readonly number[])[]): number[] {
   if (loop.length !== next.size) throw new Error("sculpt part: more than one boundary loop");
   return loop;
 }
-
-const sha256 = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /** The drawn body of these assets at rest, as a part is bound to it: its triangles and positions. */
 export function restBody(assets: HumanoidAssets): BodyMesh {
@@ -187,18 +179,13 @@ export const cutOutline = (part: SculptPart): Vec3[] =>
   ]);
 
 /**
- * A source's whole mesh (`readObj`) and where its own binding (offsets and all) puts
+ * A source's whole mesh (`parseObj`) and where its own binding (offsets and all) puts
  * each of its vertices on our body at `rest`.
  */
 export function boundSource(asset: string, rest: Float32Array): { obj: Obj; placed: Float32Array } {
-  const dir = path.join(SCULPT_SOURCES, asset);
-  // A clothes piece's binding is a .mhclo, a whole-body proxy's a .proxy: one format.
-  const file = [".mhclo", ".proxy"]
-    .map((ext) => path.join(dir, `${asset}${ext}`))
-    .find((f) => fs.existsSync(f));
-  if (!file) throw new Error(`sculpt ${asset}: no .mhclo or .proxy binding`);
-  const binding = parseMhclo(fs.readFileSync(file, "utf8"));
-  const obj = readObj(path.join(dir, binding.objFile));
+  // A whole-body proxy's binding is a .proxy, in the same format as a clothes piece's .mhclo.
+  const binding = parseMhclo(sculptFile(asset, `${asset}.proxy`).toString("utf8"));
+  const obj = parseObj(sculptFile(asset, binding.objFile).toString("utf8"));
   const n = obj.positions.length / 3;
   const s = binding.scale;
   const bound: Bound = {
@@ -217,22 +204,6 @@ export function boundSource(asset: string, rest: Float32Array): { obj: Obj; plac
     },
   };
   return { obj, placed: evaluateBinding(bound, rest, new Float32Array(n * 3)) };
-}
-
-/**
- * The cuts made from a source (`scripts/blender/cut_sculpt.py`), after checking the
- * source is the file they were cut from.
- */
-export function sourceCuts(asset: string): { parts: Record<string, { disc: boolean }> } {
-  const dir = path.join(SCULPT_SOURCES, asset);
-  const cuts = JSON.parse(fs.readFileSync(path.join(dir, "cuts.json"), "utf8")) as {
-    source: string;
-    sha256: string;
-    parts: Record<string, { disc: boolean }>;
-  };
-  if (sha256(path.join(dir, cuts.source)) !== cuts.sha256)
-    throw new Error(`sculpt ${asset}: ${cuts.source} is not the file its parts were cut from`);
-  return cuts;
 }
 
 /**
@@ -273,8 +244,7 @@ export function placeSculpt(
   body: BodyMesh,
   figure: Float32Array,
 ): SculptPart[] {
-  const dir = path.join(SCULPT_SOURCES, asset);
-  const cuts = sourceCuts(asset);
+  const cuts = sculptCuts(asset);
   const fit = sourceFit(asset, body.positions);
   const point = (p: ArrayLike<number>, v: number): Vec3 => [
     p[v * 3] as number,
@@ -284,7 +254,7 @@ export function placeSculpt(
   const parts = names.map((name) => {
     if (!cuts.parts[name]?.disc)
       throw new Error(`sculpt ${asset}: part ${name} was not cut as a disc`);
-    const obj = readObj(path.join(dir, `${name}.obj`));
+    const obj = parseObj(sculptFile(asset, `${name}.obj`).toString("utf8"));
     const atRest = Float32Array.from(obj.positions, (x, i) => {
       const [a, b] = fit[i % 3] as [number, number];
       return a * x + b;

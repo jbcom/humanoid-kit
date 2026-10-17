@@ -1,9 +1,11 @@
 """Cut the parts the adult pack transfers out of a sculpted genital mesh: the
 phallus and the scrotum of the male sources, the vulva of the female one.
 
-Run headless (the adult lane runs it through `heavy`):
+The packer runs this itself, headless, on each source it has downloaded and verified
+(`scripts/lib/detail/sculptSources.ts`); the sources and the cuts are not committed.
+By hand:
 
-    Blender -b --factory-startup --python scripts/blender/cut_sculpt.py -- <src.obj> <out-dir>
+    Blender -b --factory-startup --python scripts/blender/cut_sculpt.py -- <src.obj> <out-dir> [--no-render]
 
 The source is a MakeHuman-format mesh in its own coordinates and units (y up,
 the figure facing +z; decimetres for a clothes piece, metres for some whole-body
@@ -19,10 +21,12 @@ loop or, for skin, the skin round it), no non-manifold edge, Euler
 characteristic 1. The script fails otherwise.
 
 Writes, per part, `<out-dir>/<part>.obj` (positions and quads, no normals or
-UVs) and `<out-dir>/cuts.json` (the source's sha256, the planes, and each
-part's topology numbers). Workbench renders of each part, from the front, the
-side, below and three-quarter, go to $HK_ADULT_RENDERS (default
-~/.cache/hk-adult/cuts): adult images never go where the public site builds from.
+UVs) and `<out-dir>/cuts.json` (the source's sha256, the planes, each part's
+topology numbers and the sha256 of the part file). The committed `cuts.json` is
+the record the packer checks a regenerated cut against. Unless `--no-render`,
+Workbench renders of each part, from the front, the side, below and
+three-quarter, go to $HK_ADULT_RENDERS (default ~/.cache/hk-adult/cuts): adult
+images never go where the public site builds from.
 """
 
 import hashlib
@@ -112,9 +116,11 @@ SUBDIVISIONS = 2
 
 def args():
     argv = sys.argv[sys.argv.index("--") + 1 :]
+    renders = "--no-render" not in argv
+    argv = [a for a in argv if a != "--no-render"]
     if len(argv) != 2:
-        raise SystemExit("usage: cut_sculpt.py -- <src.obj> <out-dir>")
-    return argv[0], argv[1]
+        raise SystemExit("usage: cut_sculpt.py -- <src.obj> <out-dir> [--no-render]")
+    return argv[0], argv[1], renders
 
 
 def load(src):
@@ -187,6 +193,7 @@ def cut(ob, spec):
 
 
 def write_obj(bm, path, header):
+    """Writes the part and returns the SHA-256 of the file as written."""
     bm.verts.index_update()
     with open(path, "w") as f:
         f.write(header)
@@ -194,6 +201,8 @@ def write_obj(bm, path, header):
             f.write("v %.6f %.6f %.6f\n" % tuple(v.co))
         for face in bm.faces:
             f.write("f " + " ".join(str(v.index + 1) for v in face.verts) + "\n")
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 def render(bm, stem):
@@ -243,7 +252,7 @@ def render(bm, stem):
 
 
 def main():
-    src, out = args()
+    src, out, renders = args()
     name = os.path.basename(src)
     if name not in CUTS:
         raise SystemExit(f"cut_sculpt.py: no cuts for {name}")
@@ -257,7 +266,6 @@ def main():
         bm = cut(ob, spec)
         t = topology(bm)
         ok = t["boundaryLoops"] == 1 and t["nonManifoldEdges"] == 0 and t["euler"] == 1
-        report["parts"][part] = {"planes": spec["planes"], "seed": spec["seed"], **t, "disc": ok}
         print(f"CUT {part}: {json.dumps(t)} disc={ok}")
         if not ok:
             failed.append(part)
@@ -265,8 +273,17 @@ def main():
             f"# {part}, cut by scripts/blender/cut_sculpt.py from {name} (sha256 {sha})\n"
             "# CC0: the source's page states CC0; see packs/adult-anatomy/source/PROVENANCE.md\n"
         )
-        write_obj(bm, os.path.join(out, f"{part}.obj"), header)
-        render(bm, f"{os.path.splitext(name)[0]}-{part}")
+        # objSha256 is what the packer checks a regenerated cut against (the cut is not committed).
+        obj_sha = write_obj(bm, os.path.join(out, f"{part}.obj"), header)
+        report["parts"][part] = {
+            "planes": spec["planes"],
+            "seed": spec["seed"],
+            **t,
+            "disc": ok,
+            "objSha256": obj_sha,
+        }
+        if renders:
+            render(bm, f"{os.path.splitext(name)[0]}-{part}")
         bm.free()
     with open(os.path.join(out, "cuts.json"), "w") as f:
         json.dump(report, f, indent=2)

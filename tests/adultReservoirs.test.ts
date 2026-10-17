@@ -5,6 +5,7 @@ import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
+import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
 import { placeVulva, VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
@@ -12,6 +13,9 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { surfaceTriangles } from "./detailPack.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
+
+// The sculpts are fetched and verified, and their cuts regenerated, not committed.
+await ensureSculptSources();
 
 /**
  * The adult pack's real reservoirs, as the packer places them where the sculpted

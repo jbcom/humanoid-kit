@@ -403,15 +403,20 @@ glans and corona, and one connected sac. The other male sculpts were looked at a
 not used for these parts. `Male_Gen-Heal1` and xsuprem3x's `adult_male_genitalia` have
 the small two-ball scrotum the sheets rejected. Heal1's erect shaft is not needed,
 because the erect state is the transferred form posed and grown (below).
-`packs/adult-anatomy/source/` holds the sources, the cut parts and their provenance.
-It is outside the published pack's `files` and outside anything the site builds from.
+`packs/adult-anatomy/source/` holds the sources' provenance (page, URL, SHA-256) and the
+cuts' records (`cuts.json`); the sources and the cut parts are not committed. The packer
+downloads and hash-verifies each source into a gitignored cache and regenerates the cuts
+there, failing closed (`scripts/lib/detail/sculptSources.ts`; the PROVENANCE file explains).
+The directory is outside the published pack's `files` and outside anything the site builds from.
 
 **Pipeline.**
 
-1. *Cut* (`scripts/blender/cut_sculpt.py`, headless Blender). The source is subdivided
-   twice (Catmull-Clark) and cut by half-spaces. The piece connected to a seed is kept.
-   A part must be a topological disc: one boundary loop, no non-manifold edge, Euler
-   characteristic 1. The script fails otherwise and writes its numbers to `cuts.json`.
+1. *Cut* (`scripts/blender/cut_sculpt.py`, headless Blender, run by the packer on each
+   verified source). The source is subdivided twice (Catmull-Clark) and cut by
+   half-spaces. The piece connected to a seed is kept. A part must be a topological disc:
+   one boundary loop, no non-manifold edge, Euler characteristic 1. The script fails
+   otherwise and writes its numbers, and the hash of each part, to `cuts.json`; the packer
+   accepts a regenerated cut only if it matches the committed `cuts.json`.
 2. *Fit* (`scripts/lib/detail/sculpt.ts`). The source's coordinates are those of the
    figure its author worked on, not hm08 at rest; `man_genital` sits 5 cm high. The
    asset's own binding (CC0, by its page and header) says where it sits on our base.

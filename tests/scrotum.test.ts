@@ -14,12 +14,16 @@ import {
   testisDimensions,
 } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
 import { fairCap } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 import { readSac } from "./sacShape.ts";
+
+// The sculpts are fetched and verified, and their cuts regenerated, not committed.
+await ensureSculptSources();
 
 /**
  * The scrotum (scripts/lib/detail/scrotum.ts): the CC0 sculpt's sac, with its own

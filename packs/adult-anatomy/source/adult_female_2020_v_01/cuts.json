@@ -92,7 +92,8 @@
       ],
       "nonManifoldEdges": 0,
       "euler": 1,
-      "disc": true
+      "disc": true,
+      "objSha256": "a996cc81886741c40f0778ea215e7261924659d02ab5c722821758b646f7d91c"
     }
   }
 }

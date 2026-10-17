@@ -71,6 +71,7 @@ import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { reservoirRoot } from "./lib/detail/root.ts";
 import { maleParts } from "./lib/detail/sculpt.ts";
+import { ensureSculptSources } from "./lib/detail/sculptSources.ts";
 import { placeVulva, vulvaSkinField, vulvaSkinMask } from "./lib/detail/vulva.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
@@ -458,6 +459,9 @@ function writeProvenance(
 
 // ---------------------------------------------------------------- main
 async function main() {
+  // The adult pack's community sculpts are not committed: download and verify them, and
+  // regenerate their cuts, before any output is written. Fails closed (sculptSources.ts).
+  await ensureSculptSources();
   fs.mkdirSync(BODY_OUT, { recursive: true });
   fs.mkdirSync(ADULT_OUT, { recursive: true });
   const obj = parseObj(read("3dobjs/base.obj"));
@@ -795,7 +799,7 @@ async function main() {
         },
       ),
     );
-  // The sculpted parts (packs/adult-anatomy/source), placed on the authoring figure;
+  // The sculpted parts (the verified sources and cuts in the sculpt cache), placed on the authoring figure;
   // the reservoirs are placed where they attach, on the surface as it is without them.
   const plain = interim();
   const authoringControl = plain.controlShape(AUTHORING_FIGURE).control;

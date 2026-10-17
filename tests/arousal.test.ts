@@ -14,6 +14,7 @@ import {
 import { type RootShape, reservoirRoot, restShape } from "../scripts/lib/detail/root.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
 import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { STATE_MORPHS } from "../src/makehuman/stateMorphs.ts";
@@ -27,6 +28,9 @@ import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import type { SkinTone } from "../src/surface/skinTone.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
+
+// The sculpts are fetched and verified, and their cuts regenerated, not committed.
+await ensureSculptSources();
 
 const withAdult = loadFixtureAssets(true);
 const core = loadFixtureAssets();

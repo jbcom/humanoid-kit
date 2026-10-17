@@ -30,5 +30,8 @@ docs/dist/
 # Local render artifacts are never public package inputs. Adult review
 # sheets among them are moved to a private cache after inspection.
 .heavy-slot/
+# The adult pack's community sculpts, downloaded and hash-verified at pack time, and the
+# cuts regenerated from them (scripts/lib/detail/sculptSources.ts). Never committed.
+.cache/adult-sculpts/
 # The contact-sheet job the `sheets` Playwright project renders (e2e/sheets/).
 .sheets/

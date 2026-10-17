@@ -165,7 +165,8 @@ in `docs/research/SKIN-RENDERING.md`.
 The genital forms in `packs/adult-anatomy/data` are transferred from CC0
 community sculpts on makehumancommunity.org (each page, author and file hash is
 in `packs/adult-anatomy/source/PROVENANCE.md`) or drawn by code from published
-measurements. A CC BY 4.0 anatomical model (NIH 3D entry 3DPX-017321) is
+measurements. The sculpts themselves are not in this repository: the packer
+downloads each from its page and verifies its SHA-256 against that file. A CC BY 4.0 anatomical model (NIH 3D entry 3DPX-017321) is
 recorded there as a candidate source for a planned transfer; nothing derived
 from it is in the pack.
 

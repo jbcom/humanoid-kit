@@ -40,7 +40,10 @@ covers what isn't obvious from reading the code alone.
   packs from a checkout of the upstream project and its system assets pack (the
   hair pack last, since it binds to the body pack by hash); `pnpm pack:hair
   <system-assets-dir>` regenerates only the hair against the committed body pack.
-  See `NOTICE.md`.
+  See `NOTICE.md`. The adult pack's community sculpts are fetched at pack time,
+  hash-verified against `packs/adult-anatomy/source/PROVENANCE.md` and cut with
+  headless Blender into the gitignored `.cache/adult-sculpts/`; never commit them
+  (`pnpm pack:adult-sources` warms the cache; the tests that place sculpts need it).
 - Every packer sizes its textures by `scripts/lib/textureSizing.ts`: each ships
   at the edge its closest QA framing needs, re-sourced from the original, never
   upscaled (docs/evidence/upscale.md). `node scripts/research/texel-density.ts

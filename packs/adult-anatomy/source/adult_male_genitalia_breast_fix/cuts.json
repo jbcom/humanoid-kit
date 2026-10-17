@@ -44,7 +44,8 @@
       ],
       "nonManifoldEdges": 0,
       "euler": 1,
-      "disc": true
+      "disc": true,
+      "objSha256": "f3bc89e4b7b4a25fccbbe508176652967ceead4961ce535cf5349218af90c6b7"
     },
     "scrotum": {
       "planes": [
@@ -87,7 +88,8 @@
       ],
       "nonManifoldEdges": 0,
       "euler": 1,
-      "disc": true
+      "disc": true,
+      "objSha256": "d1d7d7a8cbed4eec3d0af3f1379f585252831628ed8e817ada65eef1946635a4"
     }
   }
 }

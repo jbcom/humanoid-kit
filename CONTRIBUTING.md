@@ -117,7 +117,13 @@ pnpm pack:data <makehuman-checkout>/makehuman/data <makehuman-system-assets-dir>
 
 The first argument is the `makehuman/data` directory of a checkout of
 github.com/makehumancommunity/makehuman; the second is the extracted
-"MakeHuman system assets" pack (eyes, teeth, tongue, scalp hair). The packer
+"MakeHuman system assets" pack (eyes, teeth, tongue, scalp hair). The adult
+pack's community sculpts are not in this repository: the packer downloads each
+one, verifies its SHA-256 against `packs/adult-anatomy/source/PROVENANCE.md` and
+regenerates its cuts with headless Blender (set `BLENDER` if it is not on the
+PATH), into a gitignored cache. It fails closed on a failed download, a hash
+mismatch or a missing Blender; `pnpm pack:adult-sources` runs just that step. The
+packer
 refuses any file that does not prove CC0 from its own content and writes each
 pack's `PROVENANCE.md`. Packing is deterministic, so regenerating unchanged
 sources gives byte-identical files. Do not edit the data by hand; change
