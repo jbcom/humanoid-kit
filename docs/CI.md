@@ -49,7 +49,11 @@ automation remain tied to that branch.
 - Docs, end-to-end, Lighthouse and pre-commit remain independent required
   checks. The end-to-end suite runs on the standard `macos-15` runner's Metal
   at the GPU budgets, and its skip ledger runs as the GPU lane, so a GPU-lane
-  skip fails it. Under hosted SwiftShader it was cancelled at 45 minutes on
+  skip fails it. That runner's GPU is a virtual "Apple Paravirtual device",
+  which draws one figure in 75 to 100 ms, so frame-pacing checks are skipped
+  there with the counted `frame-pacing-unjudged` reason. Draw and triangle
+  budgets still run, and the pacing proof stays with the `.202` render host
+  (docs/MINIATURES.md). Under hosted SwiftShader it was cancelled at 45 minutes on
   every run. On the `.202` Metal render host the whole suite finishes in
   2.8 minutes. The final `CI / gate` requires Node validation, the merged coverage
   gate, and every applicable check to succeed.

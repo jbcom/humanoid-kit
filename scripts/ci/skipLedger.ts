@@ -9,9 +9,9 @@
  *   node scripts/ci/skipLedger.ts <report.json> <ledger.json> --lane software|gpu
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { GPU_LANE_SKIP } from "../../e2e/lib/gpuLane.ts";
+import { FRAME_PACING_SKIP, GPU_LANE_SKIP } from "../../e2e/lib/gpuLane.ts";
 
-export const KNOWN_SKIP_REASONS: readonly string[] = [GPU_LANE_SKIP];
+export const KNOWN_SKIP_REASONS: readonly string[] = [GPU_LANE_SKIP, FRAME_PACING_SKIP];
 
 interface ReportTest {
   status?: string;

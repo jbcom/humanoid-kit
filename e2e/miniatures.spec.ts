@@ -2,9 +2,11 @@
  * The miniature stress lab (`?miniatures=N`, docs/MINIATURES.md): hundreds of
  * baked figures of four archetypes walk, idle and crouch on the table. The
  * draw calls and triangles the renderer reports must stay inside the issue's
- * budget whatever the hardware. The frame time is judged only on a GPU (the
- * page's own WebGL renderer string says which), since software rendering
- * measures the CPU, not the miniature path.
+ * budget whatever the hardware. The frame time is judged only on a display's
+ * GPU (the page's own WebGL renderer string says which, `judgesFramePacing`):
+ * software rendering measures the CPU, and a hosted runner's virtual GPU draws
+ * even one figure at 10 to 13 frames a second. Elsewhere that test is skipped
+ * with a reason the skip ledger counts.
  *
  * The frame and the measure are saved with the test's results; set
  * HK_MINIATURE_SHOTS to a directory to also copy the frame there.
@@ -15,10 +17,9 @@ import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import type { MiniatureMeasure } from "../playground/src/MiniatureLab.tsx";
 import { budget } from "./budget.ts";
+import { FRAME_PACING_SKIP, judgesFramePacing } from "./lib/gpuLane.ts";
 
 const shots = process.env.HK_MINIATURE_SHOTS;
-/** WebGL renderer strings of software rasterisers, whose frame times measure the CPU. */
-const SOFTWARE = /swiftshader|llvmpipe|softpipe|basic render driver/i;
 
 async function measure(page: Page, testInfo: TestInfo, count: number): Promise<MiniatureMeasure> {
   await openSilentGame(page, "./", { miniatures: String(count) });
@@ -36,23 +37,25 @@ async function measure(page: Page, testInfo: TestInfo, count: number): Promise<M
 }
 
 test.describe("miniatures", () => {
-  test("draws 500 figures inside the draw, triangle and frame budget", async ({
-    page,
-  }, testInfo) => {
-    test.setTimeout(budget(360_000));
-    const one = await measure(page, testInfo, 1);
+  test("draws 500 figures inside the draw and triangle budget", async ({ page }, testInfo) => {
+    test.setTimeout(budget(240_000));
     const m = await measure(page, testInfo, 500);
-
     expect(m.figures).toBe(500);
     expect(m.crowd.visible).toBeGreaterThan(0);
     // Each archetype is at most one instanced draw per level (4 × 3), plus the table.
     expect(m.drawCalls).toBeLessThanOrEqual(20);
     expect(m.triangles).toBeLessThanOrEqual(250_000);
-    if (!SOFTWARE.test(m.renderer)) {
-      // A frame of 500 figures keeps to the display's rate, as one figure
-      // does; the p95 may hold about one dropped frame of pacing.
-      expect(m.medianMs).toBeLessThanOrEqual(Math.max(one.medianMs, 1000 / 60) + 1);
-      expect(m.p95Ms).toBeLessThanOrEqual(Math.max(one.p95Ms, 2000 / 60) + 1);
-    }
+  });
+
+  test("draws 500 figures at the display's rate, as it draws one", async ({ page }, testInfo) => {
+    test.setTimeout(budget(360_000));
+    const one = await measure(page, testInfo, 1);
+    // Judged only where a frame measures a display's GPU (`judgesFramePacing`).
+    test.skip(!judgesFramePacing(one.renderer), FRAME_PACING_SKIP);
+    const m = await measure(page, testInfo, 500);
+    // A frame of 500 figures keeps to the display's rate, as one figure
+    // does; the p95 may hold about one dropped frame of pacing.
+    expect(m.medianMs).toBeLessThanOrEqual(Math.max(one.medianMs, 1000 / 60) + 1);
+    expect(m.p95Ms).toBeLessThanOrEqual(Math.max(one.p95Ms, 2000 / 60) + 1);
   });
 });

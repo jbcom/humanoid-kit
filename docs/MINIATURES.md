@@ -28,7 +28,13 @@ The lab's frame times are the host's: one figure and 500 differ by under a
 millisecond, so the crowd fits inside a 60 fps frame and the p95 is headless
 Chrome's frame pacing. The check therefore holds the crowd to the one-figure
 frame on the same machine, and judges frame time only when the page's WebGL
-renderer is a GPU (never SwiftShader).
+renderer is a display's GPU (`judgesFramePacing` in `e2e/lib/gpuLane.ts`). It
+never judges SwiftShader, and never the hosted macOS runner's "Apple
+Paravirtual device", which draws even one figure in 75 to 100 ms. There the
+pacing test is skipped with a reason the skip ledger counts, while the draw and
+triangle budgets are still asserted. A 2026-10-17 run on the M1 Pro (.202):
+one figure 16.6 ms median, 23.2 ms p95; 500 figures 16.4 ms, 22.9 ms, 8 draws,
+204 k triangles.
 
 ## Why
 
