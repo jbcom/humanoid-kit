@@ -22,8 +22,11 @@ automation remain tied to that branch.
   non-Metal renderer, and Vitest assigns every browser file to exactly one
   shard. Browser tests execute in Chromium, so they run once, on the pinned
   Node (`.nvmrc`).
-- **Coverage unit shards 1/6 through 6/6** and **coverage browser shards 1/3
-  through 3/3** (Metal, as above) run their projects with V8 coverage.
+- **Coverage unit shards 1/8 through 8/8** and **coverage browser shards 1/3
+  through 3/3** (Metal, as above) run their projects with V8 coverage. Under
+  instrumentation several unit files run for minutes on their own
+  (contactCompression 422 s, canalSeam 386 s), so the unit shards have 35
+  minutes each. With six shards, two ran past 20 minutes.
   `tests/ciGate.test.ts` checks two things:
   - every browser job runs the whole project on a required Metal renderer;
   - every sharded job runs shards 1 to N of the N it names.
