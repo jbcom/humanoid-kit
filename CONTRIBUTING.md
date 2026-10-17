@@ -102,5 +102,7 @@ gives byte-identical files. Do not edit the data by hand; change
 ## Releases
 
 Releases are automated. Merging a conventional commit to `main` opens a release
-pull request; merging that publishes to npm with provenance. Do not hand-edit
-versions or the changelog.
+pull request; merging that makes the Release workflow (`release.yml`) tag each
+released package and publish it to npm with provenance, over npm trusted
+publishing (OIDC). No npm token is stored anywhere. Do not hand-edit versions or
+the changelog.
