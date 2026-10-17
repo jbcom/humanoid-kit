@@ -17,6 +17,14 @@
       "include-component-in-tag": true,
       "bump-minor-pre-major": true,
       "initial-version": "0.1.0"
+    },
+    "packs/adult-anatomy": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-adult-anatomy",
+      "component": "humanoid-kit-adult-anatomy",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true,
+      "initial-version": "0.1.0"
     }
   }
 }
