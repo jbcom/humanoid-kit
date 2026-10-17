@@ -372,6 +372,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   let sourcePending = false,
     allowSource = false;
   let evaluated = deferredVoid();
+  let sourceStarted = deferredVoid();
   let started = performance.now();
   let rejectSource: ((error: Error) => void) | undefined;
   const errors: Error[] = [];
@@ -386,6 +387,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
       sourcePending = true;
       return new Promise((_resolve, reject) => {
         rejectSource = reject;
+        sourceStarted.resolve();
       });
     }
     return actualLoad.call(this, url, onProgress);
@@ -450,7 +452,11 @@ it("holds a masked card through deferred source-map rejection and registry-only 
   try {
     await evaluated.promise;
     console.info("facial-grey-source-loader-evaluated", performance.now() - started);
-    await expect.poll(() => sourcePending).toBe(true);
+    // Evaluation precedes the child texture effect. Await the intercepted
+    // operation itself, within the existing test deadline, before inspecting it.
+    await sourceStarted.promise;
+    expect(sourcePending).toBe(true);
+    expect(settlements).toBe(0);
     await expect.poll(() => evaluations).toBe(1);
     const gpuMode = inject("browserGpuMode");
     expect(gpu).not.toMatch(/^$|unavailable/i);
@@ -509,13 +515,15 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     allowSource = false;
     sourcePending = false;
     evaluated = deferredVoid();
+    sourceStarted = deferredVoid();
     started = performance.now();
     rejectSource = undefined;
     const previousSettlements = settlements;
     activeScreen = await render(<Fixture masks={registry} masked={false} />);
     await evaluated.promise;
     console.info("facial-grey-unmasked-source-loader-evaluated", performance.now() - started);
-    await expect.poll(() => sourcePending).toBe(true);
+    await sourceStarted.promise;
+    expect(sourcePending).toBe(true);
     const unmaskedMesh = card();
     stage = "unmasked-source-rejection";
     rejectCurrentSource("controlled initially unmasked source rejection");
