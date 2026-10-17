@@ -78,10 +78,6 @@ the roadmap, labelled as planned. `humanoid-kit/editor` is declared in
 
 ## Known gaps
 
-- `scripts/verify-package.mjs` still describes the earlier single-package layout
-  (`data/hm08`, a `HumanoidEvaluator` export, a `humanoid-kit/editor` build and a
-  baby/child target scan), so `pnpm package:check` cannot pass until it is
-  updated to the current packages.
 - `pnpm check:pages` is not wired into any workflow; run it after
   `pnpm build:playground` and `pnpm docs:build`.
 - The comment at the top of `scripts/pack-makehuman.ts` mentions an

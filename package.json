@@ -64,7 +64,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lint:docs": "markdownlint-cli2 README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md NOTICE.md AGENTS.md \"docs/**/*.md\" \"!docs/node_modules/**\" \"!docs/dist/**\" .github/PULL_REQUEST_TEMPLATE.md",
-    "package:check": "publint && attw --pack . --profile esm-only && node scripts/verify-package.mjs",
+    "package:check": "publint && publint packs/body && publint packs/adult-anatomy && attw --pack . --profile esm-only && attw --pack packs/body --profile esm-only && attw --pack packs/adult-anatomy --profile esm-only && node scripts/verify-package.mjs",
     "verify": "pnpm run lint && pnpm run lint:docs && pnpm run typecheck && HK_FAIL_ON_SKIP=1 pnpm run coverage && pnpm run build && pnpm run package:check",
     "pack:data": "node scripts/pack-makehuman.ts",
     "check:pages": "node scripts/check-pages-build.mjs",

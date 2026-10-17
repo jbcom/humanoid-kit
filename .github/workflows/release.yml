@@ -14,15 +14,16 @@ concurrency:
 
 jobs:
   release-please:
-    # Opt in only after the first version has been released.
+    # Set the repository variable RELEASE_AUTOMATION_ENABLED to "true" to turn
+    # release automation on. Release Please then owns every version and tag.
     if: vars.RELEASE_AUTOMATION_ENABLED == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
     outputs:
-      released: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
+      released: ${{ steps.release.outputs.releases_created }}
+      paths: ${{ steps.release.outputs.paths_released }}
     steps:
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
@@ -30,3 +31,47 @@ jobs:
           token: ${{ secrets.CI_GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # Publishes each package Release Please released in this run, over npm trusted
+  # publishing (OIDC): no npm token exists anywhere. The trusted publisher on
+  # npmjs.com for every package names this workflow file, release.yml.
+  publish:
+    name: Publish ${{ matrix.path }}
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        path: ${{ fromJSON(needs.release-please.outputs.paths) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No registry-url: setup-node would write an .npmrc that expects an auth
+      # token. The repository .npmrc already names the public registry.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Trusted publishing needs npm 11.5.1 or later; pin an exact release.
+      - run: npm install --global npm@11.21.1
+      - run: npm --version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Lint, types and the test suites already passed in CI on this commit; the
+      # packed-consumer check is what protects the publish itself.
+      - run: pnpm package:check
+      - name: Publish ${{ matrix.path }} if this version is not on npm yet
+        working-directory: ${{ matrix.path }}
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already published; nothing to do."
+          else
+            npm publish --provenance --access public
+          fi
