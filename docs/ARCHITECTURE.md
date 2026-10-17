@@ -1956,8 +1956,10 @@ asks once a hip or a knee in the pose is flexed past its fold's start, whenever 
 shape changes. Until it arrives the figure draws without it, and the fold then
 fades in over 150 ms (`FOLD_FADE`, the `hkFoldBlend` uniform, `DualBones.advanceFold`)
 so that it does not pop; a fold that replaces another, for a figure whose shape
-changed, does not fade. The figure's settle is held until the fold is drawn and
-whole. The fold is for the surface the evaluation draws (the base body, or an
+changed, does not fade. Nor does one on a canvas drawn only when its host advances
+the clock (`frameloop="never"`): no frame runs there to fade it, and the host waits
+for the settle before it advances, so the fold shows whole at once. The figure's
+settle is held until the fold is drawn and whole. The fold is for the surface the evaluation draws (the base body, or an
 adult's refined surface), the other's slots set to none.
 
 **Gates** (`tests/hipFold.test.ts`, nine bodies: the bench's five and the battery's

@@ -1541,6 +1541,9 @@ export function Humanoid({
   const fading = useRef<(() => void) | null>(null);
   /** Counts the folds that have faded in whole: the meshes' bounds follow each (`shape`). */
   const [foldsShown, setFoldsShown] = useState(0);
+  // A canvas drawn only when its host advances the clock (`frameloop="never"`) runs no frame
+  // a fade could take, and its host waits for the settle before advancing: its folds show whole.
+  const fadesFolds = useLatest(useThree((s) => s.frameloop !== "never"));
   useFrame((_, delta) => {
     if (!dual) return;
     if (dual.advanceFold(delta)) invalidate();
@@ -1586,10 +1589,13 @@ export function Humanoid({
           if (left) writeFoldSlots(left, joint, undefined);
         }
         supportFolds.current = { surface, folds };
-        dual.setFolds(folds, surface);
-        // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
+        dual.setFolds(folds, surface, fadesFolds.current);
+        // A fold that fades in does so over the next frames (`DualBones.advanceFold`), and the
+        // figure is not settled before it has.
         fading.current?.();
-        fading.current = settle.begin();
+        fading.current = null;
+        if (dual.foldFading) fading.current = settle.begin();
+        else setFoldsShown((n) => n + 1);
         invalidate();
       },
       (e: Error) => {

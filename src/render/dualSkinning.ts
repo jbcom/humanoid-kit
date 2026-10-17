@@ -370,15 +370,20 @@ export class DualBones {
    * `surface` says which body surface they are for; the CPU reference keeps
    * them too (`skinFolds`), so what is skinned on the CPU is what the shader draws.
    */
-  setFolds(folds: readonly SurfaceFold[] | null, surface: "base" | "adult" = "base"): void {
+  setFolds(
+    folds: readonly SurfaceFold[] | null,
+    surface: "base" | "adult" = "base",
+    fade = true,
+  ): void {
     const had = this.hasFold;
     const set = (folds ?? []).filter((f) => f.rows > 0);
     this.hasFold = set.length > 0;
     this.cpuFolds = set.map(renderFold);
     this.cachedFolds = undefined;
     this.foldSurface = surface;
-    // Folds that arrive where there were none fade in; ones that replace others (the figure's shape changed) do not.
-    this.foldBlend.value = this.hasFold && !had ? 0 : 1;
+    // Folds that arrive where there were none fade in; ones that replace others (the figure's
+    // shape changed) do not, and neither do any where no frame comes to fade them (`fade` false).
+    this.foldBlend.value = fade && this.hasFold && !had ? 0 : 1;
     for (const joint of FOLD_JOINTS) {
       const holder = this.folds[joint.name];
       const old = holder.value;
@@ -390,6 +395,11 @@ export class DualBones {
 
   /** Whether a fold is set. */
   private hasFold = false;
+
+  /** Whether the folds set are still fading in (`advanceFold`). */
+  get foldFading(): boolean {
+    return this.foldBlend.value < 1;
+  }
 
   /**
    * Carries the fold's fade on by `seconds`; true while it is not whole, so a

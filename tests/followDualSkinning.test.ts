@@ -129,4 +129,22 @@ describe("the body's CPU skinning (followDualSkinning)", { timeout: 120_000 }, (
     dual.setFolds(null);
     expect(folded.getVertexPosition(v, new Vector3()).distanceTo(b)).toBe(0);
   });
+
+  it("fades first folds in over frames, or shows them whole where no frame will come", () => {
+    const body = posedSurface(model, recipe, "seated");
+    const { surface, folds } = solved();
+    const dual = new DualBones(body.bones.names.length, skinDualShare(body.bones.names));
+    dual.update(body.bones, body.rotations);
+    dual.setFolds(folds, surface);
+    expect(dual.foldBlend.value).toBe(0);
+    expect(dual.foldFading).toBe(true);
+    expect(dual.advanceFold(1)).toBe(false);
+    expect(dual.foldFading).toBe(false);
+    // A canvas drawn only by its host's clock (`frameloop="never"`) has no frames to fade over.
+    const manual = new DualBones(body.bones.names.length, skinDualShare(body.bones.names));
+    manual.update(body.bones, body.rotations);
+    manual.setFolds(folds, surface, false);
+    expect(manual.foldBlend.value).toBe(1);
+    expect(manual.foldFading).toBe(false);
+  });
 });
