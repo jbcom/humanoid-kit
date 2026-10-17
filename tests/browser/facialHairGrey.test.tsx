@@ -54,6 +54,34 @@ function deferredVoid(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
+/**
+ * A settlement count whose arrival can be awaited. A settle is two drawn frames
+ * after the last load; on a software rasterizer those frames alone can outlast
+ * `expect.poll`'s one-second window, so tests await the settlement itself, within
+ * the test's own deadline, and then assert the exact count.
+ */
+function settlementCounter() {
+  let count = 0;
+  let waiters: Array<{ at: number; resolve: () => void }> = [];
+  return {
+    get count() {
+      return count;
+    },
+    settled() {
+      count++;
+      waiters = waiters.filter((waiter) => {
+        if (count < waiter.at) return true;
+        waiter.resolve();
+        return false;
+      });
+    },
+    reached(at: number): Promise<void> {
+      if (count >= at) return Promise.resolve();
+      return new Promise((resolve) => waiters.push({ at, resolve }));
+    },
+  };
+}
+
 function diagnosticText(value: string): string {
   return value
     .replace(/data:[^\s"']+/gi, "data:[omitted]")
@@ -217,8 +245,8 @@ it("samples identical top-first linear UV weights in live and decoded miniature 
 
 it("rejects missing live masks, recovers on registry-only updates and disposes replaced uploads", async () => {
   await page.viewport(480, 480);
-  let evaluations = 0,
-    settlements = 0;
+  let evaluations = 0;
+  const settlements = settlementCounter();
   const errors: Error[] = [];
   const evaluated = deferredVoid();
   const client = inlineWorkerClient({ subdivision: 0 }, { hair: true });
@@ -244,7 +272,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
               evaluations++;
               evaluated.resolve();
             }}
-            onSettled={() => settlements++}
+            onSettled={() => settlements.settled()}
           />
         </HumanoidProvider>
       </Canvas>
@@ -274,7 +302,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     await evaluated.promise;
     console.info("facial-grey-missing-mask-evaluated", performance.now() - started);
     await expect.poll(() => errors.length).toBeGreaterThan(0);
-    expect(settlements).toBe(0);
+    expect(settlements.count).toBe(0);
     expect(card().visible).toBe(false);
     const sourceSha256 = client.hairTopology(id)?.sourceSha256;
     if (!sourceSha256) throw new Error("source checksum missing");
@@ -298,7 +326,8 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     };
     stage = "registry-recovery";
     await screen.rerender(<Fixture masks={registry} />);
-    await expect.poll(() => settlements).toBe(1);
+    await settlements.reached(1);
+    expect(settlements.count).toBe(1);
     expect(evaluations).toBe(before);
     expect(card().visible).toBe(true);
     const geometry = card().geometry;
@@ -311,7 +340,8 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
     };
     stage = "replaced-upload";
     await screen.rerender(<Fixture masks={changed} />);
-    await expect.poll(() => settlements).toBe(2);
+    await settlements.reached(2);
+    expect(settlements.count).toBe(2);
     expect(evaluations).toBe(before);
     expect(disposed).toBe(1);
     expect(card().geometry).toBe(geometry);
@@ -326,7 +356,7 @@ it("rejects missing live masks, recovers on registry-only updates and disposes r
           stage,
           elapsedMs: performance.now() - started,
           evaluations,
-          settlements,
+          settlements: settlements.count,
           sourcePending: null,
           gpu: null,
           gpuMode: inject("browserGpuMode"),
@@ -366,9 +396,10 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     "caller-streak": { sourceSha256, width: 2, height: 2, data: new Uint8Array([0, 255, 128, 0]) },
   };
   let group: Group | null = null;
-  let settlements = 0,
-    evaluations = 0;
+  let evaluations = 0;
+  const settlements = settlementCounter();
   const settledMaps: boolean[] = [];
+  const settledVisible: boolean[] = [];
   let sourcePending = false,
     allowSource = false;
   let evaluated = deferredVoid();
@@ -419,8 +450,10 @@ it("holds a masked card through deferred source-map rejection and registry-only 
               evaluated.resolve();
             }}
             onSettled={() => {
-              settlements++;
               settledMaps.push((card().material as HairMaterial).map !== null);
+              // What a screenshot taken at the settle would show.
+              settledVisible.push(card().visible);
+              settlements.settled();
             }}
           />
         </HumanoidProvider>
@@ -456,7 +489,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     // operation itself, within the existing test deadline, before inspecting it.
     await sourceStarted.promise;
     expect(sourcePending).toBe(true);
-    expect(settlements).toBe(0);
+    expect(settlements.count).toBe(0);
     await expect.poll(() => evaluations).toBe(1);
     const gpuMode = inject("browserGpuMode");
     expect(gpu).not.toMatch(/^$|unavailable/i);
@@ -484,12 +517,14 @@ it("holds a masked card through deferred source-map rejection and registry-only 
       "facial-grey-source-loader-rejection",
       JSON.stringify({
         gpu,
-        settlements,
+        settlements: settlements.count,
         visible: card().visible,
         errors: errors.map((error) => error.message),
       }),
     );
-    expect.soft(settlements, "a rejected required source map must not settle successfully").toBe(0);
+    expect
+      .soft(settlements.count, "a rejected required source map must not settle successfully")
+      .toBe(0);
     expect(
       card().visible,
       "a rejected required source map must hide the requested masked card",
@@ -501,9 +536,11 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     await screen.rerender(
       <Fixture masks={{ "caller-streak": { ...registry["caller-streak"] } }} />,
     );
-    await expect.poll(() => settlements).toBe(1);
+    await settlements.reached(1);
+    expect(settlements.count).toBe(1);
     expect(evaluations).toBe(before);
     expect(card()).toBe(originalMesh);
+    expect(settledVisible.at(-1), "the settle must follow the recovered card's draw").toBe(true);
     expect(card().visible).toBe(true);
     expect((card().material as HairMaterial).map).not.toBeNull();
     expect(settledMaps.at(-1)).toBe(true);
@@ -518,7 +555,7 @@ it("holds a masked card through deferred source-map rejection and registry-only 
     sourceStarted = deferredVoid();
     started = performance.now();
     rejectSource = undefined;
-    const previousSettlements = settlements;
+    const previousSettlements = settlements.count;
     activeScreen = await render(<Fixture masks={registry} masked={false} />);
     await evaluated.promise;
     console.info("facial-grey-unmasked-source-loader-evaluated", performance.now() - started);
@@ -534,15 +571,16 @@ it("holds a masked card through deferred source-map rejection and registry-only 
         ),
       )
       .toBe(true);
-    await expect.poll(() => settlements).toBeGreaterThan(previousSettlements);
+    await settlements.reached(previousSettlements + 1);
     expect((card().material as HairMaterial).map).toBeNull();
     expect(card().visible).toBe(true);
-    const activationSettlements = settlements;
+    const activationSettlements = settlements.count;
     stage = "unmasked-activation-recovery";
     allowSource = true;
     await activeScreen.rerender(<Fixture masks={registry} />);
-    await expect.poll(() => settlements).toBeGreaterThan(activationSettlements);
+    await settlements.reached(activationSettlements + 1);
     expect(card()).toBe(unmaskedMesh);
+    expect(settledVisible.at(-1), "the settle must follow the activated card's draw").toBe(true);
     expect(card().visible).toBe(true);
     expect((card().material as HairMaterial).map).not.toBeNull();
     expect(settledMaps.at(-1)).toBe(true);
@@ -555,7 +593,8 @@ it("holds a masked card through deferred source-map rejection and registry-only 
           stage,
           elapsedMs: performance.now() - started,
           evaluations,
-          settlements,
+          settlements: settlements.count,
+          settledVisible,
           sourcePending,
           gpu,
           gpuMode: inject("browserGpuMode"),

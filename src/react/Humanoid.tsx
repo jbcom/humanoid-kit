@@ -2027,27 +2027,13 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: registry changes cancel the previous appearance callback
   useEffect(() => {
     if (!unsettled) return;
-    let live = true;
-    let cancel = () => {};
-    let frame = 0;
-    const settleAfter = (frames: number) => {
-      cancel = settle.whenIdle(() => {
-        if (!live) return;
-        if (frames > 0) {
-          frame = requestAnimationFrame(() => settleAfter(frames - 1));
-          return;
-        }
-        setUnsettled(null);
-        if (greyErrors.current.size === 0) onSettledRef.current?.(unsettled);
-      });
-    };
-    // Two frames after the last load: the textures upload and the materials compile.
-    settleAfter(2);
-    return () => {
-      live = false;
-      cancel();
-      cancelAnimationFrame(frame);
-    };
+    // Two frames after the last load ends, including a load that begins after this
+    // effect (a retry a child schedules for its next commit): the textures upload,
+    // the materials compile and the parts that waited on them are drawn.
+    return settle.afterQuiet(2, () => {
+      setUnsettled(null);
+      if (greyErrors.current.size === 0) onSettledRef.current?.(unsettled);
+    });
   }, [unsettled, settle, onSettledRef, facialHairGreyMasks]);
 
   const placed = presence?.position;

@@ -12,11 +12,14 @@ import { createContext, useContext } from "react";
 
 export class Settle {
   private pending = 0;
+  /** Counts every load ever begun, so a load that began and ended unseen is still noticed. */
+  private generation = 0;
   private waiting = new Set<() => void>();
 
   /** Registers one load in flight; call the returned function once it ends (calling it again does nothing). */
   begin(): () => void {
     this.pending++;
+    this.generation++;
     let ended = false;
     return () => {
       if (ended) return;
@@ -39,6 +42,53 @@ export class Settle {
     this.waiting.add(f);
     return () => this.waiting.delete(f);
   }
+
+  /**
+   * Calls `then` once `frames` animation frames have passed with nothing loading:
+   * the frames count from the end of the last load, so a texture that arrives
+   * while they are counted is uploaded and drawn before `then`. A load that
+   * begins during the count (even one that also ends before the next frame)
+   * starts the count over from its end. Returns a cancel function.
+   */
+  afterQuiet(
+    frames: number,
+    then: () => void,
+    schedule: FrameScheduler = animationFrame,
+  ): () => void {
+    let live = true;
+    let cancelIdle = () => {};
+    let cancelFrame = () => {};
+    const count = (left: number, generation: number) => {
+      if (!live) return;
+      if (this.pending > 0 || this.generation !== generation) {
+        wait();
+        return;
+      }
+      if (left === 0) {
+        live = false;
+        then();
+        return;
+      }
+      cancelFrame = schedule(() => count(left - 1, generation));
+    };
+    const wait = () => {
+      cancelIdle = this.whenIdle(() => count(frames, this.generation));
+    };
+    wait();
+    return () => {
+      live = false;
+      cancelIdle();
+      cancelFrame();
+    };
+  }
+}
+
+/** Queues `callback` for the next animation frame; returns a cancel function. */
+export type FrameScheduler = (callback: () => void) => () => void;
+
+function animationFrame(callback: () => void): () => void {
+  const id = requestAnimationFrame(() => callback());
+  return () => cancelAnimationFrame(id);
 }
 
 /** The nearest `<Humanoid>`'s settle tracker, which its parts register their loads with. */
