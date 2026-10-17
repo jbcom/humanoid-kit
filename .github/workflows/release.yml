@@ -22,7 +22,7 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      paths: ${{ steps.release.outputs.paths_released || '[]' }}
+      paths: ${{ steps.publishable.outputs.paths }}
     steps:
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
@@ -30,6 +30,20 @@ jobs:
           token: ${{ secrets.CI_GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # The adult anatomy pack is held back from npm until the owner decides to
+      # publish it (issue "humanoid-kit release readiness"). Set the repository
+      # variable PUBLISH_ADULT_ANATOMY to "true" to release that hold. Release
+      # Please still tags and releases it on GitHub.
+      - id: publishable
+        env:
+          RELEASED: ${{ steps.release.outputs.paths_released || '[]' }}
+          PUBLISH_ADULT_ANATOMY: ${{ vars.PUBLISH_ADULT_ANATOMY }}
+        run: |
+          paths="$(jq -c --arg adult "$PUBLISH_ADULT_ANATOMY" \
+            'map(select(. != "packs/adult-anatomy" or $adult == "true"))' <<<"$RELEASED")"
+          echo "Released: $RELEASED"
+          echo "Publishing to npm: $paths"
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
   # Publishes each package Release Please released in this run over npm trusted
   # publishing (OIDC). The trusted publisher on npmjs.com for every package names
