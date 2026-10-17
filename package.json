@@ -1,6 +1,6 @@
 {
   "name": "humanoid-kit",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Universal parametric human and anthro figures for three.js and React Three Fiber: one CC0 base mesh, independent regional traits, subdivision, rigging, hair, clothing fit and a contextual tap-to-edit creator.",
   "type": "module",
   "license": "MIT",
