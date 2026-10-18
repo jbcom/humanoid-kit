@@ -122,7 +122,10 @@ pack's community sculpts are not in this repository: the packer downloads each
 one, verifies its SHA-256 against `packs/adult-anatomy/source/PROVENANCE.md` and
 regenerates its cuts with headless Blender (set `BLENDER` if it is not on the
 PATH), into a gitignored cache. It fails closed on a failed download, a hash
-mismatch or a missing Blender; `pnpm pack:adult-sources` runs just that step. The
+mismatch or a missing Blender; `pnpm pack:adult-sources` runs just that step, and
+`pnpm test:adult-sculpts` runs it and then the tests that need the real sculpts (the
+default `pnpm test` is hermetic and skips those, counted by the skip ledger; the
+opt-in `adult-sculpts` workflow runs them on a macOS arm64 runner). The
 packer
 refuses any file that does not prove CC0 from its own content and writes each
 pack's `PROVENANCE.md`. Packing is deterministic, so regenerating unchanged

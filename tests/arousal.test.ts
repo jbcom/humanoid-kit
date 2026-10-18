@@ -14,7 +14,7 @@ import {
 import { type RootShape, reservoirRoot, restShape } from "../scripts/lib/detail/root.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
-import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
+import { sculptsForTests } from "../scripts/lib/detail/sculptSources.ts";
 import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { STATE_MORPHS } from "../src/makehuman/stateMorphs.ts";
@@ -29,8 +29,10 @@ import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import type { SkinTone } from "../src/surface/skinTone.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
-// The sculpts are fetched and verified, and their cuts regenerated, not committed.
-await ensureSculptSources();
+// The sculpts are not committed. The default run is hermetic (no network, no Blender), so
+// what needs their real geometry skips, counted by the skip ledger, unless the verified
+// cache is there (`pnpm test:adult-sculpts`, which makes a missing cache a failure).
+const real = sculptsForTests();
 
 const withAdult = loadFixtureAssets(true);
 const core = loadFixtureAssets();
@@ -81,30 +83,36 @@ function authoredReach(shape: RootShape, rest: RootShape) {
 }
 
 describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, () => {
-  it("raises the organ by the measured growth at full arousal: the authored erect shape, not a fixed size", () => {
-    // Erect against flaccid, measured: length +43% and circumference +25% (Veale's pooled
-    // means, 13.12 / 9.16 and 11.66 / 9.31 cm; docs/research/ADULT-ANATOMY-DATA.md, F).
-    // scripts/lib/detail/phallus.ts scales its flaccid and erect sculpts to those numbers,
-    // and the surface must show what it built, so the surface's reach grows as the shapes' does.
-    const lattice = adultModel.adultDetailLattice(AUTHORING_FIGURE);
-    const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "phallic");
-    if (!lattice || !spec) throw new Error("no phallic reservoir");
-    const root = reservoirRoot(lattice, spec);
-    const parts = maleParts(adultModel.assets, adultModel.controlShape(AUTHORING_FIGURE).control);
-    const skin = skinOf(
-      lattice,
-      (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
-    );
-    const sculpted = new SculptedPhallus(root, parts.phallus, skin);
-    const rest = restShape(root);
-    const expected =
-      authoredReach(sculpted.shape(DEFAULT_KEY, { state: 1 }), rest) /
-      authoredReach(sculpted.shape(DEFAULT_KEY), rest);
-    expect(reach({ arousal: 1 }) / reach({})).toBeCloseTo(expected, 3);
-    // The numbers the shapes were built from.
+  it("is built from the measured growth numbers: length +43% and circumference +25%", () => {
+    // Veale's pooled means, 13.12 / 9.16 and 11.66 / 9.31 cm (docs/research/ADULT-ANATOMY-DATA.md, F).
     expect(ERECT_LENGTH).toBeCloseTo(1.43, 2);
     expect(ERECT_GIRTH).toBeCloseTo(1.25, 2);
   });
+
+  it.skipIf(!real)(
+    "raises the organ by the measured growth at full arousal: the authored erect shape, not a fixed size",
+    () => {
+      // Erect against flaccid, measured: length +43% and circumference +25% (Veale's pooled
+      // means, 13.12 / 9.16 and 11.66 / 9.31 cm; docs/research/ADULT-ANATOMY-DATA.md, F).
+      // scripts/lib/detail/phallus.ts scales its flaccid and erect sculpts to those numbers,
+      // and the surface must show what it built, so the surface's reach grows as the shapes' does.
+      const lattice = adultModel.adultDetailLattice(AUTHORING_FIGURE);
+      const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "phallic");
+      if (!lattice || !spec) throw new Error("no phallic reservoir");
+      const root = reservoirRoot(lattice, spec);
+      const parts = maleParts(adultModel.assets, adultModel.controlShape(AUTHORING_FIGURE).control);
+      const skin = skinOf(
+        lattice,
+        (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
+      );
+      const sculpted = new SculptedPhallus(root, parts.phallus, skin);
+      const rest = restShape(root);
+      const expected =
+        authoredReach(sculpted.shape(DEFAULT_KEY, { state: 1 }), rest) /
+        authoredReach(sculpted.shape(DEFAULT_KEY), rest);
+      expect(reach({ arousal: 1 }) / reach({})).toBeCloseTo(expected, 3);
+    },
+  );
 
   it("scales with the signal and leaves the figure exactly as it is without one", () => {
     // Half the signal moves the organ, and not to where the full one does. (The tip's

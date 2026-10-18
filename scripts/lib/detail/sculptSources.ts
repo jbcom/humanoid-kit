@@ -134,13 +134,13 @@ const manifest = () => {
  * The bytes of `name` in the cache for `asset`, after checking them against the recorded
  * hash. Synchronous, for the placement code; `ensureSculptSources` must have run first.
  */
-export function sculptFile(asset: string, name: string): Buffer {
+export function sculptFile(asset: string, name: string, root = sculptCacheRoot()): Buffer {
   const want = manifest().expected.get(`${asset}/${name}`);
   if (!want) throw new SculptSourceError(`${asset}/${name} is not a file the sculpt records name`);
-  const file = path.join(sculptCacheRoot(), asset, name);
+  const file = path.join(root, asset, name);
   if (!fs.existsSync(file))
     throw new SculptSourceError(
-      `${asset}/${name} is not in the sculpt cache (${sculptCacheRoot()}); ` +
+      `${asset}/${name} is not in the sculpt cache (${root}); ` +
         "await ensureSculptSources() (scripts/lib/detail/sculptSources.ts) before placing sculpts",
     );
   const data = fs.readFileSync(file);
@@ -149,6 +149,48 @@ export function sculptFile(asset: string, name: string): Buffer {
       `${file} does not hash to the recorded ${want}; delete it and fetch again`,
     );
   return data;
+}
+
+/**
+ * Whether every source, binding and cut is in the cache and verifies against its recorded
+ * hash. It never fetches and never runs Blender: it is how the default, hermetic test run
+ * (no network, no Blender) learns whether the real sculpts are there.
+ */
+export function sculptsReady(
+  root = sculptCacheRoot(),
+): { ready: true } | { ready: false; reason: string } {
+  try {
+    for (const key of manifest().expected.keys()) {
+      const slash = key.indexOf("/");
+      sculptFile(key.slice(0, slash), key.slice(slash + 1), root);
+    }
+    return { ready: true };
+  } catch (e) {
+    return { ready: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Set (to 1) by the opt-in job and `pnpm test:adult-sculpts`: a missing cache is then a failure. */
+export const REQUIRE_SCULPTS_ENV = "HK_REQUIRE_ADULT_SCULPTS";
+
+/**
+ * Whether the tests that need the real sculpts can run here. In the default run a missing
+ * cache means they skip, under the reason the Vitest skip ledger counts
+ * (`scripts/ci/vitestSkipLedger.ts`). Where `HK_REQUIRE_ADULT_SCULPTS=1` the cache must be
+ * there, and this throws, naming the file, instead.
+ */
+export function sculptsForTests(
+  env: NodeJS.ProcessEnv = process.env,
+  root = sculptCacheRoot(),
+): boolean {
+  const state = sculptsReady(root);
+  if (state.ready) return true;
+  if (env[REQUIRE_SCULPTS_ENV] === "1")
+    throw new SculptSourceError(
+      `${REQUIRE_SCULPTS_ENV}=1 but the adult sculpt cache is not usable: ${state.reason}. ` +
+        "Run `pnpm pack:adult-sources` first.",
+    );
+  return false;
 }
 
 /** The cuts record of a source, from the committed records. */

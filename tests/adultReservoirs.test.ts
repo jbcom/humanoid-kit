@@ -4,8 +4,8 @@ import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
-import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
-import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
+import { cutOutline, type MaleParts, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
+import { sculptsForTests } from "../scripts/lib/detail/sculptSources.ts";
 import { placeVulva, VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
@@ -14,8 +14,10 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { surfaceTriangles } from "./detailPack.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
-// The sculpts are fetched and verified, and their cuts regenerated, not committed.
-await ensureSculptSources();
+// The sculpts are not committed. The default run is hermetic (no network, no Blender), so
+// what needs their real geometry skips, counted by the skip ledger, unless the verified
+// cache is there (`pnpm test:adult-sculpts`, which makes a missing cache a failure).
+const real = sculptsForTests();
 
 /**
  * The adult pack's real reservoirs, as the packer places them where the sculpted
@@ -28,47 +30,53 @@ const model = new HumanoidModel(assets, { subdivision: 1 });
 const lattice = model.adultDetailLattice(AUTHORING_FIGURE);
 if (!lattice) throw new Error("no adult surface");
 const shipped = adultManifest.anatomy?.reservoirs ?? [];
-const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
+// `parts` is read only by what is gated on `real`.
+const parts = (
+  real ? maleParts(assets, model.controlShape(AUTHORING_FIGURE).control) : undefined
+) as MaleParts;
 
 describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
-  it("ships exactly what the generator places on the lattice, and the patches it sits in", () => {
-    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal", "vaginal", "anal"]);
-    // The generator lays the reservoirs out on the refinement before any patch, and
-    // names them on the refinement with its patches (scripts/lib/detail/smoothLoop.ts).
-    const surface = adultManifest.anatomy?.surface;
-    if (!surface) throw new Error("no surface");
-    const latticeWith = (patches: AdultSurfacePatch[]) => {
-      const manifest = structuredClone(adultManifest);
-      const anatomy = manifest.anatomy as NonNullable<typeof manifest.anatomy>;
-      anatomy.surface = { faces: surface.faces, levels: surface.levels, patches };
-      delete anatomy.reservoirs;
-      delete anatomy.detail;
-      const on = new HumanoidModel(
-        parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest }),
-        { subdivision: 1 },
-      ).adultDetailLattice(AUTHORING_FIGURE);
-      if (!on) throw new Error("no adult surface");
-      return on;
-    };
-    const openings = placeVulva(assets, model.controlShape(AUTHORING_FIGURE).control);
-    const layout = reservoirLayout(latticeWith([]), parts, openings, latticeWith);
-    expect(layout.patches).toEqual(surface.patches);
-    // Placement is the layout's; islands, layers and evaluated closure stencils
-    // are added by the packer after the patched lattice exists (below).
-    expect(layout.reservoirs).toEqual(
-      shipped.map(({ island: _island, layer: _layer, canal, ...placed }) => {
-        if (!canal) return placed;
-        const { closure: _closure, ...opening } = canal;
-        return { ...placed, canal: opening };
-      }),
-    );
-    expect(shipped.map((r) => r.rings)).toEqual([
-      RESERVOIR_RINGS.phallic,
-      RESERVOIR_RINGS.labioscrotal,
-      RESERVOIR_RINGS.vaginal,
-      RESERVOIR_RINGS.anal,
-    ]);
-  });
+  it.skipIf(!real)(
+    "ships exactly what the generator places on the lattice, and the patches it sits in",
+    () => {
+      expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal", "vaginal", "anal"]);
+      // The generator lays the reservoirs out on the refinement before any patch, and
+      // names them on the refinement with its patches (scripts/lib/detail/smoothLoop.ts).
+      const surface = adultManifest.anatomy?.surface;
+      if (!surface) throw new Error("no surface");
+      const latticeWith = (patches: AdultSurfacePatch[]) => {
+        const manifest = structuredClone(adultManifest);
+        const anatomy = manifest.anatomy as NonNullable<typeof manifest.anatomy>;
+        anatomy.surface = { faces: surface.faces, levels: surface.levels, patches };
+        delete anatomy.reservoirs;
+        delete anatomy.detail;
+        const on = new HumanoidModel(
+          parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest }),
+          { subdivision: 1 },
+        ).adultDetailLattice(AUTHORING_FIGURE);
+        if (!on) throw new Error("no adult surface");
+        return on;
+      };
+      const openings = placeVulva(assets, model.controlShape(AUTHORING_FIGURE).control);
+      const layout = reservoirLayout(latticeWith([]), parts, openings, latticeWith);
+      expect(layout.patches).toEqual(surface.patches);
+      // Placement is the layout's; islands, layers and evaluated closure stencils
+      // are added by the packer after the patched lattice exists (below).
+      expect(layout.reservoirs).toEqual(
+        shipped.map(({ island: _island, layer: _layer, canal, ...placed }) => {
+          if (!canal) return placed;
+          const { closure: _closure, ...opening } = canal;
+          return { ...placed, canal: opening };
+        }),
+      );
+      expect(shipped.map((r) => r.rings)).toEqual([
+        RESERVOIR_RINGS.phallic,
+        RESERVOIR_RINGS.labioscrotal,
+        RESERVOIR_RINGS.vaginal,
+        RESERVOIR_RINGS.anal,
+      ]);
+    },
+  );
 
   it("ships each canal's closure on its own loop with finite skin-following weights", () => {
     for (const id of ["vaginal", "anal"]) {
@@ -137,29 +145,32 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
     expect(p[2]).toBeGreaterThan(s[2]);
   });
 
-  it("sits each disc under its part's cut: the cut seen along the part's axis is the disc's outline", () => {
-    for (const [spec, part] of [
-      [shipped[0], parts.phallus.flaccid],
-      [shipped[1], parts.scrotum],
-    ] as const) {
-      if (!spec) throw new Error("missing reservoir");
-      const axis = partAxis(part);
-      const cut = cutOutline(part);
-      // The loop's and the cut's centres, seen along the axis, are within 15 mm: the sac's
-      // disc gives way at its front to a ring of skin round the phallic one.
-      const mean = (pts: readonly (readonly number[])[]) =>
-        [0, 1, 2].map((k) => pts.reduce((sum, q) => sum + (q[k] as number), 0) / pts.length);
-      const loopPoints = spec.loop.map((v) =>
-        [0, 1, 2].map((k) => lattice.latticePositions[v * 3 + k] as number),
-      );
-      const [dx, dy, dz] = [0, 1, 2].map(
-        (k) => (mean(loopPoints)[k] as number) - (mean(cut)[k] as number),
-      ) as [number, number, number];
-      const along = dx * axis[0] + dy * axis[1] + dz * axis[2];
-      const across = Math.hypot(dx - along * axis[0], dy - along * axis[1], dz - along * axis[2]);
-      expect(across, spec.id).toBeLessThan(spec.id === "phallic" ? 0.006 : 0.015);
-    }
-  });
+  it.skipIf(!real)(
+    "sits each disc under its part's cut: the cut seen along the part's axis is the disc's outline",
+    () => {
+      for (const [spec, part] of [
+        [shipped[0], parts.phallus.flaccid],
+        [shipped[1], parts.scrotum],
+      ] as const) {
+        if (!spec) throw new Error("missing reservoir");
+        const axis = partAxis(part);
+        const cut = cutOutline(part);
+        // The loop's and the cut's centres, seen along the axis, are within 15 mm: the sac's
+        // disc gives way at its front to a ring of skin round the phallic one.
+        const mean = (pts: readonly (readonly number[])[]) =>
+          [0, 1, 2].map((k) => pts.reduce((sum, q) => sum + (q[k] as number), 0) / pts.length);
+        const loopPoints = spec.loop.map((v) =>
+          [0, 1, 2].map((k) => lattice.latticePositions[v * 3 + k] as number),
+        );
+        const [dx, dy, dz] = [0, 1, 2].map(
+          (k) => (mean(loopPoints)[k] as number) - (mean(cut)[k] as number),
+        ) as [number, number, number];
+        const along = dx * axis[0] + dy * axis[1] + dz * axis[2];
+        const across = Math.hypot(dx - along * axis[0], dy - along * axis[1], dz - along * axis[2]);
+        expect(across, spec.id).toBeLessThan(spec.id === "phallic" ? 0.006 : 0.015);
+      }
+    },
+  );
 
   it("shares no vertex or polygon between reservoirs, and keeps the detail within its 16 bits", () => {
     const loops = new Set<number>();

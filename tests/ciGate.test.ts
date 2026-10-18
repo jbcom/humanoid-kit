@@ -79,34 +79,6 @@ describe("CI gate verdict", () => {
     }
   });
 
-  it("gives every job that runs the unit project the verified adult sculpts, built once by the job they need", () => {
-    const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-    const jobs = new Map(
-      workflow
-        .split(/\n {2}(?=[a-z][a-z-]*:\n)/)
-        .map((job) => [job.slice(0, job.indexOf(":")), job] as const),
-    );
-    const producer = jobs.get("adult-sculpts") ?? "";
-    const cacheKey = (job: string) => /path: \.cache\/adult-sculpts\n\s+key: (.+)/.exec(job)?.[1];
-    expect(cacheKey(producer), "adult-sculpts saves the verified cache").toBeTruthy();
-    // The pinned Blender, and the verification that fails closed, run in the producer.
-    expect(producer).toContain("node scripts/ci/adult-sculpt-cache.ts");
-    // The cuts reproduce on macOS arm64 (Blender's thread count pinned), not on x86-64 Linux.
-    expect(producer).toMatch(/runs-on: macos-15\n/);
-    expect(cacheKey(producer)).toContain("scripts/lib/detail/sculptSources.ts");
-    const consumers = [...jobs].filter(([, job]) => job.includes("--project unit"));
-    expect(consumers.length).toBeGreaterThan(0);
-    for (const [name, job] of consumers) {
-      expect(job, `${name} needs the producer`).toMatch(/\n {4}needs: adult-sculpts\n/);
-      expect(cacheKey(job), `${name} restores the producer's key`).toBe(cacheKey(producer));
-      expect(job, `${name} fails on a cache miss, never refetches`).toContain(
-        "fail-on-cache-miss: true",
-      );
-    }
-    // Geometry goes through the cache, never an artifact a visitor to the public repo could download.
-    expect(producer).not.toContain("upload-artifact");
-  });
-
   it("runs the whole browser project on a required Metal renderer, excluding no file", () => {
     const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
     const jobs = new Map(

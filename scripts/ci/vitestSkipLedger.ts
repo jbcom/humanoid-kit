@@ -27,7 +27,22 @@ interface ExpectedSkip {
   profiles?: readonly VitestSkipProfile[];
 }
 
+/**
+ * The adult pack's community sculpts are not committed, and the default run has no network
+ * and no Blender, so what needs their real geometry skips unless the verified cache is
+ * there. `pnpm test:adult-sculpts` and the opt-in `adult-sculpts` workflow build the cache
+ * and set HK_REQUIRE_ADULT_SCULPTS=1, where a missing cache fails instead of skipping.
+ */
+export const NO_ADULT_SCULPTS_REASON =
+  "the adult sculpts are not in the cache: the hermetic run has no network and no Blender (pnpm test:adult-sculpts runs them)";
+
 const EXPECTED_SKIPS: readonly ExpectedSkip[] = [
+  ...[
+    "/tests/phallus.test.ts",
+    "/tests/scrotum.test.ts",
+    "/tests/arousal.test.ts",
+    "/tests/adultReservoirs.test.ts",
+  ].map((moduleSuffix) => ({ moduleSuffix, reason: NO_ADULT_SCULPTS_REASON })),
   {
     moduleSuffix: "/tests/browser/affordanceGpu.test.tsx",
     fullName:

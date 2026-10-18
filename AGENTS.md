@@ -43,7 +43,8 @@ covers what isn't obvious from reading the code alone.
   See `NOTICE.md`. The adult pack's community sculpts are fetched at pack time,
   hash-verified against `packs/adult-anatomy/source/PROVENANCE.md` and cut with
   headless Blender into the gitignored `.cache/adult-sculpts/`; never commit them
-  (`pnpm pack:adult-sources` warms the cache; the tests that place sculpts need it).
+  (`pnpm pack:adult-sources` warms the cache). The default test run is hermetic: what needs
+  the real sculpts skips, counted by the skip ledger; `pnpm test:adult-sculpts` runs it all.
 - Every packer sizes its textures by `scripts/lib/textureSizing.ts`: each ships
   at the edge its closest QA framing needs, re-sourced from the original, never
   upscaled (docs/evidence/upscale.md). `node scripts/research/texel-density.ts

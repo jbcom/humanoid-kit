@@ -68,6 +68,7 @@
     "verify": "pnpm run lint && pnpm run lint:docs && pnpm run typecheck && HK_FAIL_ON_SKIP=1 pnpm run coverage && pnpm run build && pnpm run package:check",
     "pack:data": "node scripts/pack-makehuman.ts",
     "pack:adult-sources": "node scripts/fetch-adult-sources.ts",
+    "test:adult-sculpts": "node scripts/fetch-adult-sources.ts && HK_REQUIRE_ADULT_SCULPTS=1 vitest run --project unit tests/phallus.test.ts tests/scrotum.test.ts tests/arousal.test.ts tests/adultReservoirs.test.ts",
     "pack:hair": "node scripts/pack-hair.ts",
     "pack:animations": "node scripts/pack-animations.ts",
     "pack:eyes": "node scripts/pack-eyes.ts",

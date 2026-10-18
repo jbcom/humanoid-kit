@@ -1,0 +1,54 @@
+name: Adult sculpts
+
+# The opt-in real path for the adult pack's community sculpts. The default CI is
+# hermetic (no network, no Blender); the tests that need the sculpts' real geometry skip
+# there, counted by the Vitest skip ledger. This workflow runs them for real:
+#
+# - downloads, declared here and in packs/adult-anatomy/source/PROVENANCE.md: six files
+#   from www.makehumancommunity.org (the URLs are in each source's LICENSE-SOURCE.txt),
+#   each checked against its recorded SHA-256, and the Blender 5.1.1 macOS arm64 release
+#   from download.blender.org, checked against the SHA-256 Blender publishes;
+# - Blender regenerates the cuts, each checked byte for byte against cuts.json;
+# - the four test files run with HK_REQUIRE_ADULT_SCULPTS=1, so a missing cache fails
+#   instead of skipping.
+#
+# It runs on request, weekly, and on a change to anything that decides the cuts. It is
+# not a required check. The same thing locally: `pnpm test:adult-sculpts`.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    paths:
+      - .github/workflows/adult-sculpts.yml
+      - packs/adult-anatomy/source/**
+      - scripts/blender/cut_sculpt.py
+      - scripts/lib/detail/sculptSources.ts
+      - scripts/lib/provisionBlender.ts
+      - scripts/lib/sourceFetch.ts
+
+permissions:
+  contents: read
+
+jobs:
+  adult-sculpts:
+    name: Adult sculpts, real path (pinned Blender)
+    # The cuts reproduce on macOS arm64 with Blender's thread count pinned
+    # (CUT_THREADS); x86-64 Linux Blender writes different float bytes.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache the pinned Blender
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/blender
+          key: blender-5.1.1-macos-arm64-${{ hashFiles('scripts/lib/provisionBlender.ts') }}
+      - name: Download, verify and cut the sculpts, then run the tests that need them
+        run: pnpm test:adult-sculpts

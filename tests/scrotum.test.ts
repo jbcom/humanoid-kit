@@ -13,8 +13,8 @@ import {
   TESTES_SIZE,
   testisDimensions,
 } from "../scripts/lib/detail/scrotum.ts";
-import { maleParts } from "../scripts/lib/detail/sculpt.ts";
-import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
+import { type MaleParts, maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { sculptsForTests } from "../scripts/lib/detail/sculptSources.ts";
 import { fairCap } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
@@ -22,8 +22,10 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 import { readSac } from "./sacShape.ts";
 
-// The sculpts are fetched and verified, and their cuts regenerated, not committed.
-await ensureSculptSources();
+// The sculpts are not committed. The default run is hermetic (no network, no Blender), so
+// what needs their real geometry skips, counted by the skip ledger, unless the verified
+// cache is there (`pnpm test:adult-sculpts`, which makes a missing cache a failure).
+const real = sculptsForTests();
 
 /**
  * The scrotum (scripts/lib/detail/scrotum.ts): the CC0 sculpt's sac, with its own
@@ -38,12 +40,15 @@ if (!lattice) throw new Error("no adult surface");
 const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "labioscrotal");
 if (!spec) throw new Error("no labioscrotal reservoir");
 const root: ReservoirRoot = reservoirRoot(lattice, spec);
-const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
+// `parts` and `sac` are read only by what is gated on `real`.
+const parts = (
+  real ? maleParts(assets, model.controlShape(AUTHORING_FIGURE).control) : undefined
+) as MaleParts;
 const skin = skinOf(
   lattice,
   (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
 );
-const sac = new SculptedScrotum(root, parts.scrotum, skin);
+const sac = (real ? new SculptedScrotum(root, parts.scrotum, skin) : undefined) as SculptedScrotum;
 
 type Point = readonly [number, number, number];
 type Triangle = readonly [number, number, number];
@@ -187,7 +192,7 @@ describe("a testis against the literature", () => {
   });
 });
 
-describe("the sac's shape", () => {
+describe.skipIf(!real)("the sac's shape", () => {
   it("fairs only connected cap interior samples, retaining the source and ring bytes", () => {
     const source = Float64Array.from(parts.scrotum.positions);
     new SculptedScrotum(root, parts.scrotum, skin);
@@ -291,17 +296,20 @@ describe("the sac's shape", () => {
 describe("the pack's testes", () => {
   const detail = adultManifest.anatomy?.detail;
 
-  it("names a target per key, each driven by the size alone and on the lattice they were authored on", () => {
-    const made = scrotumTargets(root, parts.scrotum, skin);
-    // A key's shape for each key, and the reservoir laid flat that the smallest grows from.
-    expect(made.targets).toHaveLength(TESTES_KEYS.length + 1);
-    for (const t of made.targets) {
-      expect(detail?.targets).toContain(t.name);
-      expect(detail?.drives?.[t.name]).toEqual(made.drives[t.name]);
-      expect(made.drives[t.name]?.every((f) => f.startsWith(`ramp:${TESTES_SIZE}:`))).toBe(true);
-    }
-    expect(detail?.surfaceKey).toBe(lattice.key);
-  });
+  it.skipIf(!real)(
+    "names a target per key, each driven by the size alone and on the lattice they were authored on",
+    () => {
+      const made = scrotumTargets(root, parts.scrotum, skin);
+      // A key's shape for each key, and the reservoir laid flat that the smallest grows from.
+      expect(made.targets).toHaveLength(TESTES_KEYS.length + 1);
+      for (const t of made.targets) {
+        expect(detail?.targets).toContain(t.name);
+        expect(detail?.drives?.[t.name]).toEqual(made.drives[t.name]);
+        expect(made.drives[t.name]?.every((f) => f.startsWith(`ramp:${TESTES_SIZE}:`))).toBe(true);
+      }
+      expect(detail?.surfaceKey).toBe(lattice.key);
+    },
+  );
 
   it("has a size that is adult-only, one-sided and has no target of its own", () => {
     const m = adultManifest.modifiers.find((x) => x.id === TESTES_SIZE);
@@ -336,14 +344,17 @@ describe("the testes on the adult surface", { timeout: 300_000 }, () => {
     expect(moved(model.evaluate(figure()).positions)).toHaveLength(0);
   });
 
-  it("is the generator's shape at each key's size: the pipeline keeps what was authored", () => {
-    for (const key of TESTES_KEYS) {
-      const surface = span(moved(model.evaluate(figure({ [TESTES_SIZE]: key.size })).positions));
-      const generated = span(sac.shape(key));
-      for (let k = 0; k < 3; k++)
-        expect(surface[k], `axis ${k}`).toBeCloseTo(generated[k] as number, 3);
-    }
-  });
+  it.skipIf(!real)(
+    "is the generator's shape at each key's size: the pipeline keeps what was authored",
+    () => {
+      for (const key of TESTES_KEYS) {
+        const surface = span(moved(model.evaluate(figure({ [TESTES_SIZE]: key.size })).positions));
+        const generated = span(sac.shape(key));
+        for (let k = 0; k < 3; k++)
+          expect(surface[k], `axis ${k}`).toBeCloseTo(generated[k] as number, 3);
+      }
+    },
+  );
 
   it("grows with the size, without a jump at a key", () => {
     let prev = 0;
@@ -356,61 +367,67 @@ describe("the testes on the adult surface", { timeout: 300_000 }, () => {
     }
   });
 
-  it("keeps the sculpt's notch between the lobes on every body, at the sculpt's share of the sac's width", () => {
-    // The midline's lowest point above the lobes', over the width across the figure. On
-    // the man the drawn sac read 16.6% against the sculpt's 10.9%: its delta was added to
-    // the man's own skin under the sac, which his body shape moves off his loop's by up
-    // to 3.6 mm, and the notch deepened by as much.
-    const notch = (points: readonly (readonly number[])[]) => {
-      const xs = points.map((p) => p[0] as number);
-      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-      const width = Math.max(...xs) - Math.min(...xs);
-      const lowest = Math.min(...points.map((p) => p[1] as number));
-      const mid = Math.min(
-        ...points
-          .filter((p) => Math.abs((p[0] as number) - cx) <= 0.003)
-          .map((p) => p[1] as number),
-      );
-      return (mid - lowest) / width;
-    };
-    const sculpt: number[][] = [];
-    for (let i = 0; i < parts.scrotum.positions.length; i += 3)
-      sculpt.push(Array.from(parts.scrotum.positions.subarray(i, i + 3)));
-    const drawnNotch = (macros: typeof AUTHORING_FIGURE.macros) => {
-      const bare = createRecipe({ macros, modifiers: { [TESTES_SIZE]: 0, [PHALLUS_SIZE]: 0 } });
-      const drawn = createRecipe({ macros, modifiers: { [TESTES_SIZE]: 0.6, [PHALLUS_SIZE]: 0 } });
-      const at = model.evaluate(bare).positions;
-      const to = model.evaluate(drawn).positions;
-      const points: number[][] = [];
-      for (let v = 0; v < to.length / 3; v++)
-        if (
-          [0, 1, 2].some(
-            (k) => Math.abs((to[v * 3 + k] as number) - (at[v * 3 + k] as number)) > 1e-7,
+  it.skipIf(!real)(
+    "keeps the sculpt's notch between the lobes on every body, at the sculpt's share of the sac's width",
+    () => {
+      // The midline's lowest point above the lobes', over the width across the figure. On
+      // the man the drawn sac read 16.6% against the sculpt's 10.9%: its delta was added to
+      // the man's own skin under the sac, which his body shape moves off his loop's by up
+      // to 3.6 mm, and the notch deepened by as much.
+      const notch = (points: readonly (readonly number[])[]) => {
+        const xs = points.map((p) => p[0] as number);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const width = Math.max(...xs) - Math.min(...xs);
+        const lowest = Math.min(...points.map((p) => p[1] as number));
+        const mid = Math.min(
+          ...points
+            .filter((p) => Math.abs((p[0] as number) - cx) <= 0.003)
+            .map((p) => p[1] as number),
+        );
+        return (mid - lowest) / width;
+      };
+      const sculpt: number[][] = [];
+      for (let i = 0; i < parts.scrotum.positions.length; i += 3)
+        sculpt.push(Array.from(parts.scrotum.positions.subarray(i, i + 3)));
+      const drawnNotch = (macros: typeof AUTHORING_FIGURE.macros) => {
+        const bare = createRecipe({ macros, modifiers: { [TESTES_SIZE]: 0, [PHALLUS_SIZE]: 0 } });
+        const drawn = createRecipe({
+          macros,
+          modifiers: { [TESTES_SIZE]: 0.6, [PHALLUS_SIZE]: 0 },
+        });
+        const at = model.evaluate(bare).positions;
+        const to = model.evaluate(drawn).positions;
+        const points: number[][] = [];
+        for (let v = 0; v < to.length / 3; v++)
+          if (
+            [0, 1, 2].some(
+              (k) => Math.abs((to[v * 3 + k] as number) - (at[v * 3 + k] as number)) > 1e-7,
+            )
           )
-        )
-          points.push([0, 1, 2].map((k) => to[v * 3 + k] as number));
-      return notch(points);
-    };
-    // The transfer: on the figure it was authored on, within a tenth of the sculpt's share
-    // (the reservoir samples the sculpt more coarsely than the sculpt's own vertices).
-    const want = notch(sculpt);
-    const authored = drawnNotch(AUTHORING_FIGURE.macros);
-    expect(Math.abs(authored - want) / want, `${authored} against ${want}`).toBeLessThanOrEqual(
-      0.1,
-    );
-    // Every other body: the sac is carried from that figure, not reshaped by the body's skin.
-    for (const macros of [
-      { ...AUTHORING_FIGURE.macros, gender: 1 },
-      { ...AUTHORING_FIGURE.macros, gender: 0 },
-      { ...AUTHORING_FIGURE.macros, gender: 1, weight: 1 },
-    ]) {
-      const got = drawnNotch(macros);
-      expect(
-        Math.abs(got - authored) / authored,
-        `${JSON.stringify(macros)}: ${got} against ${authored}`,
-      ).toBeLessThanOrEqual(0.05);
-    }
-  });
+            points.push([0, 1, 2].map((k) => to[v * 3 + k] as number));
+        return notch(points);
+      };
+      // The transfer: on the figure it was authored on, within a tenth of the sculpt's share
+      // (the reservoir samples the sculpt more coarsely than the sculpt's own vertices).
+      const want = notch(sculpt);
+      const authored = drawnNotch(AUTHORING_FIGURE.macros);
+      expect(Math.abs(authored - want) / want, `${authored} against ${want}`).toBeLessThanOrEqual(
+        0.1,
+      );
+      // Every other body: the sac is carried from that figure, not reshaped by the body's skin.
+      for (const macros of [
+        { ...AUTHORING_FIGURE.macros, gender: 1 },
+        { ...AUTHORING_FIGURE.macros, gender: 0 },
+        { ...AUTHORING_FIGURE.macros, gender: 1, weight: 1 },
+      ]) {
+        const got = drawnNotch(macros);
+        expect(
+          Math.abs(got - authored) / authored,
+          `${JSON.stringify(macros)}: ${got} against ${authored}`,
+        ).toBeLessThanOrEqual(0.05);
+      }
+    },
+  );
 
   it("does not answer the arousal signal: its change is unmeasured, so the sac holds still", () => {
     // The genitals alone: the pack's lip and nipple morphs (#118) answer arousal by design.

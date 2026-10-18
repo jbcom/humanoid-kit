@@ -1,16 +1,22 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BlenderUnavailableError,
   ensureSculptSources,
+  SculptSourceError,
   sculptManifest,
+  sculptsForTests,
+  sculptsReady,
 } from "../scripts/lib/detail/sculptSources.ts";
 import {
   type Fetcher,
   fetchVerified,
+  httpFetcherWithin,
   parseProvenanceHashes,
   parseSourceUrls,
   SourceFetchError,
@@ -20,7 +26,8 @@ import {
 /**
  * The adult pack's community sculpts are not vendored: the packer downloads each one,
  * checks its SHA-256 against `packs/adult-anatomy/source/PROVENANCE.md` and refuses
- * anything else. Nothing here touches the network: every download is an injected fetcher.
+ * anything else. This file is part of the hermetic default run: every download is an
+ * injected fetcher or a server on the loopback interface, never the network.
  */
 
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -295,5 +302,70 @@ describe("ensureSculptSources", () => {
     await ensureSculptSources(opts);
     expect(cuts).toBe(2);
     expect(digest(fs.readFileSync(path.join(f.cache, "tiny", "cap.obj")))).toBe(digest(part));
+  });
+});
+
+describe("the real fetcher, against a server on the loopback interface", () => {
+  let server: Server;
+  let base: string;
+  beforeEach(async () => {
+    server = createServer((req, res) => {
+      if (req.url === "/ok.obj") res.end("v 1 2 3\n");
+      else {
+        res.statusCode = 404;
+        res.end();
+      }
+    });
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => {
+    await new Promise<void>((done) => server.close(() => done()));
+  });
+
+  it("downloads a file and verifies it against its recorded hash", async () => {
+    const file = { name: "ok.obj", url: `${base}/ok.obj`, sha256: digest("v 1 2 3\n") };
+    const got = await fetchVerified(file, dir, httpFetcherWithin(5_000));
+    expect(fs.readFileSync(got.path, "utf8")).toBe("v 1 2 3\n");
+  });
+
+  it("refuses a file whose hash is not the recorded one", async () => {
+    const file = { name: "ok.obj", url: `${base}/ok.obj`, sha256: "0".repeat(64) };
+    await expect(fetchVerified(file, dir, httpFetcherWithin(5_000))).rejects.toBeInstanceOf(
+      SourceFetchError,
+    );
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it("fails on a non-2xx answer", async () => {
+    const file = { name: "gone.obj", url: `${base}/gone.obj`, sha256: digest("x") };
+    await expect(fetchVerified(file, dir, httpFetcherWithin(5_000))).rejects.toThrow(/HTTP 404/);
+  });
+});
+
+describe("whether the real sculpts are there for the tests that need them", () => {
+  it("is not ready, and says which file is missing, when the cache is empty", () => {
+    const state = sculptsReady(dir);
+    expect(state.ready).toBe(false);
+    expect((state as { reason: string }).reason).toMatch(/is not in the sculpt cache/);
+  });
+
+  it("lets the default run skip on an empty cache, and fails closed where the cache is required", () => {
+    expect(sculptsForTests({}, dir)).toBe(false);
+    expect(() => sculptsForTests({ HK_REQUIRE_ADULT_SCULPTS: "1" }, dir)).toThrow(
+      SculptSourceError,
+    );
+    expect(() => sculptsForTests({ HK_REQUIRE_ADULT_SCULPTS: "1" }, dir)).toThrow(
+      /pnpm pack:adult-sources/,
+    );
+  });
+
+  it("is not ready when a cached file does not hash to its record", () => {
+    const asset = sculptManifest().files[0];
+    if (!asset) throw new Error("no sculpt source");
+    fs.mkdirSync(path.join(dir, asset.asset), { recursive: true });
+    fs.writeFileSync(path.join(dir, asset.asset, asset.name), "tampered");
+    const state = sculptsReady(dir);
+    expect(state.ready).toBe(false);
   });
 });

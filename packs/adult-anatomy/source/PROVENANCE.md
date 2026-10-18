@@ -12,9 +12,9 @@ builds from reads it.
 
 ## How the packer gets the geometry
 
-`scripts/lib/detail/sculptSources.ts` (run by `pnpm pack:data`, by the tests that
-place the sculpts, and by `pnpm pack:adult-sources`) downloads each file from the URL
-in its source's `LICENSE-SOURCE.txt` into a gitignored cache
+`scripts/lib/detail/sculptSources.ts` (run by `pnpm pack:data`, `pnpm pack:adult-sources`
+and `pnpm test:adult-sculpts`) downloads each file from the URL in its source's
+`LICENSE-SOURCE.txt` into a gitignored cache
 (`.cache/adult-sculpts/`, or `$HK_ADULT_SOURCE_CACHE`) and checks its SHA-256 against
 the table below. It then regenerates the cuts from the verified `.obj` with
 `scripts/blender/cut_sculpt.py` (headless Blender, run by the packer; it finds
@@ -31,11 +31,18 @@ committed cuts on any core count. They also depend on the CPU: with the thread c
 pinned a GitHub macos-15 runner reproduced every committed cut, but Blender 5.1.1 on
 x86-64 Linux (ubuntu-24.04) wrote different float bytes, which the check refuses.
 
-In CI the `adult-sculpts` job (`scripts/ci/adult-sculpt-cache.ts`) therefore runs once per
-run on macOS arm64, with the Blender 5.1.1 release archive pinned by SHA-256
-(`scripts/lib/provisionBlender.ts`), and keeps the verified cache in the Actions cache,
-not in an artifact. The Linux unit jobs restore it by exact key and fail on a miss; they
-need neither Blender nor the network, and still re-hash every file they read.
+The default test run and the default CI are hermetic: no network and no Blender. The unit
+tests exercise the fetch, verify and fail-closed logic against injected fetchers and a
+server on the loopback interface (`tests/adultSourceFetch.test.ts`). The tests that need
+the sculpts' real geometry (parts of `phallus`, `scrotum`, `arousal` and
+`adultReservoirs`) skip when the verified cache is absent, under a reason the Vitest skip
+ledger counts (`scripts/ci/vitestSkipLedger.ts`). `pnpm test:adult-sculpts` runs the real
+path: it builds the cache (declared downloads: the six files above and, if no Blender is
+installed, the Blender 5.1.1 macOS arm64 release pinned by SHA-256 in
+`scripts/lib/provisionBlender.ts`), checks every cut byte for byte against `cuts.json`
+and runs those tests with `HK_REQUIRE_ADULT_SCULPTS=1`, so a missing cache fails instead
+of skipping. The opt-in `adult-sculpts` workflow does the same on a macOS arm64 runner,
+on request, weekly and when a file that decides the cuts changes.
 
 The licence rule's clause B governs: an asset's page licence is its licence
 (owner ruling, 2026-10-09). Each source below was judged from its page. An upload

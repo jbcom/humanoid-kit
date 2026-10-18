@@ -28,16 +28,18 @@ import {
   restShape,
 } from "../scripts/lib/detail/root.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
-import { maleParts } from "../scripts/lib/detail/sculpt.ts";
-import { ensureSculptSources } from "../scripts/lib/detail/sculptSources.ts";
+import { type MaleParts, maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { sculptsForTests } from "../scripts/lib/detail/sculptSources.ts";
 import { flatShape, skirtOnto } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets, loadOrganOnlyAssets } from "./fixtures.ts";
 
-// The sculpts are fetched and verified, and their cuts regenerated, not committed.
-await ensureSculptSources();
+// The sculpts are not committed. The default run is hermetic (no network, no Blender), so
+// what needs their real geometry skips, counted by the skip ledger, unless the verified
+// cache is there (`pnpm test:adult-sculpts`, which makes a missing cache a failure).
+const real = sculptsForTests();
 
 /**
  * The phallic organ (scripts/lib/detail/phallus.ts): two CC0 sculpts' shafts and
@@ -71,18 +73,25 @@ function span(points: Iterable<readonly number[]>): number[] {
 
 const DEFAULT = PHALLUS_KEYS.find((k) => k.length === 0.0916);
 if (!DEFAULT) throw new Error("no default key");
-const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
+// `parts` and `organ` are read only by what is gated on `real`.
+const parts = (
+  real ? maleParts(assets, model.controlShape(AUTHORING_FIGURE).control) : undefined
+) as MaleParts;
 const skin = skinOf(
   lattice,
   (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
 );
-const organ = new SculptedPhallus(root, parts.phallus, skin);
+const organ = (
+  real ? new SculptedPhallus(root, parts.phallus, skin) : undefined
+) as SculptedPhallus;
 
-describe("the sculpts on the reservoir", () => {
-  const sculpts = [
-    { name: "flaccid", projected: organ.flaccid, part: parts.phallus.flaccid, state: 0 },
-    { name: "erect", projected: organ.erect, part: parts.phallus.erect, state: 1 },
-  ] as const;
+describe.skipIf(!real)("the sculpts on the reservoir", () => {
+  const sculpts = real
+    ? ([
+        { name: "flaccid", projected: organ.flaccid, part: parts.phallus.flaccid, state: 0 },
+        { name: "erect", projected: organ.erect, part: parts.phallus.erect, state: 1 },
+      ] as const)
+    : [];
 
   it("starts on the skin line and lies on each sculpted part and its skirt beyond it, and the glans is the sculpt's own", () => {
     for (const { name, projected, part } of sculpts) {
@@ -152,9 +161,9 @@ describe("the sculpts on the reservoir", () => {
 });
 
 // Each key, state and variation is sized on its drawn shape (`SculptedPhallus.scalesFor`).
-describe("the organ's shape against the literature", { timeout: 300_000 }, () => {
-  const flaccid = organ.shape(DEFAULT);
-  const erect = organ.shape(DEFAULT, { state: 1 });
+describe.skipIf(!real)("the organ's shape against the literature", { timeout: 300_000 }, () => {
+  const flaccid = real ? organ.shape(DEFAULT) : (undefined as never);
+  const erect = real ? organ.shape(DEFAULT, { state: 1 }) : (undefined as never);
 
   it("is as long as the default key says: Veale's pooled flaccid length, 9.16 cm, along the top", () => {
     expect(dorsalLength(root, flaccid)).toBeCloseTo(0.0916, 4);
@@ -370,88 +379,102 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
     ).toHaveLength(0);
   });
 
-  it("is the generator's shape at each key's size: the pipeline keeps what was authored", () => {
-    PHALLUS_KEYS.forEach((key, k) => {
-      near(surfaceSpan({ [PHALLUS_SIZE]: key.size }), generated(k, {}));
-    });
-  });
+  it.skipIf(!real)(
+    "is the generator's shape at each key's size: the pipeline keeps what was authored",
+    () => {
+      PHALLUS_KEYS.forEach((key, k) => {
+        near(surfaceSpan({ [PHALLUS_SIZE]: key.size }), generated(k, {}));
+      });
+    },
+  );
 
-  it("is the generator's shape for every variation a key offers, erect ones too", () => {
-    const k = PHALLUS_KEYS.indexOf(DEFAULT);
-    const size = { [PHALLUS_SIZE]: DEFAULT.size };
-    near(surfaceSpan({ ...size, [PHALLUS_LENGTH]: 1 }), generated(k, { length: 1 + LENGTH_RANGE }));
-    near(
-      surfaceSpan({ ...size, [PHALLUS_LENGTH]: -1 }),
-      generated(k, { length: 1 - LENGTH_RANGE }),
-    );
-    near(surfaceSpan({ ...size, [PHALLUS_GIRTH]: 1 }), generated(k, { girth: 1 + GIRTH_RANGE }));
-    near(surfaceSpan({ ...size, [PHALLUS_GIRTH]: -1 }), generated(k, { girth: 1 - GIRTH_RANGE }));
-    // The states it erects through, each drawn, with their variations.
-    for (const { state } of STATES) {
-      const arousal = state;
-      near(surfaceSpan(size, { arousal }), generated(k, { state }));
+  it.skipIf(!real)(
+    "is the generator's shape for every variation a key offers, erect ones too",
+    () => {
+      const k = PHALLUS_KEYS.indexOf(DEFAULT);
+      const size = { [PHALLUS_SIZE]: DEFAULT.size };
       near(
-        surfaceSpan({ ...size, [PHALLUS_LENGTH]: 1 }, { arousal }),
-        generated(k, { length: 1 + LENGTH_RANGE, state }),
+        surfaceSpan({ ...size, [PHALLUS_LENGTH]: 1 }),
+        generated(k, { length: 1 + LENGTH_RANGE }),
       );
       near(
-        surfaceSpan({ ...size, [PHALLUS_GIRTH]: -1 }, { arousal }),
-        generated(k, { girth: 1 - GIRTH_RANGE, state }),
+        surfaceSpan({ ...size, [PHALLUS_LENGTH]: -1 }),
+        generated(k, { length: 1 - LENGTH_RANGE }),
       );
-    }
-  });
+      near(surfaceSpan({ ...size, [PHALLUS_GIRTH]: 1 }), generated(k, { girth: 1 + GIRTH_RANGE }));
+      near(surfaceSpan({ ...size, [PHALLUS_GIRTH]: -1 }), generated(k, { girth: 1 - GIRTH_RANGE }));
+      // The states it erects through, each drawn, with their variations.
+      for (const { state } of STATES) {
+        const arousal = state;
+        near(surfaceSpan(size, { arousal }), generated(k, { state }));
+        near(
+          surfaceSpan({ ...size, [PHALLUS_LENGTH]: 1 }, { arousal }),
+          generated(k, { length: 1 + LENGTH_RANGE, state }),
+        );
+        near(
+          surfaceSpan({ ...size, [PHALLUS_GIRTH]: -1 }, { arousal }),
+          generated(k, { girth: 1 - GIRTH_RANGE, state }),
+        );
+      }
+    },
+  );
 
-  it("erects through its drawn states: between two a vertex is halfway, and the shaft never shortens", () => {
-    const size = { [PHALLUS_SIZE]: 0.65 };
-    const at = (arousal: number) => model.evaluate(figure(size), { arousal }).positions;
-    const tipVertex = (() => {
-      const p = at(1);
-      let best = 0;
-      for (let v = 1; v < p.length / 3; v++)
-        if (
-          Math.abs((p[v * 3 + 2] as number) - (rest[v * 3 + 2] as number)) >
-          Math.abs((p[best * 3 + 2] as number) - (rest[best * 3 + 2] as number))
-        )
-          best = v;
-      return best;
-    })();
-    const point = (arousal: number) =>
-      [0, 1, 2].map((k) => at(arousal)[tipVertex * 3 + k] as number);
-    // Halfway between two drawn states, a vertex is halfway between its places in them.
-    const drawn = [0, ...STATES.map((s) => s.state)];
-    for (let i = 1; i < drawn.length; i++) {
-      const a = drawn[i - 1] as number;
-      const b = drawn[i] as number;
-      const [pa, pm, pb] = [a, (a + b) / 2, b].map(point);
-      for (let k = 0; k < 3; k++)
-        expect(pm?.[k]).toBeCloseTo(((pa?.[k] as number) + (pb?.[k] as number)) / 2, 5);
-    }
-    // The shaft keeps lengthening along the way: the dorsal length of the shape the
-    // surface blends (each vertex a straight line between two drawn states) never falls by
-    // more than half a millimetre, where a straight line cuts a swing's corner. (The tip's
-    // straight distance from the root need not grow: the erect shaft rises in a curve
-    // from a root that faces down.)
-    const shapes = drawn.map((state) => organ.shape(DEFAULT, { state }));
-    const blended = (a: number) => {
-      const i = Math.min(
-        drawn.length - 2,
-        drawn.findIndex((s) => s >= a) - 1 < 0 ? 0 : drawn.findIndex((s) => s >= a) - 1,
-      );
-      const s0 = drawn[i] as number;
-      const s1 = drawn[i + 1] as number;
-      const t = (a - s0) / (s1 - s0);
-      const from = shapes[i] as RootShape;
-      const to = shapes[i + 1] as RootShape;
-      return from.map((p, j) => {
-        const q = to[j] as readonly number[];
-        return [0, 1, 2].map((k) => (p[k] as number) * (1 - t) + (q[k] as number) * t);
-      }) as unknown as RootShape;
-    };
-    const lengths = Array.from({ length: 17 }, (_, i) => dorsalLength(root, blended(i / 16)));
-    for (let i = 1; i < lengths.length; i++)
-      expect(lengths[i] as number, `step ${i}`).toBeGreaterThan((lengths[i - 1] as number) - 5e-4);
-    expect(lengths[16] as number).toBeGreaterThan((lengths[0] as number) * 1.4);
-  });
+  it.skipIf(!real)(
+    "erects through its drawn states: between two a vertex is halfway, and the shaft never shortens",
+    () => {
+      const size = { [PHALLUS_SIZE]: 0.65 };
+      const at = (arousal: number) => model.evaluate(figure(size), { arousal }).positions;
+      const tipVertex = (() => {
+        const p = at(1);
+        let best = 0;
+        for (let v = 1; v < p.length / 3; v++)
+          if (
+            Math.abs((p[v * 3 + 2] as number) - (rest[v * 3 + 2] as number)) >
+            Math.abs((p[best * 3 + 2] as number) - (rest[best * 3 + 2] as number))
+          )
+            best = v;
+        return best;
+      })();
+      const point = (arousal: number) =>
+        [0, 1, 2].map((k) => at(arousal)[tipVertex * 3 + k] as number);
+      // Halfway between two drawn states, a vertex is halfway between its places in them.
+      const drawn = [0, ...STATES.map((s) => s.state)];
+      for (let i = 1; i < drawn.length; i++) {
+        const a = drawn[i - 1] as number;
+        const b = drawn[i] as number;
+        const [pa, pm, pb] = [a, (a + b) / 2, b].map(point);
+        for (let k = 0; k < 3; k++)
+          expect(pm?.[k]).toBeCloseTo(((pa?.[k] as number) + (pb?.[k] as number)) / 2, 5);
+      }
+      // The shaft keeps lengthening along the way: the dorsal length of the shape the
+      // surface blends (each vertex a straight line between two drawn states) never falls by
+      // more than half a millimetre, where a straight line cuts a swing's corner. (The tip's
+      // straight distance from the root need not grow: the erect shaft rises in a curve
+      // from a root that faces down.)
+      const shapes = drawn.map((state) => organ.shape(DEFAULT, { state }));
+      const blended = (a: number) => {
+        const i = Math.min(
+          drawn.length - 2,
+          drawn.findIndex((s) => s >= a) - 1 < 0 ? 0 : drawn.findIndex((s) => s >= a) - 1,
+        );
+        const s0 = drawn[i] as number;
+        const s1 = drawn[i + 1] as number;
+        const t = (a - s0) / (s1 - s0);
+        const from = shapes[i] as RootShape;
+        const to = shapes[i + 1] as RootShape;
+        return from.map((p, j) => {
+          const q = to[j] as readonly number[];
+          return [0, 1, 2].map((k) => (p[k] as number) * (1 - t) + (q[k] as number) * t);
+        }) as unknown as RootShape;
+      };
+      const lengths = Array.from({ length: 17 }, (_, i) => dorsalLength(root, blended(i / 16)));
+      for (let i = 1; i < lengths.length; i++)
+        expect(lengths[i] as number, `step ${i}`).toBeGreaterThan(
+          (lengths[i - 1] as number) - 5e-4,
+        );
+      expect(lengths[16] as number).toBeGreaterThan((lengths[0] as number) * 1.4);
+    },
+  );
 
   it("is the smallest key's own shape a share of the way out of the flat reservoir below it, flaccid and erect (#75)", () => {
     // No drawn key under the smallest sculpted one: the organ grows out of the reservoir laid

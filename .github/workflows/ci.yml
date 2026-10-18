@@ -47,44 +47,8 @@ jobs:
       - run: pnpm run build
       - run: pnpm run package:check
 
-  # The adult pack's community sculpts are not committed. This job downloads them,
-  # checks each against the SHA-256 in packs/adult-anatomy/source/PROVENANCE.md,
-  # extracts the pinned Blender and regenerates the cuts, checking each against
-  # cuts.json (scripts/lib/detail/sculptSources.ts), then keeps the verified result in
-  # the Actions cache. The unit jobs restore it by exact key, so none needs Blender or
-  # the network, and each still re-hashes every file it reads. It is a cache, not an
-  # artifact, on purpose: this repository is public, and artifacts are downloadable.
-  # It runs on macOS arm64 because that is where the cuts reproduce: with the cut's
-  # Blender thread count pinned (CUT_THREADS) the macos-15 runner cuts the exact bytes
-  # cuts.json records, while Blender 5.1.1 on ubuntu-24.04 cuts the same planes to
-  # different float bytes (measured), which the check rightly refuses. The Linux unit
-  # jobs get the macOS-built, hash-identical files from the cache.
-  adult-sculpts:
-    name: Adult sculpt sources (pinned Blender)
-    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-      - name: Cache the pinned Blender
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .cache/blender
-          key: blender-5.1.1-macos-arm64-${{ hashFiles('scripts/lib/provisionBlender.ts') }}
-      - name: Cache the verified sculpts and cuts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
-      - name: Download, verify and cut the sculpts
-        run: node scripts/ci/adult-sculpt-cache.ts
-
   verify-unit:
     name: Verify unit ${{ matrix.shard }}/4 (Node ${{ matrix.node }})
-    needs: adult-sculpts
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -101,12 +65,6 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Restore the verified adult sculpts
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
-          fail-on-cache-miss: true
       # Vitest shards test files exactly once, so the four shards together run the
       # whole unit project; the gate requires every one of them.
       - run: pnpm exec vitest run --project unit --shard=${{ matrix.shard }}/4
@@ -164,7 +122,6 @@ jobs:
 
   coverage-unit-shard:
     name: Coverage unit shard ${{ matrix.shard }}/8
-    needs: adult-sculpts
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ubuntu-24.04
     # Instrumented files run about three times as long as plain ones, and
@@ -184,12 +141,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Restore the verified adult sculpts
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
-          fail-on-cache-miss: true
       - name: Run instrumented unit shard
         env:
           VITEST_BLOB_LABEL: coverage-unit-${{ matrix.shard }}
