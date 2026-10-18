@@ -91,6 +91,9 @@ describe("CI gate verdict", () => {
     expect(cacheKey(producer), "adult-sculpts saves the verified cache").toBeTruthy();
     // The pinned Blender, and the verification that fails closed, run in the producer.
     expect(producer).toContain("node scripts/ci/adult-sculpt-cache.ts");
+    // The cuts reproduce on macOS arm64 (Blender's thread count pinned), not on x86-64 Linux.
+    expect(producer).toMatch(/runs-on: macos-15\n/);
+    expect(cacheKey(producer)).toContain("scripts/lib/detail/sculptSources.ts");
     const consumers = [...jobs].filter(([, job]) => job.includes("--project unit"));
     expect(consumers.length).toBeGreaterThan(0);
     for (const [name, job] of consumers) {

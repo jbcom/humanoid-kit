@@ -39,20 +39,22 @@ const extracting = async (_archive: string, toolDir: string) => {
 
 describe("the pinned Blender", () => {
   it("is the version the cuts were proven with, on an https URL, with a SHA-256", () => {
-    const r = blenderRelease("linux", "x64");
-    expect(r.version).toBe(BLENDER_VERSION);
     expect(BLENDER_VERSION).toBe("5.1.1");
-    expect(r.url).toBe(
-      "https://download.blender.org/release/Blender5.1/blender-5.1.1-linux-x64.tar.xz",
+    const mac = blenderRelease("darwin", "arm64");
+    expect(mac.version).toBe(BLENDER_VERSION);
+    expect(mac.url).toBe(
+      "https://download.blender.org/release/Blender5.1/blender-5.1.1-macos-arm64.dmg",
     );
-    expect(r.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(r.binary).toBe("blender-5.1.1-linux-x64/blender");
+    expect(mac.sha256).toBe("ff6219b3aaab4d9adf548b9a32b3b31764fe740b6c741d16660c5c0f4ffe9841");
+    expect(mac.binary).toBe("blender-5.1.1-macos-arm64/Blender.app/Contents/MacOS/Blender");
   });
 
-  it("is pinned for Linux x64 only: anywhere else it says to install Blender and set BLENDER", () => {
+  it("is pinned for macOS arm64 only: elsewhere it says to set BLENDER", () => {
+    // Blender 5.1.1 on x86-64 Linux cuts the same planes to different float bytes (measured on
+    // ubuntu-24.04), so a Linux release would only fail the cut check.
     for (const [platform, arch] of [
-      ["darwin", "arm64"],
-      ["linux", "arm64"],
+      ["linux", "x64"],
+      ["darwin", "x64"],
       ["win32", "x64"],
     ] as const)
       expect(() => blenderRelease(platform, arch)).toThrow(/set BLENDER/);

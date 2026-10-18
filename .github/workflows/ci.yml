@@ -54,10 +54,15 @@ jobs:
   # the Actions cache. The unit jobs restore it by exact key, so none needs Blender or
   # the network, and each still re-hashes every file it reads. It is a cache, not an
   # artifact, on purpose: this repository is public, and artifacts are downloadable.
+  # It runs on macOS arm64 because that is where the cuts reproduce: with the cut's
+  # Blender thread count pinned (CUT_THREADS) the macos-15 runner cuts the exact bytes
+  # cuts.json records, while Blender 5.1.1 on ubuntu-24.04 cuts the same planes to
+  # different float bytes (measured), which the check rightly refuses. The Linux unit
+  # jobs get the macOS-built, hash-identical files from the cache.
   adult-sculpts:
     name: Adult sculpt sources (pinned Blender)
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,14 +73,12 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/blender
-          key: blender-5.1.1-linux-x64-${{ hashFiles('scripts/lib/provisionBlender.ts') }}
+          key: blender-5.1.1-macos-arm64-${{ hashFiles('scripts/lib/provisionBlender.ts') }}
       - name: Cache the verified sculpts and cuts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts') }}
-      - name: Install the libraries Blender loads headless
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libice6 libsm6 libxfixes3 libxi6 libxkbcommon0 libxrender1 libxxf86vm1
+          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
       - name: Download, verify and cut the sculpts
         run: node scripts/ci/adult-sculpt-cache.ts
 
@@ -102,7 +105,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts') }}
+          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
           fail-on-cache-miss: true
       # Vitest shards test files exactly once, so the four shards together run the
       # whole unit project; the gate requires every one of them.
@@ -185,7 +188,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/adult-sculpts
-          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts') }}
+          key: adult-sculpts-${{ hashFiles('packs/adult-anatomy/source/**', 'scripts/blender/cut_sculpt.py', 'scripts/lib/provisionBlender.ts', 'scripts/lib/detail/sculptSources.ts') }}
           fail-on-cache-miss: true
       - name: Run instrumented unit shard
         env:

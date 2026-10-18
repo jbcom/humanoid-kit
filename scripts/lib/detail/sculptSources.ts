@@ -160,6 +160,9 @@ export function sculptCuts(asset: string): CutsRecord {
 
 const run = promisify(execFile);
 
+/** Blender's thread count for the cut: the one that reproduces the committed cuts. */
+export const CUT_THREADS = 8;
+
 /** A Blender to run the cut script: `$BLENDER`, one on the PATH, or a standard install. */
 export function findBlender(env: NodeJS.ProcessEnv = process.env): string | null {
   const onPath = (env.PATH ?? "")
@@ -190,7 +193,22 @@ async function blenderCut(blender: string, source: string, outDir: string): Prom
   try {
     await run(
       blender,
-      ["-b", "--factory-startup", "--python", CUT_SCRIPT, "--", source, outDir, "--no-render"],
+      [
+        "-b",
+        "--factory-startup",
+        // The cut's vertex order and float bytes depend on Blender's thread count (measured:
+        // 1, 2, 4 and 8 threads give four different Male_Gen-Heal1 cuts; 0, the default, gives
+        // the 8 of a 16-core Mac). The thread count is therefore pinned, so every host cuts the
+        // bytes `cuts.json` records whatever its core count. `-t` must come before `--python`.
+        "-t",
+        String(CUT_THREADS),
+        "--python",
+        CUT_SCRIPT,
+        "--",
+        source,
+        outDir,
+        "--no-render",
+      ],
       { maxBuffer: 64 * 1024 * 1024, timeout: 10 * 60_000 },
     );
   } catch (e) {
@@ -257,15 +275,19 @@ export async function ensureSculptSources(options: EnsureOptions = {}): Promise<
     const scratch = fs.mkdtempSync(path.join(dir, ".cut-"));
     try {
       await cut(path.join(dir, record.source), scratch);
-      for (const part of parts) {
+      // Every part is checked before any is reported, so one failure shows them all.
+      const wrong = parts.flatMap((part) => {
         const file = path.join(scratch, `${part}.obj`);
         const got = fs.existsSync(file) ? sha256Hex(fs.readFileSync(file)) : "(not written)";
-        if (got !== record.parts[part]?.objSha256)
-          throw new SculptSourceError(
-            `${asset}: the regenerated ${part}.obj (${got}) is not the cut recorded in cuts.json ` +
-              `(${record.parts[part]?.objSha256}); a different Blender, or a changed cut script, cuts differently`,
-          );
-      }
+        return got === record.parts[part]?.objSha256
+          ? []
+          : [`${part}.obj is ${got}, not the recorded ${record.parts[part]?.objSha256}`];
+      });
+      if (wrong.length)
+        throw new SculptSourceError(
+          `${asset}: the regenerated cut is not the cut recorded in cuts.json (${wrong.join("; ")}); ` +
+            `a different Blender or thread count, or a changed cut script, cuts differently`,
+        );
       const regenerated = JSON.parse(
         fs.readFileSync(path.join(scratch, "cuts.json"), "utf8"),
       ) as unknown;

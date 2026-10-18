@@ -242,7 +242,7 @@ describe("ensureSculptSources", () => {
           fs.writeFileSync(path.join(out, "cuts.json"), "{}\n");
         },
       }),
-    ).rejects.toThrow(/cap\.obj.*not the cut recorded/s);
+    ).rejects.toThrow(/not the cut recorded.*cap\.obj/s);
     expect(fs.existsSync(path.join(f.cache, "tiny", "cap.obj"))).toBe(false);
   });
 
