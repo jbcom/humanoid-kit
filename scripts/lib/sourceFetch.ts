@@ -36,11 +36,16 @@ export const sha256Hex = (data: Uint8Array | string): string =>
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 /** The global `fetch`, with a timeout, as a `Fetcher`. */
-export const httpFetcher: Fetcher = async (url) => {
-  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  return new Uint8Array(await res.arrayBuffer());
-};
+export const httpFetcherWithin =
+  (timeoutMs: number): Fetcher =>
+  async (url) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    return new Uint8Array(await res.arrayBuffer());
+  };
+
+/** `httpFetcherWithin` the time a sculpt needs. */
+export const httpFetcher: Fetcher = httpFetcherWithin(DOWNLOAD_TIMEOUT_MS);
 
 /**
  * `file` in `dir`, verified. A cached copy that hashes right is used as it is; one that

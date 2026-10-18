@@ -33,5 +33,7 @@ docs/dist/
 # The adult pack's community sculpts, downloaded and hash-verified at pack time, and the
 # cuts regenerated from them (scripts/lib/detail/sculptSources.ts). Never committed.
 .cache/adult-sculpts/
+# The pinned Blender CI extracts when a host has none (scripts/lib/provisionBlender.ts).
+.cache/blender/
 # The contact-sheet job the `sheets` Playwright project renders (e2e/sheets/).
 .sheets/
