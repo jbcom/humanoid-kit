@@ -1,6 +1,6 @@
 {
   "name": "humanoid-kit-adult-anatomy",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Adult-only anatomy pack for humanoid-kit. Evaluated only for figures aged 18 or over; install it only if your application needs adult anatomy.",
   "type": "module",
   "license": "CC0-1.0",
@@ -18,7 +18,13 @@
     "./data/*": "./data/*",
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "index.d.ts", "data", "README.md", "LICENSE"],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "data",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jbcom/humanoid-kit.git",
@@ -31,5 +37,11 @@
   "engines": {
     "node": ">=24"
   },
-  "keywords": ["humanoid-kit", "makehuman", "cc0", "anatomy", "adult"]
+  "keywords": [
+    "humanoid-kit",
+    "makehuman",
+    "cc0",
+    "anatomy",
+    "adult"
+  ]
 }
